@@ -5,9 +5,7 @@
 # version manifest. Publishing of artifacts (Maven/npm to GitHub Packages,
 # images to GHCR) hangs off the published-release event below.
 #
-# This gives every repo an explicit, immutable version. Consumers pin exact
-# versions (see VERSIONING.md); nothing deploys or resolves from a moving
-# branch.
+# This gives the repository an explicit, immutable version.
 name: Release
 
 on:

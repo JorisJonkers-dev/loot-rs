@@ -17,7 +17,7 @@ while IFS= read -r _local_ref local_sha remote_ref _remote_sha; do
     tmp_file="$(mktemp "${TMPDIR:-/tmp}/legacy-refs.XXXXXX")"
     if git grep -n -E 'ExtraToast|@extratoast|dev\.extratoast|ghcr\.io/extratoast' "$local_sha" -- . \
       ':(exclude)CHANGELOG.md' ':(exclude)specs/**' \
-      ':(exclude)templates/push-protection/hooks/pre-push' >"$tmp_file" 2>/dev/null; then
+      ':(exclude)scripts/hooks/pre-push' >"$tmp_file" 2>/dev/null; then
       cat "$tmp_file" >&2
       echo "Legacy ExtraToast coordinate found in pushed content." >&2
       status=1
@@ -49,8 +49,6 @@ deny_globs = [
     '.claude/commands/speckit*.md',
     '.claude/skills/speckit*/**',
     '.agents/skills/speckit*/**',
-    'templates/**/.specify/**',
-    'templates/**/.claude/commands/speckit*.md',
 ]
 
 with open(path_file, 'r', encoding='utf-8') as paths:

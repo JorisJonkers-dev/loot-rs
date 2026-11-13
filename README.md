@@ -103,4 +103,3 @@ skipped with a warning instead of matching wrongly.
   yields to other rules.
 * A golden comparison against LOOT's real report for one profile (run under MO2 or Wine) is the way to find
   disagreements; it needs a decision on where the oracle files may live.
-* The repository still contains the `templates/` tree and `scripts/` from the repository template.
