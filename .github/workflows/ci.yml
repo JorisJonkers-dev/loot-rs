@@ -1,128 +1,151 @@
-# Canonical single CI workflow for every JorisJonkers-dev repository.
-#
-# Org convention: ONE pipeline per repo, terminating in a job named
-# "Pipeline Complete". That name is the ONLY required status check in the
-# org/repo ruleset, so it must always be reported — but note that the
-# convention is about the *name*, not about that job being an aggregator.
-#
-# DEFAULT SHAPE: one job. Put every check in it as a step.
-#
-# GitHub bills each job rounded up to a full minute. A pipeline split into
-# five jobs that each finish in ten seconds bills five minutes for under one
-# minute of work, and in this estate that rounding — not compute — was the
-# large majority of private-repo Actions spend. Splitting steps-based checks
-# across jobs buys parallel wall-clock at roughly a minute of billing each;
-# at these durations that is a bad trade, so do not do it by default.
-#
-# Steps carry `if: ${{ !cancelled() }}` so one failing check does not mask the
-# rest: a pull request still surfaces every problem in a single run, which is
-# the one thing parallel jobs were actually good for.
-#
-# WHEN TO ADD A SECOND JOB: only when you must. A reusable workflow (`uses:`)
-# cannot be a step, so calling one requires its own job — see the typed
-# callers. In that case something has to gate it, and
-# you have two options:
-#
-#   1. Keep this job as the gate: add `needs: [<that-job>]` and, as the LAST
-#      step, fail unless its result is 'success'. Compare against 'success'
-#      rather than 'failure', so a skipped or cancelled job fails too.
-#   2. Add a separate `pipeline-complete` job using re-actors/alls-green.
-#      Costs an extra billable minute; prefer option 1.
-#
-# Either way the required check keeps its name, so branch protection never
-# needs touching when jobs are added or renamed.
-name: CI
+# One pipeline ending in "Pipeline Complete", the only required check (estate convention). The Rust checks
+# are steps of one job (a private repository is billed per job, rounded up to the minute); the two reusable
+# workflows (hygiene, PR title) cannot be steps, so they are jobs that the last step gates on.
+name: Pipeline
 
 on:
   pull_request:
+    types: [opened, edited, reopened, synchronize]
   push:
     branches: [main]
   workflow_dispatch:
 
+# A new commit on a branch cancels the run still going for the older one. Not cancelled: a title edit (its own
+# group, so it neither cancels nor is cancelled by a push; no label events trigger this workflow, so a bot
+# labelling a new pull request starts nothing) and main (every commit there runs to the end).
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
+  group: pipeline-${{ github.ref == 'refs/heads/main' && github.sha || format('{0}-{1}', github.event.pull_request.number || github.ref, github.event.action == 'edited' && github.run_id || 'commits') }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
-jobs:
-  # A skipped test whose quarantine ran out, names no issue, or lasts over 14 days fails the build
-  # (workspace docs/testing-standards.md, section 7). A reusable workflow, so its own job.
-  quarantine:
-    uses: JorisJonkers-dev/github-workflows/.github/workflows/quarantine-check.yml@48fcba8b143567e12716f4b77b9a3ab211719ffd # v0.50.1
+env:
+  CARGO_INCREMENTAL: 0
+  CARGO_TERM_COLOR: always
 
-  pipeline-complete:
-    name: Pipeline Complete
-    needs: [quarantine]
-    if: ${{ !cancelled() }}
+jobs:
+  # Documentation-only changes skip the Rust job. The gate below still runs and still requires everything else.
+  changes:
+    name: Changed files
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
     steps:
-      # Add `fetch-depth: 0` if any check below needs history (a full-history
-      # secret scan, or a diff against the base ref).
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
-
-      - name: Install Rust
-        shell: bash
+          persist-credentials: false
+      - id: diff
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD: ${{ github.sha }}
         run: |
-          rustup toolchain install 1.99.1 --profile minimal --component clippy,rustfmt,llvm-tools-preview
-          rustup default 1.99.1
+          set -euo pipefail
+          if [ -z "${BASE:-}" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE" 2>/dev/null; then
+            echo "code=true" >>"$GITHUB_OUTPUT"; echo "no base to compare with: building"; exit 0
+          fi
+          if git diff --name-only "$BASE...$HEAD" | grep -qvE '^(docs/|LICENSE$|.*\.md$)'; then
+            echo "code=true" >>"$GITHUB_OUTPUT"
+          else
+            echo "code=false" >>"$GITHUB_OUTPUT"; echo "only documentation changed: the Rust job is skipped"
+          fi
 
+  hygiene:
+    name: Hygiene
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+      pull-requests: read
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/repository-hygiene-guard.yml@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
+    with:
+      package-proxy-guard: enforce
+    secrets:
+      PACKAGES_PROXY_TOKEN: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+
+  pr-title:
+    name: PR title
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: JorisJonkers-dev/github-workflows/.github/workflows/pr-title-check.yml@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
+
+  rust:
+    name: Rust
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
+        with:
+          cache: true
       # Routes cargo through the packages proxy; the hygiene guard fails a cargo build outside it.
       - name: Set up the packages proxy
         uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
         with:
           token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
-
-      - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          tool: cargo-llvm-cov
+          shared-key: pipeline
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
+      # Separate steps so one failing check does not hide the others.
       - name: Format
+        run: mise exec -- task fmt
+      - name: Clippy
         if: ${{ !cancelled() }}
-        run: cargo fmt --check
-
-      - name: Lint
+        run: mise exec -- task lint
+      - name: Tests with the coverage gate
         if: ${{ !cancelled() }}
-        run: cargo clippy --locked --all-targets -- -D warnings
-
-      - name: Test with the coverage gate
+        run: mise exec -- task coverage
+      - name: Coverage per module
         if: ${{ !cancelled() }}
-        run: cargo llvm-cov --locked --fail-under-lines 80
-
-      - name: Build
-        if: ${{ !cancelled() }}
-        run: cargo build --locked --release
-
-      - name: Scan for secrets
-        if: ${{ !cancelled() }}
-        shell: bash
         run: |
-          version=8.30.1
-          archive="gitleaks_${version}_linux_x64.tar.gz"
-          curl --fail --silent --show-error --location --output "$archive" \
-            "https://github.com/gitleaks/gitleaks/releases/download/v${version}/${archive}"
-          echo "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb  ${archive}" | sha256sum --check
-          tar -xzf "$archive" gitleaks
-          ./gitleaks detect --source . --config .gitleaks.toml --no-banner
-
-      - name: Download actionlint
-        id: actionlint
+          {
+            echo '### Line coverage per module'
+            echo
+            echo '```'
+            mise exec -- cargo llvm-cov report --summary-only --ignore-filename-regex '(^|/)(tests?|fuzz)/|_tests\.rs$'
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+      - name: Release build
         if: ${{ !cancelled() }}
-        shell: bash
+        run: mise exec -- task build
+      - name: Licences, bans, sources, advisories
+        if: ${{ !cancelled() }}
+        run: mise exec -- task deny
+
+  pipeline-complete:
+    name: Pipeline Complete
+    needs: [changes, hygiene, pr-title, rust]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
+        with:
+          cache: true
+
+      - name: Workflows
+        run: mise exec -- task lint:actions
+      - name: Secrets
+        if: ${{ !cancelled() }}
+        run: mise exec -- task secrets
+
+      # A skipped job fails, except the two that only run on pull requests (hygiene also skips when its
+      # override label is set) and the Rust job when only documentation changed.
+      - name: Jobs passed
+        if: ${{ !cancelled() }}
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          bash <(curl --fail --silent --show-error --location https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
-
-      - name: Lint GitHub Actions workflows
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          "${{ steps.actionlint.outputs.executable }}" -color .github/workflows/*.yml
-
-      - name: Quarantine check passed
-        if: ${{ !cancelled() }}
-        run: test "${{ needs.quarantine.result }}" = success
+          set -euo pipefail
+          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key == "rust" and $n.changes.outputs.code == "false") | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
+          if [ -n "$failed" ]; then echo "$failed"; exit 1; fi

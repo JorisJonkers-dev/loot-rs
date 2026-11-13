@@ -1,5 +1,14 @@
-# One command per loop. `task` lists targets; `task check` is what CI runs.
+# One command per loop. `task` lists targets; `task check` is what CI runs (the Pipeline workflow runs the
+# same tasks as separate steps, so one failing check does not hide the others).
+# On NixOS run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld nixpkgs#cargo-llvm-cov nixpkgs#cargo-deny`
+# with RUSTFLAGS="-Clink-self-contained=-linker" (see .cargo/config.toml).
 version: "3"
+
+vars:
+  # Line coverage the tests must reach. The organisation requires at least 80.
+  COVERAGE_MIN: 90
+  # Test code is not counted: integration tests, the fuzz crate and the unit-test files.
+  COVERAGE_IGNORE: '(^|/)(tests?|fuzz)/|_tests\.rs$'
 
 tasks:
   default:
@@ -12,23 +21,65 @@ tasks:
 
   lint:
     desc: clippy with warnings as errors
-    cmd: cargo clippy --all-targets -- -D warnings
+    cmd: cargo clippy --locked --all-targets -- -D warnings
 
   test:
-    desc: Unit and integration tests
-    cmd: cargo test
+    desc: Unit, property, snapshot and integration tests (no coverage)
+    cmd: cargo test --locked
+
+  coverage:
+    desc: Tests with cargo-llvm-cov; fails under COVERAGE_MIN percent of lines
+    cmd: cargo llvm-cov --locked --fail-under-lines {{.COVERAGE_MIN}} --ignore-filename-regex '{{.COVERAGE_IGNORE}}'
+
+  coverage:html:
+    desc: HTML coverage report in target/llvm-cov/html
+    cmd: cargo llvm-cov --locked --html --ignore-filename-regex '{{.COVERAGE_IGNORE}}'
 
   build:
     desc: Release build of the CLI
-    cmd: cargo build --release
+    cmd: cargo build --locked --release
+
+  deny:
+    desc: Licences, bans, sources and advisories (deny.toml)
+    cmd: cargo deny check
+
+  lint:actions:
+    desc: actionlint and zizmor on every workflow
+    cmds:
+      - actionlint
+      - zizmor --offline --no-progress .github/workflows
+
+  secrets:
+    desc: Scan every commit for secrets
+    cmd: gitleaks git --redact --no-banner --config .gitleaks.toml .
+
+  fuzz:build:
+    desc: Build the fuzz targets (needs a nightly toolchain and cargo-fuzz)
+    dir: fuzz
+    cmd: cargo +nightly fuzz build
+
+  fuzz:smoke:
+    desc: Run every fuzz target for ten seconds
+    dir: fuzz
+    cmd: |
+      for target in $(cargo +nightly fuzz list); do
+        cargo +nightly fuzz run "$target" -- -max_total_time=10 -rss_limit_mb=2048
+      done
+
+  mutants:
+    desc: Mutation testing of the condition evaluator (slow; not part of check)
+    cmd: cargo mutants --file src/condition.rs --jobs 1
 
   check:
     desc: Everything CI runs on a pull request
     cmds:
       - task: fmt
       - task: lint
-      - task: test
+      - task: coverage
       - task: build
+      - task: deny
+      - task: lint:actions
+      - task: secrets
 
   fix:
     desc: Apply formatting
