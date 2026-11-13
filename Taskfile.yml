@@ -35,6 +35,12 @@ tasks:
     desc: HTML coverage report in target/llvm-cov/html
     cmd: cargo llvm-cov --locked --html --ignore-filename-regex '{{.COVERAGE_IGNORE}}'
 
+  limits:
+    desc: The resource-limit tests under a 512 MiB address-space limit (a regression fails instead of swapping)
+    cmds:
+      - cargo test --locked --test limits --no-run --message-format=json | jq -r 'select(.executable != null and .target.name == "limits").executable' > target/limits-binary.txt
+      - prlimit --as=536870912 -- "$(cat target/limits-binary.txt)" --test-threads=1
+
   build:
     desc: Release build of the CLI
     cmd: cargo build --locked --release
@@ -86,6 +92,7 @@ tasks:
       - task: fmt
       - task: lint
       - task: coverage
+      - task: limits
       - task: build
       - task: deny
       - task: lint:actions

@@ -40,7 +40,11 @@ jobs:
         run: cargo install --locked cargo-mutants@27.1.0
 
       - name: Mutate src/condition.rs
-        run: cargo mutants --file src/condition.rs --jobs 2 --timeout-multiplier 3 --output mutants-out
+        # A mutant can turn a loop into one that never advances and allocates without end: each mutant gets a
+        # short timeout and the run an address-space limit, so the runner is not taken down with it.
+        run: |
+          ulimit -v 6291456
+          cargo mutants --file src/condition.rs --jobs 1 --timeout 60 --output mutants-out -- --lib --test prop_condition
 
       - name: Upload the report
         if: ${{ !cancelled() }}

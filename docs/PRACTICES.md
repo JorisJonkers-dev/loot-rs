@@ -13,6 +13,7 @@ baseline, adapted to a Linux-first Rust library and CLI (no Windows build, no up
 | Licences, bans, sources, advisories | `deny.toml`, `task deny`, `advisories.yml` | Daily advisory run against the unchanged lockfile |
 | Secret scanning | `.gitleaks.toml`, `task secrets` | Every commit, in CI and locally |
 | Workflow lint and security | `actionlint`, `zizmor` (`task lint:actions`) | |
+| Resource limits | `docs/RESOURCE-LIMITS.md`, `tests/limits.rs`, `task limits` | Bounds in the library on every input size; CI runs the bounded tests under `prlimit --as` |
 | Fuzzing | `fuzz/`, `.github/workflows/fuzz.yml` | Weekly, four parsers; needs `cargo +nightly` |
 | Mutation testing | `.github/workflows/mutants.yml` | Weekly, condition evaluator; not required |
 | Real masterlist | `.github/workflows/masterlist.yml`, `tests/real_masterlist.rs` | Weekly; the data is downloaded into the runner's temporary directory, never committed |
