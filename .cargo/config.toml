@@ -3,6 +3,5 @@
 [registry]
 global-min-publish-age = "7 days"
 
-# On NixOS, link with the system linker (run builds inside `nix shell nixpkgs#gcc`).
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-Clink-self-contained=-linker"]
+# On NixOS the bundled linker wrapper may be broken: build inside `nix shell nixpkgs#gcc` with
+# RUSTFLAGS="-Clink-self-contained=-linker" (kept out of this file so CI runners are unaffected).
