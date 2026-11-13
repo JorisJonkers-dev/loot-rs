@@ -11,9 +11,17 @@
 //! Only the English text of a message is kept. `subs` are substituted into `{0}`, `{1}`, ...
 
 use regex::{Regex, RegexBuilder};
+use std::collections::HashMap;
 use std::fmt;
+use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
+use yaml_rust2::scanner::Marker;
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlLoader};
+
+/// Most nodes a masterlist may expand to once aliases are resolved. A file of a few hundred KiB, like the
+/// real masterlist, expands to well under a million; this stops "billion laughs" documents, whose aliases
+/// multiply on every level, before the loader clones them.
+pub const MAX_EXPANDED_NODES: usize = 4_000_000;
 
 /// Name of the group every plugin is in unless the metadata says otherwise.
 pub const DEFAULT_GROUP: &str = "default";
@@ -187,6 +195,81 @@ pub struct Metadata {
     pub plugins: Vec<PluginEntry>,
     /// Entries that could not be used (for example a regex this engine cannot compile).
     pub warnings: Vec<String>,
+}
+
+/// Counts the nodes of the document with every alias counted as the node it stands for.
+#[derive(Default)]
+struct ExpansionCounter {
+    /// Nodes counted so far in each open collection.
+    open: Vec<(usize, usize)>,
+    /// Expanded size of each anchored node.
+    anchors: HashMap<usize, usize>,
+    total: usize,
+    exceeded: bool,
+}
+
+impl ExpansionCounter {
+    fn add(&mut self, size: usize) {
+        self.total = self.total.saturating_add(size);
+        if let Some(top) = self.open.last_mut() {
+            top.1 = top.1.saturating_add(size);
+        }
+        self.exceeded |= self.total > MAX_EXPANDED_NODES;
+    }
+
+    fn close(&mut self) {
+        if let Some((anchor, size)) = self.open.pop() {
+            if anchor != 0 {
+                self.anchors.insert(anchor, size);
+            }
+            if let Some(parent) = self.open.last_mut() {
+                parent.1 = parent.1.saturating_add(size);
+            }
+        }
+    }
+}
+
+impl MarkedEventReceiver for ExpansionCounter {
+    fn on_event(&mut self, event: Event, _mark: Marker) {
+        match event {
+            Event::Scalar(_, _, anchor, _) => {
+                self.add(1);
+                if anchor != 0 {
+                    self.anchors.insert(anchor, 1);
+                }
+            }
+            Event::Alias(anchor) => {
+                // The aliased node was counted where it was defined; every use counts it again.
+                let size = self.anchors.get(&anchor).copied().unwrap_or(1);
+                self.total = self.total.saturating_add(size);
+                if let Some(top) = self.open.last_mut() {
+                    top.1 = top.1.saturating_add(size);
+                }
+                self.exceeded |= self.total > MAX_EXPANDED_NODES;
+            }
+            Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
+                self.total = self.total.saturating_add(1);
+                self.open.push((anchor, 1));
+            }
+            Event::SequenceEnd | Event::MappingEnd => self.close(),
+            _ => {}
+        }
+    }
+}
+
+/// Refuse a document whose aliases expand to more than [`MAX_EXPANDED_NODES`] nodes.
+fn check_expansion(text: &str) -> Result<(), MetadataError> {
+    let mut counter = ExpansionCounter::default();
+    let mut parser = Parser::new_from_str(text);
+    parser
+        .load(&mut counter, true)
+        .map_err(|error| MetadataError(format!("YAML: {error}")))?;
+    if counter.exceeded {
+        return Err(MetadataError(format!(
+            "YAML: the aliases expand to more than {MAX_EXPANDED_NODES} nodes"
+        )));
+    }
+    Ok(())
 }
 
 /// Expand YAML merge keys (`<<: *alias` or `<<: [*a, *b]`) in `node` and everything below it.
@@ -393,6 +476,7 @@ fn merge_group(groups: &mut Vec<Group>, incoming: Group) {
 /// expression that cannot be compiled does not fail the file: the entry is skipped and a
 /// warning is recorded in [`Metadata::warnings`].
 pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
+    check_expansion(text)?;
     let documents =
         YamlLoader::load_from_str(text).map_err(|error| MetadataError(format!("YAML: {error}")))?;
     let mut metadata = Metadata::default();
