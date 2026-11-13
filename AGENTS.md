@@ -5,7 +5,7 @@ Guidance for any coding agent working in this repository.
 - Agent contract: [CLAUDE.md](CLAUDE.md)
 - Estate conventions: https://github.com/JorisJonkers-dev/workspace/blob/main/CLAUDE.md
 
-This repository is `loot-fnv`: a read-only evaluator of LOOT masterlist rules over a Fallout: New Vegas load
+This repository is `loot-rs`: a read-only evaluator of LOOT masterlist rules over a Fallout: New Vegas load
 order (see [README.md](README.md)).
 
 ## Build and test

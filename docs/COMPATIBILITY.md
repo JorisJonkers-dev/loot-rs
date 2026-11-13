@@ -2,7 +2,7 @@
 
 Status of every LOOT metadata and condition feature in this tool: **supported**, **partial** or **unsupported**.
 Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings). "Check" means the read-only
-`loot-fnv check`; nothing here sorts.
+`loot-rs check`; nothing here sorts.
 
 ## Metadata file
 

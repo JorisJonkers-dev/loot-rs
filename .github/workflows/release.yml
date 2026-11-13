@@ -48,4 +48,4 @@ jobs:
       contents: read
     steps:
       # The GitHub Release is the artifact; the crate is not published to a registry.
-      - run: echo 'Released loot-fnv at ${{ needs.release-please.outputs.tag_name }}'
+      - run: echo 'Released loot-rs at ${{ needs.release-please.outputs.tag_name }}'
