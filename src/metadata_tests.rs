@@ -158,3 +158,226 @@ fn empty_and_non_map_files() {
     assert!(parse("- a\n- b\n").is_err());
     assert!(parse("a: [unclosed").is_err());
 }
+
+#[test]
+fn message_kinds_have_their_keywords() {
+    assert_eq!(MessageKind::Say.as_str(), "say");
+    assert_eq!(MessageKind::Warn.as_str(), "warn");
+    assert_eq!(MessageKind::Error.as_str(), "error");
+}
+
+#[test]
+fn file_labels_prefer_the_display_text() {
+    let metadata = sample();
+    let required = &metadata.plugins[0].req[0];
+    assert_eq!(required.label(), "[D](http://x)");
+    assert_eq!(required.name, "D.esp");
+    assert_eq!(metadata.plugins[0].inc[0].label(), "E.esp");
+}
+
+#[test]
+fn regex_detection_and_compilation() {
+    for text in ["a:b", "a\\.esp", "a*", "a?", "a|b"] {
+        assert!(looks_like_regex(text), "{text}");
+    }
+    assert!(!looks_like_regex("Plain Name (1).esp"));
+    let regex = compile_whole_name("Cat.*\\.esp").expect("compiles");
+    assert!(regex.is_match("CATS.ESP"));
+    assert!(!regex.is_match("Cats.espx"));
+    assert!(compile_whole_name("(?=x)").is_err());
+    assert!(compile_whole_name("(").is_err());
+}
+
+#[test]
+fn name_patterns_expose_their_text_and_match_exact_names_case_insensitively() {
+    let exact = NamePattern::Exact("A.esp".into());
+    assert!(exact.matches("a.ESP"));
+    assert!(!exact.matches("A.esp.bak"));
+    assert_eq!(exact.text(), "A.esp");
+    let regex = NamePattern::Regex(compile_whole_name("A.*").expect("compiles"));
+    assert_eq!(regex.text(), "^(?:A.*)$");
+}
+
+#[test]
+fn scalars_of_any_type_are_text() {
+    let metadata = parse(
+        "globals:\n  - type: say\n    content: 42\n  - type: say\n    content: true\n  - type: say\n    content: 1.5\n",
+    )
+    .expect("parses");
+    let texts: Vec<&str> = metadata
+        .globals
+        .iter()
+        .map(|m| m.content.as_str())
+        .collect();
+    assert_eq!(texts, ["42", "true", "1.5"]);
+}
+
+#[test]
+fn content_without_english_falls_back_to_the_first_translation() {
+    let text = "globals:\n  - type: say\n    content:\n      - lang: fr\n        text: Bonjour\n      - lang: de\n        text: Hallo\n  - type: say\n    content:\n      - lang: en_GB\n        text: Hello\n";
+    let metadata = parse(text).expect("parses");
+    assert_eq!(metadata.globals[0].content, "Bonjour");
+    assert_eq!(metadata.globals[1].content, "Hello");
+}
+
+#[test]
+fn a_message_without_content_or_with_empty_content_list_is_an_error() {
+    assert!(parse("globals:\n  - type: say\n").is_err());
+    assert!(parse("globals:\n  - type: say\n    content: []\n").is_err());
+    assert!(parse("globals:\n  - content: x\n").is_err());
+}
+
+#[test]
+fn substitutions_replace_numbered_placeholders_and_ignore_missing_ones() {
+    let text =
+        "globals:\n  - type: say\n    content: '{1} before {0}, {2} stays'\n    subs: [one, 2]\n";
+    let metadata = parse(text).expect("parses");
+    assert_eq!(metadata.globals[0].content, "2 before one, {2} stays");
+}
+
+#[test]
+fn entries_without_a_required_name_are_errors() {
+    assert!(parse("plugins:\n  - req: [{display: x}]\n    name: A.esp\n").is_err());
+    assert!(parse("plugins:\n  - name: A.esp\n    tag: [{condition: 'file(\"x\")'}]\n").is_err());
+    assert!(parse("groups:\n  - description: nameless\n").is_err());
+}
+
+#[test]
+fn tags_files_and_cleaning_data_are_read() {
+    let text = r#"
+plugins:
+  - name: A.esp
+    req:
+      - name: B.esp
+        condition: 'file("c")'
+        constraint: 'active("d")'
+        detail:
+          - lang: en
+            text: 'details'
+    tag: ['Relev', '-Delev']
+    dirty:
+      - crc: 0xDEADBEEF
+        util: 'FNVEdit'
+        itm: 2
+        udr: 3
+        nav: 4
+      - crc: -5
+        itm: -1
+    clean:
+      - crc: 7
+"#;
+    let metadata = parse(text).expect("parses");
+    let entry = &metadata.plugins[0];
+    assert_eq!(entry.req[0].condition.as_deref(), Some("file(\"c\")"));
+    assert_eq!(entry.req[0].constraint.as_deref(), Some("active(\"d\")"));
+    assert_eq!(entry.req[0].detail.as_deref(), Some("details"));
+    assert_eq!(entry.tag[1].name, "-Delev");
+    let dirty = &entry.dirty[0];
+    assert_eq!(
+        (dirty.crc, dirty.itm, dirty.udr, dirty.nav),
+        (Some(0xDEAD_BEEF), 2, 3, 4)
+    );
+    assert_eq!(dirty.util, "FNVEdit");
+    assert_eq!(entry.dirty[1].crc, None, "a negative CRC is dropped");
+    assert_eq!(entry.dirty[1].itm, 0, "a negative count is dropped");
+    assert_eq!(entry.clean[0].crc, Some(7));
+}
+
+#[test]
+fn bash_tags_and_unknown_keys() {
+    let metadata =
+        parse("bash_tags: [Relev, Delev]\nurl: x\nplugins:\n  - name: A.esp\n    url: [x]\n    unknown: 1\n")
+            .expect("parses");
+    assert_eq!(metadata.bash_tags, ["Relev", "Delev"]);
+    assert_eq!(metadata.plugins.len(), 1);
+}
+
+#[test]
+fn only_the_first_document_is_read() {
+    let metadata =
+        parse("plugins:\n  - name: A.esp\n---\nplugins:\n  - name: B.esp\n").expect("parses");
+    assert_eq!(metadata.plugins.len(), 1);
+}
+
+#[test]
+fn group_after_lists_are_a_union_and_the_default_group_comes_first() {
+    let metadata = parse(
+        "groups:\n  - name: G\n    after: [a]\n  - name: G\n    after: [a, b]\n  - name: default\n    description: 'the default'\n",
+    )
+    .expect("parses");
+    assert_eq!(metadata.groups[0].name, "default");
+    assert_eq!(metadata.groups[0].description, "the default");
+    let group = metadata.groups.iter().find(|g| g.name == "G").expect("G");
+    assert_eq!(group.after, ["a", "b"]);
+}
+
+#[test]
+fn merge_keys_work_in_nested_maps_and_with_chained_merges() {
+    let text = r#"
+prelude:
+  - &inner
+    condition: 'file("i")'
+  - &outer
+    <<: *inner
+    type: say
+globals:
+  - <<: *outer
+    content: chained
+"#;
+    let metadata = parse(text).expect("parses");
+    assert_eq!(
+        metadata.globals[0].condition.as_deref(),
+        Some("file(\"i\")")
+    );
+    assert_eq!(metadata.globals[0].kind, MessageKind::Say);
+}
+
+#[test]
+fn a_merge_of_something_that_is_not_a_map_is_ignored() {
+    let text = "globals:\n  - <<: 5\n    type: say\n    content: ok\n  - <<: [1, 2]\n    type: say\n    content: ok too\n";
+    assert_eq!(parse(text).expect("parses").globals.len(), 2);
+}
+
+#[test]
+fn deeply_nested_yaml_is_an_error_or_a_value_never_a_crash() {
+    let hostile = format!("a: {}{}", "[".repeat(10_000), "]".repeat(10_000));
+    let handle = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || parse(&hostile).is_ok())
+        .expect("spawn");
+    handle.join().expect("no panic and no stack overflow");
+}
+
+fn laughs(levels: usize) -> String {
+    use std::fmt::Write;
+    let mut text =
+        String::from("prelude:\n  - &a0 [lol, lol, lol, lol, lol, lol, lol, lol, lol, lol]\n");
+    for level in 1..=levels {
+        let previous = format!("*a{}", level - 1);
+        let _ = writeln!(text, "  - &a{level} [{}]", vec![previous; 10].join(", "));
+    }
+    text + "globals: []\n"
+}
+
+#[test]
+fn aliases_that_multiply_on_every_level_are_refused_before_they_are_expanded() {
+    let started = std::time::Instant::now();
+    let error = parse(&laughs(12)).expect_err("a billion laughs document");
+    assert!(error.0.contains("expand to more than"), "{error}");
+    assert!(started.elapsed().as_secs() < 5, "refused quickly");
+}
+
+#[test]
+fn moderate_alias_use_is_accepted() {
+    assert!(parse(&laughs(4)).is_ok());
+}
+
+#[test]
+fn the_expansion_check_reports_yaml_errors_like_the_loader() {
+    assert!(
+        parse("a: [unclosed")
+            .expect_err("fails")
+            .0
+            .starts_with("YAML: ")
+    );
+}

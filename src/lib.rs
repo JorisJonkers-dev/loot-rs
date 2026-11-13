@@ -15,3 +15,6 @@ pub mod env;
 pub mod metadata;
 pub mod plugin;
 pub mod render;
+
+#[cfg(test)]
+mod support_tests;

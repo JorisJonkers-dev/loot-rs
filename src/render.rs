@@ -117,3 +117,7 @@ pub fn render(report: &Report) -> String {
     );
     out
 }
+
+#[cfg(test)]
+#[path = "render_tests.rs"]
+mod tests;

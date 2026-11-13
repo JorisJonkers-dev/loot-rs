@@ -461,3 +461,7 @@ fn load_after(wanted: &str, found: &str, verb: &str) -> Finding {
         hard: true,
     }
 }
+
+#[cfg(test)]
+#[path = "check_tests.rs"]
+mod tests;

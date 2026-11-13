@@ -112,3 +112,7 @@ pub fn main_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u
         EXIT_ERROR
     })
 }
+
+#[cfg(test)]
+#[path = "cli_tests.rs"]
+mod tests;

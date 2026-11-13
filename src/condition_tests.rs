@@ -153,3 +153,209 @@ fn syntax_errors() {
 fn blank_condition_is_true() {
     assert_eq!(eval("  "), Ok(true));
 }
+
+#[test]
+fn display_prints_the_canonical_text_and_parses_back() {
+    let text = r#"file("a.esp") and (not active("b.esp") or checksum("c.esp", DEADBEEF))"#;
+    let expr = parse(text).expect("parses");
+    assert_eq!(
+        expr.to_string(),
+        r#"file("a.esp") and ((not active("b.esp")) or checksum("c.esp", DEADBEEF))"#
+    );
+    assert_eq!(parse(&expr.to_string()), Ok(expr));
+    let loose = parse(r#"file("a") or file("b") and not file("c")"#).expect("parses");
+    assert_eq!(
+        loose.to_string(),
+        r#"file("a") or (file("b") and (not file("c")))"#
+    );
+}
+
+#[test]
+fn display_of_calls_and_arguments() {
+    assert_eq!(parse("file()").map(|e| e.to_string()), Ok("file()".into()));
+    assert_eq!(
+        parse(r#"file_size("a.esp", 10)"#)
+            .expect("parses")
+            .to_string(),
+        r#"file_size("a.esp", 10)"#
+    );
+    assert_eq!(Arg::Str("x y".into()).to_string(), "\"x y\"");
+    assert_eq!(Arg::Word(">=".into()).to_string(), ">=");
+    assert_eq!(
+        Expr::Call("is_executable".into(), vec![]).to_string(),
+        "is_executable()"
+    );
+}
+
+#[test]
+fn nesting_is_limited() {
+    let ok = format!(
+        "{}file(\"a.esp\"){}",
+        "(".repeat(MAX_NESTING - 1),
+        ")".repeat(MAX_NESTING - 1)
+    );
+    assert_eq!(eval(&ok), Ok(true));
+    let too_deep = format!(
+        "{}file(\"a.esp\"){}",
+        "(".repeat(MAX_NESTING + 1),
+        ")".repeat(MAX_NESTING + 1)
+    );
+    assert!(
+        matches!(eval(&too_deep), Err(ConditionError::Syntax(text)) if text.contains("nested"))
+    );
+    let nots = format!("{}file(\"a.esp\")", "not ".repeat(MAX_NESTING + 1));
+    assert!(matches!(eval(&nots), Err(ConditionError::Syntax(_))));
+}
+
+#[test]
+fn the_number_of_operators_is_limited() {
+    let chain = |count: usize| vec![r#"file("a.esp")"#; count].join(" and ");
+    assert_eq!(eval(&chain(MAX_NODES / 2 - 10)), Ok(true));
+    let error = eval(&chain(MAX_NODES + 10)).expect_err("too long");
+    assert!(
+        matches!(&error, ConditionError::Syntax(text) if text.contains("more than")),
+        "{error}"
+    );
+}
+
+#[test]
+fn a_very_long_chain_is_refused_and_dropped_without_overflowing_the_stack() {
+    let hostile = vec!["not file(\"a\")"; 100_000].join(" or ");
+    assert!(parse(&hostile).is_err());
+}
+
+#[test]
+fn errors_read_as_sentences() {
+    assert_eq!(
+        ConditionError::Syntax("x".into()).to_string(),
+        "invalid condition: x"
+    );
+    assert_eq!(
+        ConditionError::Unsupported("version".into()).to_string(),
+        "unsupported condition function version()"
+    );
+    assert_eq!(
+        ConditionError::Environment("boom".into()).to_string(),
+        "cannot evaluate condition: boom"
+    );
+}
+
+#[test]
+fn argument_kinds_and_counts_are_checked() {
+    for text in [
+        r"file(abc)",
+        r#"file("a", "b")"#,
+        r#"file_size("a")"#,
+        r#"file_size("a", "10")"#,
+        r#"file_size("a", ten)"#,
+        r"file_size(10, 10)",
+        r#"checksum("a")"#,
+        r#"checksum("a", "DEADBEEF")"#,
+        r#"is_master("a", 1)"#,
+        r#"file("a",)"#,
+        r#"file("a" "b")"#,
+    ] {
+        assert!(
+            matches!(eval(text), Err(ConditionError::Syntax(_))),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn text_that_is_not_a_condition_is_a_syntax_error() {
+    for text in [
+        "(",
+        ")",
+        "()",
+        "not",
+        "and",
+        r#"file("a") or"#,
+        r#"file("a") @"#,
+        r#"file("a")) "#,
+        r#""just a string""#,
+        "file(\"a\") and and file(\"b\")",
+        "\"unterminated",
+    ] {
+        assert!(
+            matches!(parse(text), Err(ConditionError::Syntax(_))),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn and_or_follow_three_valued_logic_over_errors() {
+    let unsupported = r#"version("a.esp", ==, "1")"#;
+    let cases = [
+        (format!("file(\"zz\") and {unsupported}"), Ok(false)),
+        (format!("{unsupported} and file(\"zz\")"), Ok(false)),
+        (format!("file(\"a.esp\") or {unsupported}"), Ok(true)),
+        (format!("{unsupported} or file(\"a.esp\")"), Ok(true)),
+    ];
+    for (text, expected) in cases {
+        assert_eq!(eval(&text), expected, "{text}");
+    }
+    for text in [
+        format!("file(\"a.esp\") and {unsupported}"),
+        format!("file(\"zz\") or {unsupported}"),
+    ] {
+        assert!(
+            matches!(eval(&text), Err(ConditionError::Unsupported(name)) if name == "version"),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn every_unsupported_function_name_is_listed_and_unknown_ones_are_not() {
+    for name in UNSUPPORTED_FUNCTIONS {
+        assert_eq!(
+            eval(&format!("{name}()")),
+            Err(ConditionError::Unsupported(name.to_string()))
+        );
+    }
+    assert_eq!(UNSUPPORTED_FUNCTIONS.len(), 5);
+    assert!(matches!(eval("versions()"), Err(ConditionError::Syntax(_))));
+}
+
+#[test]
+fn environment_errors_are_passed_on() {
+    struct Broken;
+    impl Env for Broken {
+        fn count_files(&self, _: &str) -> Result<usize, ConditionError> {
+            Err(ConditionError::Environment("no".into()))
+        }
+        fn count_active(&self, _: &str) -> Result<usize, ConditionError> {
+            Err(ConditionError::Environment("no".into()))
+        }
+        fn file_size(&self, _: &str) -> Option<u64> {
+            None
+        }
+        fn readable(&self, _: &str) -> bool {
+            false
+        }
+        fn is_master(&self, _: &str) -> bool {
+            false
+        }
+        fn checksum(&self, _: &str) -> Option<u32> {
+            None
+        }
+    }
+    for text in [
+        r#"file("a")"#,
+        r#"many("a")"#,
+        r#"active("a")"#,
+        r#"many_active("a")"#,
+    ] {
+        assert_eq!(
+            eval_str(text, &Broken),
+            Err(ConditionError::Environment("no".into())),
+            "{text}"
+        );
+    }
+    assert_eq!(
+        eval_str(r#"readable("a") or not file_size("a", 1)"#, &Broken),
+        Ok(true)
+    );
+}
