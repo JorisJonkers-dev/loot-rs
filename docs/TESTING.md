@@ -21,6 +21,7 @@ On NixOS run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld nixpkgs#cargo-llvm-
 | Golden | `tests/golden.rs`, `tests/golden/<case>/` | 22 cases (5 also in JSON) | The binary's output and exit code on synthetic game directories, one case per rule kind |
 | Binary, end to end | `tests/cli.rs` | 15 | Whole runs on generated plugins, including that nothing is written |
 | Binary, errors | `tests/cli_errors.rs` | 25 | Exit code 2 and its messages: arguments, bad or unreadable masterlist, plugin list, Data directory, unreadable plugins |
+| Executable versions (feature) | `src/exe_version_tests.rs`, `tests/limits_exe.rs` | 15 + 1 | `version()` and `product_version()` on synthetic PE images built in the test (no game files): both argument orders, LOOT's comparison, case-insensitive paths, missing and non-PE files, plugins still unsupported, hostile sizes, every truncation and byte flip. `task test:features` runs them; CI does too |
 | Resource limits | `tests/limits.rs` | 1 (11 hostile inputs) | Every size that comes from the input is bounded; see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md). CI runs it under a 512 MiB address-space limit |
 | Real data (ignored) | `tests/real_masterlist.rs` | 2 | The real falloutnv masterlist; run weekly, see below |
 | Fuzz | `fuzz/` | 4 targets | Every parser, with libFuzzer (weekly) |
@@ -136,6 +137,12 @@ Two limits the tests found while being written, both fixed: a condition with a v
 overflowed the stack when parsed, evaluated or dropped (now limited to 64 levels of nesting and 2000 operators and
 calls), and a YAML document whose aliases multiply on every level expanded to billions of nodes before it was read
 (now refused above 200,000 nodes; the real masterlist has 19,816).
+
+## Optional features
+
+`executable-versions` is off by default; `task test:features` runs everything with it (clippy runs both ways, `task lint`).
+Tests that assert the default behaviour (an unsupported `version()` on a missing executable) are compiled out with the
+feature, the executable tests only exist with it.
 
 ## Mutation testing
 

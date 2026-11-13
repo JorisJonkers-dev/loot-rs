@@ -24,10 +24,11 @@ Which version each licence was read from is the default branch at the time of re
   allowed with attribution and the licence kept.
 * **esplugin, libloadorder**: nothing. The plugin header reader is `src/plugin.rs`, which comes from
   fnvorder (MIT OR Apache-2.0), see `NOTICE.md`.
-* **loot-condition-interpreter**: nothing. Its MIT licence would allow using it as a dependency or reading
-  it; it was not used because the first slice evaluates a deliberately small function set against a
-  Linux directory, and the crate's own file-system layer is aimed at LOOT's use. See the README's open
-  questions.
+* **loot-condition-interpreter** (6.0.0): a dependency, but only behind the cargo feature
+  `executable-versions`, for `version()` and `product_version()` on executables and DLLs (PE version resources
+  and LOOT's version comparison). The default build does not contain it. The crate is MIT; its dependency
+  `esplugin` is GPL-3.0 (see above), which `deny.toml` allows because this project is GPL-3.0. The other
+  functions are still evaluated by `src/condition.rs`.
 * **Masterlist data**: nothing is copied into this repository. The tool reads a masterlist from a path
   the user gives. Tests use small YAML written inside the tests. CC0 would permit copying, but the
   masterlist is large, changes daily and may carry third-party text, so it stays out of the tree.
