@@ -15,6 +15,7 @@ baseline, adapted to a Linux-first Rust library and CLI (no Windows build, no up
 | Workflow lint and security | `actionlint`, `zizmor` (`task lint:actions`) | |
 | Fuzzing | `fuzz/`, `.github/workflows/fuzz.yml` | Weekly, four parsers; needs `cargo +nightly` |
 | Mutation testing | `.github/workflows/mutants.yml` | Weekly, condition evaluator; not required |
+| Real masterlist | `.github/workflows/masterlist.yml`, `tests/real_masterlist.rs` | Weekly; the data is downloaded into the runner's temporary directory, never committed |
 | Conventional Commits | `pr-title` job, `scripts/hooks/commit-msg` | The pull request title is the squash commit, so it is what release-please reads |
 | Releases | `release-please-config.json`, `.release-please-manifest.json`, `release.yml` | `release-type: rust`, see below. No crates.io publication |
 | Dependency cooldown | `.cargo/config.toml`, `renovate.json` | Cargo ignores versions younger than 7 days from 1.100 on (1.99 warns that it ignores the setting); Renovate has the estate preset's `minimumReleaseAge`. The registry proxy refuses younger versions |

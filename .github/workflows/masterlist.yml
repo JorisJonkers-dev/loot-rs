@@ -1,0 +1,68 @@
+# Weekly: fetch the current LOOT masterlist for Fallout: New Vegas and run the ignored real-data tests on it.
+# The masterlist is community data (CC0-1.0, https://github.com/loot/falloutnv); it is downloaded into the runner's
+# temporary directory and never committed. Not required: a failure means LOOT changed something the reader
+# does not handle.
+name: Masterlist
+
+on:
+  schedule:
+    # Weekly, Wednesday 04:00 UTC.
+    - cron: "0 4 * * 3"
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: Branch of loot/falloutnv that holds the masterlist (the metadata syntax version)
+        default: v0.29
+        required: false
+        type: string
+
+concurrency:
+  group: masterlist-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  real-masterlist:
+    name: Real masterlist
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
+        with:
+          cache: true
+
+      # Routes cargo through the packages proxy.
+      - name: Set up the packages proxy
+        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+
+      - name: Fetch the masterlist
+        env:
+          BRANCH: ${{ inputs.branch || 'v0.29' }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --output "$RUNNER_TEMP/masterlist.yaml" \
+            "https://raw.githubusercontent.com/loot/falloutnv/${BRANCH}/masterlist.yaml"
+          wc -c "$RUNNER_TEMP/masterlist.yaml"
+
+      - name: Run the real-masterlist tests
+        run: |
+          export LOOT_RS_MASTERLIST="$RUNNER_TEMP/masterlist.yaml"
+          mise exec -- cargo test --locked --release --test real_masterlist -- --ignored --nocapture | tee "$RUNNER_TEMP/real.txt"
+          {
+            echo '### Real masterlist'
+            echo
+            echo '```'
+            grep -E '^(entries|conditions|unsupported|unknown|plugins|budget|hard)' "$RUNNER_TEMP/real.txt" || true
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
