@@ -1,0 +1,35 @@
+# One command per loop. `task` lists targets; `task check` is what CI runs.
+version: "3"
+
+tasks:
+  default:
+    cmd: task --list
+    silent: true
+
+  fmt:
+    desc: Fail if any file is not rustfmt formatted
+    cmd: cargo fmt --check
+
+  lint:
+    desc: clippy with warnings as errors
+    cmd: cargo clippy --all-targets -- -D warnings
+
+  test:
+    desc: Unit and integration tests
+    cmd: cargo test
+
+  build:
+    desc: Release build of the CLI
+    cmd: cargo build --release
+
+  check:
+    desc: Everything CI runs on a pull request
+    cmds:
+      - task: fmt
+      - task: lint
+      - task: test
+      - task: build
+
+  fix:
+    desc: Apply formatting
+    cmd: cargo fmt

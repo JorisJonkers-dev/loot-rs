@@ -1,0 +1,344 @@
+// SPDX-License-Identifier: MIT
+//
+// Copied from `tools/fnvorder/src/plugin.rs` in JorisJonkers-dev/NV-Linux-Modding
+// (fnvorder, licensed MIT OR Apache-2.0; the MIT option is taken here), written from the
+// public plugin file-format description with no LOOT code. Copyright (c) the fnvorder authors.
+// This file stays a separate module under the MIT terms (see NOTICE.md); the rest of this
+// crate is GPL-3.0-only. Do not edit it here without noting the change in NOTICE.md.
+//
+//! Reader for the `TES4` header record at the start of a Fallout 3 / New Vegas plugin.
+//!
+//! Layout (little endian), written from the public file-format description and checked
+//! only against synthetic files built in the tests:
+//!
+//! ```text
+//! record header, 24 bytes: "TES4", data size u32, flags u32, form id u32,
+//!                          version-control u32, form version u16, unknown u16
+//! then subrecords inside the data size: type[4], size u16, payload
+//!   HEDR 12 bytes  float version, u32 record count, u32 next object id
+//!   CNAM zstring   author        SNAM zstring description
+//!   MAST zstring   one per master, each followed by a DATA u64 (ignored)
+//! ```
+//!
+//! A `XXXX` subrecord carries the real size (u32) of the subrecord that follows it; it is
+//! handled so an oversized description cannot derail the master list.
+
+use std::fmt;
+use std::fs::File;
+use std::io::{self, Read};
+use std::path::Path;
+
+/// Bytes in a record header of this game generation.
+pub const RECORD_HEADER_SIZE: usize = 24;
+
+/// Header data larger than this is refused instead of read (real headers are a few KiB).
+pub const MAX_HEADER_DATA: usize = 16 * 1024 * 1024;
+
+/// Record flag: the plugin is a master (ESM).
+pub const FLAG_ESM: u32 = 0x1;
+/// Record flag: localized strings (Skyrim and later; not used by New Vegas).
+pub const FLAG_LOCALIZED: u32 = 0x80;
+/// Record flag: light master (ESL). New Vegas has no light plugins; it is read for completeness.
+pub const FLAG_ESL: u32 = 0x200;
+
+/// What can be wrong with a plugin header.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PluginError {
+    /// Fewer bytes than a record header.
+    TooShort,
+    /// The first record is not `TES4`.
+    BadMagic([u8; 4]),
+    /// The declared data size runs past the end of the input or past [`MAX_HEADER_DATA`].
+    Truncated,
+}
+
+impl fmt::Display for PluginError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TooShort => write!(f, "file is shorter than a record header"),
+            Self::BadMagic(magic) => write!(
+                f,
+                "first record is {:?}, expected \"TES4\"",
+                String::from_utf8_lossy(magic)
+            ),
+            Self::Truncated => write!(f, "header record data is truncated or implausibly large"),
+        }
+    }
+}
+
+impl std::error::Error for PluginError {}
+
+/// The parts of a plugin header the load order needs.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PluginHeader {
+    /// Record flags.
+    pub flags: u32,
+    /// Form version from the record header (the version-control info is not kept).
+    pub form_version: u16,
+    /// `HEDR` version float, if the subrecord was present.
+    pub version: Option<f32>,
+    /// `HEDR` record count.
+    pub record_count: Option<u32>,
+    /// Author (`CNAM`).
+    pub author: Option<String>,
+    /// Description (`SNAM`).
+    pub description: Option<String>,
+    /// Master file names in the order the plugin lists them.
+    pub masters: Vec<String>,
+}
+
+impl PluginHeader {
+    /// True when the ESM flag is set.
+    #[must_use]
+    pub const fn is_master(&self) -> bool {
+        self.flags & FLAG_ESM != 0
+    }
+
+    /// True when the ESL flag is set.
+    #[must_use]
+    pub const fn is_light(&self) -> bool {
+        self.flags & FLAG_ESL != 0
+    }
+}
+
+fn u32_at(data: &[u8], at: usize) -> Option<u32> {
+    let bytes = data.get(at..at.checked_add(4)?)?;
+    Some(u32::from_le_bytes(bytes.try_into().ok()?))
+}
+
+fn u16_at(data: &[u8], at: usize) -> Option<u16> {
+    let bytes = data.get(at..at.checked_add(2)?)?;
+    Some(u16::from_le_bytes(bytes.try_into().ok()?))
+}
+
+/// Decode a zero-terminated string; bytes above 0x7f map to the same code point (exact for
+/// Latin-1, close enough for file names).
+fn zstring(payload: &[u8]) -> String {
+    let end = payload
+        .iter()
+        .position(|&byte| byte == 0)
+        .unwrap_or(payload.len());
+    payload[..end]
+        .iter()
+        .map(|&byte| char::from(byte))
+        .collect()
+}
+
+/// Number of header-data bytes announced by the first 24 bytes of a plugin.
+///
+/// # Errors
+/// Returns [`PluginError`] when the bytes are not a `TES4` record header or the size is
+/// implausible.
+pub fn header_data_size(record_header: &[u8]) -> Result<usize, PluginError> {
+    if record_header.len() < RECORD_HEADER_SIZE {
+        return Err(PluginError::TooShort);
+    }
+    let magic: [u8; 4] = [
+        record_header[0],
+        record_header[1],
+        record_header[2],
+        record_header[3],
+    ];
+    if &magic != b"TES4" {
+        return Err(PluginError::BadMagic(magic));
+    }
+    let size = u32_at(record_header, 4).ok_or(PluginError::TooShort)?;
+    let size = usize::try_from(size).map_err(|_| PluginError::Truncated)?;
+    if size > MAX_HEADER_DATA {
+        return Err(PluginError::Truncated);
+    }
+    Ok(size)
+}
+
+/// Parse the header from the start of a plugin file's bytes.
+///
+/// Subrecords that run past the header data end the walk; whatever was read before is kept.
+///
+/// # Errors
+/// Returns [`PluginError`] when the bytes do not start with a complete `TES4` record.
+pub fn parse_header(bytes: &[u8]) -> Result<PluginHeader, PluginError> {
+    let size = header_data_size(bytes)?;
+    let data = bytes
+        .get(RECORD_HEADER_SIZE..RECORD_HEADER_SIZE + size)
+        .ok_or(PluginError::Truncated)?;
+    let mut header = PluginHeader {
+        flags: u32_at(bytes, 8).ok_or(PluginError::TooShort)?,
+        form_version: u16_at(bytes, 20).ok_or(PluginError::TooShort)?,
+        version: None,
+        record_count: None,
+        author: None,
+        description: None,
+        masters: Vec::new(),
+    };
+
+    let mut at = 0usize;
+    let mut pending_size: Option<usize> = None;
+    while let (Some(kind), Some(declared)) = (data.get(at..at + 4), u16_at(data, at + 4)) {
+        let length = pending_size.take().unwrap_or_else(|| usize::from(declared));
+        let start = at + 6;
+        let Some(payload) = data.get(start..start + length) else {
+            break;
+        };
+        match kind {
+            b"XXXX" => {
+                pending_size = u32_at(payload, 0).and_then(|value| usize::try_from(value).ok());
+            }
+            b"HEDR" => {
+                header.version = u32_at(payload, 0).map(f32::from_bits);
+                header.record_count = u32_at(payload, 4);
+            }
+            b"CNAM" => header.author = Some(zstring(payload)),
+            b"SNAM" => header.description = Some(zstring(payload)),
+            b"MAST" => header.masters.push(zstring(payload)),
+            _ => {}
+        }
+        at = start + length;
+    }
+    Ok(header)
+}
+
+fn fill(file: &mut File, buffer: &mut [u8]) -> io::Result<usize> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        let read = file.read(&mut buffer[filled..])?;
+        if read == 0 {
+            break;
+        }
+        filled += read;
+    }
+    Ok(filled)
+}
+
+/// Read and parse the header of a plugin file, reading only as many bytes as needed.
+///
+/// # Errors
+/// Returns an I/O error for unreadable files; malformed headers become
+/// [`io::ErrorKind::InvalidData`] wrapping a [`PluginError`].
+pub fn read_header(path: &Path) -> io::Result<PluginHeader> {
+    let invalid = |error: PluginError| io::Error::new(io::ErrorKind::InvalidData, error);
+    let mut file = File::open(path)?;
+    let mut buffer = vec![0u8; RECORD_HEADER_SIZE];
+    let filled = fill(&mut file, &mut buffer)?;
+    buffer.truncate(filled);
+    let size = header_data_size(&buffer).map_err(invalid)?;
+    buffer.resize(RECORD_HEADER_SIZE + size, 0);
+    let filled = fill(&mut file, &mut buffer[RECORD_HEADER_SIZE..])?;
+    if filled < size {
+        return Err(invalid(PluginError::Truncated));
+    }
+    parse_header(&buffer).map_err(invalid)
+}
+
+/// Build the bytes of a minimal plugin (header record only). Used by the unit and
+/// integration tests; not a general plugin writer.
+///
+/// # Panics
+/// Panics if the content does not fit the 16-bit subrecord sizes (tests only).
+#[must_use]
+pub fn synthetic_plugin(flags: u32, masters: &[&str], description: Option<&str>) -> Vec<u8> {
+    fn subrecord(out: &mut Vec<u8>, kind: [u8; 4], payload: &[u8]) {
+        out.extend_from_slice(&kind);
+        let length = u16::try_from(payload.len()).expect("test subrecord fits in u16");
+        out.extend_from_slice(&length.to_le_bytes());
+        out.extend_from_slice(payload);
+    }
+    let mut data = Vec::new();
+    let mut hedr = Vec::new();
+    hedr.extend_from_slice(&1.34f32.to_le_bytes());
+    hedr.extend_from_slice(&0u32.to_le_bytes());
+    hedr.extend_from_slice(&0x800u32.to_le_bytes());
+    subrecord(&mut data, *b"HEDR", &hedr);
+    subrecord(&mut data, *b"CNAM", b"tester\0");
+    if let Some(text) = description {
+        let mut payload = text.as_bytes().to_vec();
+        payload.push(0);
+        subrecord(&mut data, *b"SNAM", &payload);
+    }
+    for master in masters {
+        let mut payload = master.as_bytes().to_vec();
+        payload.push(0);
+        subrecord(&mut data, *b"MAST", &payload);
+        subrecord(&mut data, *b"DATA", &0u64.to_le_bytes());
+    }
+    let mut out = Vec::new();
+    out.extend_from_slice(b"TES4");
+    let size = u32::try_from(data.len()).expect("test header fits in u32");
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(&flags.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&0u32.to_le_bytes());
+    out.extend_from_slice(&15u16.to_le_bytes());
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&data);
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_masters_flags_and_text() {
+        let bytes = synthetic_plugin(FLAG_ESM, &["FalloutNV.esm", "Fallout3.esm"], Some("hello"));
+        let header = parse_header(&bytes).expect("parses");
+        assert!(header.is_master());
+        assert!(!header.is_light());
+        assert_eq!(header.masters, ["FalloutNV.esm", "Fallout3.esm"]);
+        assert_eq!(header.author.as_deref(), Some("tester"));
+        assert_eq!(header.description.as_deref(), Some("hello"));
+        assert_eq!(header.form_version, 15);
+        assert!((header.version.expect("version") - 1.34).abs() < 1e-6);
+        assert_eq!(header.record_count, Some(0));
+    }
+
+    #[test]
+    fn esp_without_masters() {
+        let header = parse_header(&synthetic_plugin(0, &[], None)).expect("parses");
+        assert!(!header.is_master());
+        assert_eq!(header.masters, Vec::<String>::new());
+    }
+
+    #[test]
+    fn light_flag_is_read() {
+        let header = parse_header(&synthetic_plugin(FLAG_ESM | FLAG_ESL, &[], None)).expect("ok");
+        assert!(header.is_light());
+    }
+
+    #[test]
+    fn rejects_bad_input() {
+        assert_eq!(parse_header(&[0; 10]), Err(PluginError::TooShort));
+        let mut bytes = synthetic_plugin(0, &[], None);
+        bytes[0..4].copy_from_slice(b"GRUP");
+        assert_eq!(parse_header(&bytes), Err(PluginError::BadMagic(*b"GRUP")));
+        let bytes = synthetic_plugin(0, &["A.esm"], None);
+        assert_eq!(
+            parse_header(&bytes[..bytes.len() - 3]),
+            Err(PluginError::Truncated)
+        );
+    }
+
+    #[test]
+    fn xxxx_extends_the_next_subrecord() {
+        // A description of 70000 bytes announced through XXXX must not hide later masters.
+        let long = vec![b'a'; 70_000];
+        let mut data = Vec::new();
+        data.extend_from_slice(b"XXXX");
+        data.extend_from_slice(&4u16.to_le_bytes());
+        data.extend_from_slice(&70_001u32.to_le_bytes());
+        data.extend_from_slice(b"SNAM");
+        data.extend_from_slice(&0u16.to_le_bytes());
+        data.extend_from_slice(&long);
+        data.push(0);
+        data.extend_from_slice(b"MAST");
+        data.extend_from_slice(&6u16.to_le_bytes());
+        data.extend_from_slice(b"A.esm\0");
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"TES4");
+        bytes.extend_from_slice(&u32::try_from(data.len()).expect("fits").to_le_bytes());
+        bytes.extend_from_slice(&[0; 16]);
+        bytes.extend_from_slice(&data);
+        let header = parse_header(&bytes).expect("parses");
+        assert_eq!(header.description.expect("description").len(), 70_000);
+        assert_eq!(header.masters, ["A.esm"]);
+    }
+}

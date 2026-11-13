@@ -1,0 +1,8 @@
+# Cargo ignores crate versions published less than 7 days ago, unless they are already in
+# Cargo.lock. Stable from Cargo 1.100; Cargo 1.99 warns that it ignores the setting.
+[registry]
+global-min-publish-age = "7 days"
+
+# On NixOS, link with the system linker (run builds inside `nix shell nixpkgs#gcc`).
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-Clink-self-contained=-linker"]
