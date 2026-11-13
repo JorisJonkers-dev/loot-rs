@@ -17,7 +17,7 @@ pub const EXIT_VIOLATION: u8 = 1;
 pub const EXIT_ERROR: u8 = 2;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
+pub const USAGE: &str = "usage: loot-rs check --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups] [--json]
 
 Reports the messages that apply, unmet req/inc entries and violated after/group constraints.
 It does not sort and does not write anything.
@@ -36,6 +36,8 @@ pub struct Args {
     pub data: PathBuf,
     /// Switches for the check.
     pub options: Options,
+    /// Print the report as JSON (see [`render::render_json`]) instead of text.
+    pub json: bool,
 }
 
 /// Parse the arguments that follow the program name.
@@ -51,6 +53,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
     }
     let (mut masterlist, mut plugins, mut data) = (None, None, None);
     let mut options = Options::default();
+    let mut json = false;
     while let Some(flag) = args.next() {
         let mut value = |name: &str| {
             args.next()
@@ -62,6 +65,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             "--plugins" => plugins = Some(value("--plugins")?),
             "--data" => data = Some(value("--data")?),
             "--strict-groups" => options.strict_groups = true,
+            "--json" => json = true,
             other => return Err(format!("unknown argument {other:?}")),
         }
     }
@@ -70,6 +74,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         plugins: plugins.ok_or("--plugins is required")?,
         data: data.ok_or("--data is required")?,
         options,
+        json,
     })
 }
 
@@ -88,7 +93,12 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
     }
     let slots = parse_plugins_txt(&String::from_utf8_lossy(&list));
     let report = run(&metadata, &FsEnv::new(&args.data, slots), args.options);
-    out.write_all(render::render(&report).as_bytes())
+    let text = if args.json {
+        render::render_json(&report)
+    } else {
+        render::render(&report)
+    };
+    out.write_all(text.as_bytes())
         .map_err(|error| format!("cannot write the report: {error}"))?;
     Ok(if report.hard_count() > 0 {
         EXIT_VIOLATION

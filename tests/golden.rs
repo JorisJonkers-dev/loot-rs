@@ -6,7 +6,8 @@
 //! * `data.txt`: the `Data` directory to build, one line each: `plugin NAME [esm] [masters=A,B]` writes a
 //!   synthetic plugin, `file PATH text=TEXT` writes a file;
 //! * `args` (optional): extra command line flags;
-//! * `expected.stdout`, `expected.code`: what the binary must print and exit with. stderr must be empty.
+//! * `expected.stdout`, `expected.code`: what the binary must print and exit with. stderr must be empty;
+//! * `expected.json` (optional): what `--json` must print for the same inputs.
 //!
 //! Run with `UPDATE_GOLDEN=1` to rewrite the expected files, then read the diff: a golden file is a claim
 //! about LOOT's rules, so a change is reviewed, not accepted.
@@ -62,7 +63,7 @@ fn build_data(fixture: &Fixture, spec: &str) {
 }
 
 /// Run one case; returns (stdout, stderr, exit code).
-fn run_case(dir: &Path) -> (String, String, i32) {
+fn run_case(dir: &Path, json: bool) -> (String, String, i32) {
     let read = |name: &str| fs::read_to_string(dir.join(name)).unwrap_or_default();
     let fixture = Fixture::new();
     build_data(&fixture, &read("data.txt"));
@@ -76,6 +77,9 @@ fn run_case(dir: &Path) -> (String, String, i32) {
         .args(["--plugins", plugins.to_str().expect("utf8")])
         .args(["--data", data.to_str().expect("utf8")])
         .args(read("args").split_whitespace());
+    if json {
+        command.arg("--json");
+    }
     let output = command.output().expect("run loot-rs");
     (
         String::from_utf8(output.stdout).expect("utf8"),
@@ -94,7 +98,20 @@ fn every_case_prints_what_its_golden_file_says() {
             .expect("name")
             .to_string_lossy()
             .into_owned();
-        let (stdout, stderr, code) = run_case(&dir);
+        let (stdout, stderr, code) = run_case(&dir, false);
+        if dir.join("expected.json").exists() {
+            let (json, json_err, json_code) = run_case(&dir, true);
+            if update {
+                fs::write(dir.join("expected.json"), &json).expect("write");
+            } else {
+                let want = fs::read_to_string(dir.join("expected.json")).expect("read");
+                if json != want || json_code != code || !json_err.is_empty() {
+                    failures.push(format!(
+                        "case {name} (--json): exit {json_code}\n--- want\n{want}--- got\n{json}"
+                    ));
+                }
+            }
+        }
         if update {
             fs::write(dir.join("expected.stdout"), &stdout).expect("write");
             fs::write(dir.join("expected.code"), format!("{code}\n")).expect("write");

@@ -196,3 +196,28 @@ fn a_report_that_cannot_be_written_is_an_error() {
 fn the_exit_codes_are_the_documented_ones() {
     assert_eq!((EXIT_OK, EXIT_VIOLATION, EXIT_ERROR), (0, 1, 2));
 }
+
+#[test]
+fn json_is_a_flag_of_check() {
+    let mut args = full();
+    args.push("--json".into());
+    assert!(parse_args(&args).expect("parses").json);
+    assert!(!parse_args(&full()).expect("parses").json);
+}
+
+#[test]
+fn json_output_is_one_line_and_keeps_the_exit_code() {
+    let dir = TempDir::new();
+    dir.plugin("Data/A.esp", &[]);
+    let mut args = files(
+        &dir,
+        "plugins:\n  - name: A.esp\n    req: ['Gone.esp']\n",
+        "A.esp\n",
+    );
+    args.push("--json".into());
+    let (code, out, err) = run_main(&args);
+    assert_eq!((code, err.as_str()), (EXIT_VIOLATION, ""));
+    assert_eq!(out.lines().count(), 1, "{out}");
+    assert!(out.starts_with("{\"general_messages\":[]"), "{out}");
+    assert!(out.contains("\"hard_violations\":1}"), "{out}");
+}

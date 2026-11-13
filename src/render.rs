@@ -1,6 +1,6 @@
 //! Plain-text rendering of a [`Report`].
 
-use crate::check::{AppliedMessage, FindingKind, Report};
+use crate::check::{AppliedMessage, Finding, FindingKind, Report};
 use std::fmt::Write;
 
 /// Group-order findings printed per plugin before the rest are summarised.
@@ -115,6 +115,94 @@ pub fn render(report: &Report) -> String {
         matched,
         report.hard_count()
     );
+    out
+}
+
+fn json_string(out: &mut String, text: &str) {
+    out.push('"');
+    for c in text.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if u32::from(c) < 0x20 => {
+                let _ = write!(out, "\\u{:04x}", u32::from(c));
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+}
+
+fn json_list<T>(out: &mut String, items: &[T], mut each: impl FnMut(&mut String, &T)) {
+    out.push('[');
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        each(out, item);
+    }
+    out.push(']');
+}
+
+fn json_message(out: &mut String, message: &AppliedMessage) {
+    out.push_str("{\"type\":");
+    json_string(out, message.kind.as_str());
+    out.push_str(",\"text\":");
+    json_string(out, message.content.trim());
+    out.push('}');
+}
+
+fn json_finding(out: &mut String, finding: &Finding) {
+    out.push_str("{\"kind\":");
+    json_string(out, finding.kind.label());
+    let _ = write!(out, ",\"hard\":{},\"text\":", finding.hard);
+    json_string(out, &finding.text);
+    out.push('}');
+}
+
+fn json_strings(out: &mut String, items: &[String]) {
+    json_list(out, items, |out, item| json_string(out, item));
+}
+
+/// Render the report as one line of JSON, for tools that compare it with another implementation.
+///
+/// Keys: `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`, `messages`,
+/// `tags_add`, `tags_remove`, `findings`), `general_findings`, `not_installed`, `warnings` and
+/// `hard_violations`. Everything is in load order and the text is the same as in [`render`].
+#[must_use]
+pub fn render_json(report: &Report) -> String {
+    let mut out = String::from("{\"general_messages\":");
+    json_list(&mut out, &report.globals, json_message);
+    out.push_str(",\"plugins\":");
+    json_list(&mut out, &report.plugins, |out, plugin| {
+        out.push_str("{\"name\":");
+        json_string(out, &plugin.name);
+        let _ = write!(
+            out,
+            ",\"position\":{},\"active\":{},\"group\":",
+            plugin.position, plugin.active
+        );
+        json_string(out, &plugin.group);
+        out.push_str(",\"messages\":");
+        json_list(out, &plugin.messages, json_message);
+        out.push_str(",\"tags_add\":");
+        json_strings(out, &plugin.tags_add);
+        out.push_str(",\"tags_remove\":");
+        json_strings(out, &plugin.tags_remove);
+        out.push_str(",\"findings\":");
+        json_list(out, &plugin.findings, json_finding);
+        out.push('}');
+    });
+    out.push_str(",\"general_findings\":");
+    json_list(&mut out, &report.general, json_finding);
+    out.push_str(",\"not_installed\":");
+    json_strings(&mut out, &report.not_installed);
+    out.push_str(",\"warnings\":");
+    json_strings(&mut out, &report.metadata_warnings);
+    let _ = write!(out, ",\"hard_violations\":{}}}\n", report.hard_count());
     out
 }
 

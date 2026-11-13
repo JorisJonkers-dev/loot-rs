@@ -207,3 +207,62 @@ fn unsupported_functions_are_summarised_by_name_in_sorted_order() {
         .expect("executable line");
     assert!(version < executable, "sorted by name: {out}");
 }
+
+#[test]
+fn json_of_an_empty_report() {
+    assert_eq!(
+        render_json(&Report::default()),
+        "{\"general_messages\":[],\"plugins\":[],\"general_findings\":[],\"not_installed\":[],\"warnings\":[],\"hard_violations\":0}\n"
+    );
+}
+
+#[test]
+fn json_strings_are_escaped() {
+    let mut out = String::new();
+    json_string(
+        &mut out,
+        "quote \" backslash \\ newline \n return \r tab \t bell \u{7} é",
+    );
+    assert_eq!(
+        out,
+        "\"quote \\\" backslash \\\\ newline \\n return \\r tab \\t bell \\u0007 é\""
+    );
+}
+
+#[test]
+fn json_of_a_full_report_lists_everything_in_load_order() {
+    let mut entry = plugin("A.esp", 2);
+    entry.active = false;
+    entry.group = "Late".into();
+    entry
+        .messages
+        .push(message(MessageKind::Warn, "  careful \"now\"  "));
+    entry.tags_add = vec!["Relev".into()];
+    entry.tags_remove = vec!["Delev".into()];
+    entry.findings.push(finding(
+        FindingKind::Incompatible,
+        "is incompatible with B.esp",
+        true,
+    ));
+    let report = Report {
+        globals: vec![message(MessageKind::Say, "hello")],
+        plugins: vec![entry, plugin("B.esp", 3)],
+        general: vec![finding(FindingKind::ConditionError, "bad", false)],
+        not_installed: vec!["Gone.esp".into()],
+        metadata_warnings: vec!["skipped".into()],
+    };
+    assert_eq!(
+        render_json(&report),
+        concat!(
+            "{\"general_messages\":[{\"type\":\"say\",\"text\":\"hello\"}],",
+            "\"plugins\":[{\"name\":\"A.esp\",\"position\":2,\"active\":false,\"group\":\"Late\",",
+            "\"messages\":[{\"type\":\"warn\",\"text\":\"careful \\\"now\\\"\"}],",
+            "\"tags_add\":[\"Relev\"],\"tags_remove\":[\"Delev\"],",
+            "\"findings\":[{\"kind\":\"incompatible\",\"hard\":true,\"text\":\"is incompatible with B.esp\"}]},",
+            "{\"name\":\"B.esp\",\"position\":3,\"active\":true,\"group\":\"default\",\"messages\":[],",
+            "\"tags_add\":[],\"tags_remove\":[],\"findings\":[]}],",
+            "\"general_findings\":[{\"kind\":\"condition error\",\"hard\":false,\"text\":\"bad\"}],",
+            "\"not_installed\":[\"Gone.esp\"],\"warnings\":[\"skipped\"],\"hard_violations\":1}\n"
+        )
+    );
+}

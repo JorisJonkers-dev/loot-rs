@@ -49,6 +49,16 @@ tasks:
       - actionlint
       - zizmor --offline --no-progress .github/workflows
 
+  scripts:
+    desc: Self-tests of the oracle scripts (invented data; no network, no LOOT)
+    cmds:
+      - python3 -I scripts/oracle/compare.py --selftest
+      - python3 -I scripts/oracle/materialise.py --selftest
+
+  real:
+    desc: Ignored tests against the real masterlist (set LOOT_RS_MASTERLIST)
+    cmd: cargo test --locked --release --test real_masterlist -- --ignored --nocapture
+
   secrets:
     desc: Scan every commit for secrets
     cmd: gitleaks git --redact --no-banner --config .gitleaks.toml .
@@ -79,6 +89,7 @@ tasks:
       - task: build
       - task: deny
       - task: lint:actions
+      - task: scripts
       - task: secrets
 
   fix:

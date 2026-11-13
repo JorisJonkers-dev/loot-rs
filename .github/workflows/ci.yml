@@ -135,6 +135,9 @@ jobs:
 
       - name: Workflows
         run: mise exec -- task lint:actions
+      - name: Script self-tests
+        if: ${{ !cancelled() }}
+        run: mise exec -- task scripts
       - name: Secrets
         if: ${{ !cancelled() }}
         run: mise exec -- task secrets
