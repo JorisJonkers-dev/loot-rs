@@ -153,7 +153,7 @@ impl Report {
 }
 
 /// Switches for [`run`].
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Options {
     /// Count group violations and undefined groups as hard.
     pub strict_groups: bool,
