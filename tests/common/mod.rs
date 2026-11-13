@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod model;
+
 use loot_rs::plugin::{FLAG_ESM, synthetic_plugin};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -85,5 +87,19 @@ impl Fixture {
 impl Drop for Fixture {
     fn drop(&mut self) {
         let _ = fs::remove_dir_all(&self.root);
+    }
+}
+
+/// Property-test settings: a fixed seed, so every run generates the same cases and a failure is
+/// reproducible. Set `LOOT_RS_PROPTEST_SEED` to a number to explore other cases locally.
+pub fn proptest_config(cases: u32) -> proptest::test_runner::Config {
+    let seed = std::env::var("LOOT_RS_PROPTEST_SEED")
+        .ok()
+        .and_then(|text| text.parse::<u64>().ok())
+        .unwrap_or(0x100_7F00D);
+    proptest::test_runner::Config {
+        cases,
+        rng_seed: proptest::test_runner::RngSeed::Fixed(seed),
+        ..proptest::test_runner::Config::default()
     }
 }
