@@ -1,0 +1,48 @@
+[package]
+name = "loot-rs-fuzz"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4.13"
+
+[dependencies.loot-rs]
+path = ".."
+
+# Own workspace root: keeps libfuzzer-sys out of the main build and out of cargo-deny.
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "masterlist_yaml"
+path = "fuzz_targets/masterlist_yaml.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "condition"
+path = "fuzz_targets/condition.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugin_header"
+path = "fuzz_targets/plugin_header.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugins_txt"
+path = "fuzz_targets/plugins_txt.rs"
+test = false
+doc = false
+bench = false
