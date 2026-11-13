@@ -9,6 +9,10 @@
 //! `description_contains`, `is_executable`) parse, but evaluate to
 //! [`ConditionError::Unsupported`]: they are never guessed.
 //!
+//! A condition may nest at most [`MAX_NESTING`] parentheses or `not`s and hold at most [`MAX_NODES`]
+//! operators and calls, so that parsing, evaluating and dropping it cannot exhaust the stack on
+//! hostile input.
+//!
 //! `and` / `or` follow boolean logic with errors treated as unknown: `false and <unsupported>`
 //! is `false`, `true or <unsupported>` is `true`, anything else involving an error is that
 //! error.
@@ -38,6 +42,12 @@ impl fmt::Display for ConditionError {
 
 impl std::error::Error for ConditionError {}
 
+/// Deepest nesting of parentheses and `not` that is accepted.
+pub const MAX_NESTING: usize = 64;
+
+/// Most operators and function calls that one condition may hold.
+pub const MAX_NODES: usize = 2_000;
+
 /// An argument of a function call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Arg {
@@ -58,6 +68,49 @@ pub enum Expr {
     And(Box<Expr>, Box<Expr>),
     /// `or`.
     Or(Box<Expr>, Box<Expr>),
+}
+
+impl fmt::Display for Arg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Str(text) => write!(f, "\"{text}\""),
+            Self::Word(text) => f.write_str(text),
+        }
+    }
+}
+
+/// The canonical text of a condition: every operand of `and`, `or` and `not` that is not a call is
+/// parenthesised, so `parse(&expr.to_string())` gives back `expr`.
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Call(name, args) => {
+                write!(f, "{name}(")?;
+                for (index, arg) in args.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                f.write_str(")")
+            }
+            Self::Not(inner) => write!(f, "not {}", Operand(inner)),
+            Self::And(left, right) => write!(f, "{} and {}", Operand(left), Operand(right)),
+            Self::Or(left, right) => write!(f, "{} or {}", Operand(left), Operand(right)),
+        }
+    }
+}
+
+/// An operand: calls print bare, everything else in parentheses.
+struct Operand<'a>(&'a Expr);
+
+impl fmt::Display for Operand<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Expr::Call(..) => write!(f, "{}", self.0),
+            other => write!(f, "({other})"),
+        }
+    }
 }
 
 /// The facts a condition can ask about. Paths are as written in the condition: relative to
@@ -152,6 +205,8 @@ fn tokenize(text: &str) -> Result<Vec<Token>, ConditionError> {
 struct Parser {
     tokens: Vec<Token>,
     at: usize,
+    nesting: usize,
+    nodes: usize,
 }
 
 impl Parser {
@@ -169,10 +224,21 @@ impl Parser {
         matches!(self.peek(), Some(Token::Word(word)) if word == keyword)
     }
 
+    fn node(&mut self) -> Result<(), ConditionError> {
+        self.nodes += 1;
+        if self.nodes > MAX_NODES {
+            return Err(ConditionError::Syntax(format!(
+                "condition has more than {MAX_NODES} operators and calls"
+            )));
+        }
+        Ok(())
+    }
+
     fn expr(&mut self) -> Result<Expr, ConditionError> {
         let mut left = self.and_expr()?;
         while self.peek_keyword("or") {
             self.at += 1;
+            self.node()?;
             left = Expr::Or(Box::new(left), Box::new(self.and_expr()?));
         }
         Ok(left)
@@ -182,12 +248,26 @@ impl Parser {
         let mut left = self.unary()?;
         while self.peek_keyword("and") {
             self.at += 1;
+            self.node()?;
             left = Expr::And(Box::new(left), Box::new(self.unary()?));
         }
         Ok(left)
     }
 
     fn unary(&mut self) -> Result<Expr, ConditionError> {
+        self.nesting += 1;
+        if self.nesting > MAX_NESTING {
+            return Err(ConditionError::Syntax(format!(
+                "condition is nested more than {MAX_NESTING} levels deep"
+            )));
+        }
+        let result = self.unary_inner();
+        self.nesting -= 1;
+        result
+    }
+
+    fn unary_inner(&mut self) -> Result<Expr, ConditionError> {
+        self.node()?;
         match self.next() {
             Some(Token::Word(word)) if word == "not" => Ok(Expr::Not(Box::new(self.unary()?))),
             Some(Token::Open) => {
@@ -237,6 +317,8 @@ pub fn parse(text: &str) -> Result<Expr, ConditionError> {
     let mut parser = Parser {
         tokens: tokenize(text)?,
         at: 0,
+        nesting: 0,
+        nodes: 0,
     };
     let expr = parser.expr()?;
     if parser.at < parser.tokens.len() {
