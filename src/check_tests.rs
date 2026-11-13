@@ -366,6 +366,8 @@ fn an_undefined_group_is_noted_and_hard_only_when_strict() {
     );
 }
 
+// With `executable-versions`, `product_version("a.exe", ...)` on a missing file is false, not unsupported.
+#[cfg(not(feature = "executable-versions"))]
 #[test]
 fn an_unsupported_condition_is_recorded_and_the_item_is_not_applied() {
     let yaml = r#"

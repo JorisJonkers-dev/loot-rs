@@ -101,6 +101,9 @@ jobs:
       - name: Tests with the coverage gate
         if: ${{ !cancelled() }}
         run: mise exec -- task coverage
+      - name: Tests with the opt-in features
+        if: ${{ !cancelled() }}
+        run: mise exec -- task test:features
       - name: Resource limits (512 MiB address space)
         if: ${{ !cancelled() }}
         run: mise exec -- task limits

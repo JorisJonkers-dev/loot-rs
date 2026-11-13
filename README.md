@@ -40,14 +40,31 @@ It prints, for every installed plugin of the load order that has something to re
 Exit code `0`: no hard violation. `1`: at least one hard violation (with `--strict-groups`, group violations and
 undefined groups count too). `2`: bad arguments or unreadable input. It does not sort and writes nothing.
 
+## Executable versions (opt-in)
+
+```text
+cargo build --release --features executable-versions
+```
+
+With the feature, `version(path, ...)` and `product_version(path, ...)` on a `.exe` or `.dll` under `Data` (or `..`,
+the game directory) read the file's PE version resource and compare it with LOOT's version grammar, through
+[`loot-condition-interpreter`](https://github.com/loot/loot-condition-interpreter) (MIT, by the LOOT authors). The
+default build does not contain it. The interpreter depends on `esplugin` (GPL-3.0), which is why the feature is
+off by default; this project is GPL-3.0 as well. A file that does not exist makes the condition false, as in
+LOOT; a file that is not a PE image, or whose headers are out of bounds, is a condition error (the item is not
+applied). Plugins (`.esp`, `.esm`) are still unsupported for `version()`: their version is in the description
+field. Every size read from the file is checked before the interpreter sees it, see
+[docs/RESOURCE-LIMITS.md](docs/RESOURCE-LIMITS.md).
+
 ## What it does NOT do
 
 * It does not sort, and it does not write `plugins.txt`, `loadorder.txt` or anything else.
 * It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
-* The condition functions `version`, `product_version`, `filename_version`, `description_contains` and
-  `is_executable` are **not implemented**. An item guarded by one is not applied and is reported as unsupported
-  (with a count at the end); it is never guessed. They are common: on a synthetic list of 400 plugin names taken
-  from the current New Vegas masterlist, 53 items were skipped for `version()`.
+* The condition functions `filename_version`, `description_contains` and `is_executable` are **not implemented**,
+  and `version` and `product_version` are implemented only for executables and DLLs and only when built with the
+  cargo feature `executable-versions` (below). An item guarded by an unimplemented one is not applied and is
+  reported as unsupported (with a count at the end); it is never guessed. They are common: on a synthetic list of
+  400 plugin names taken from the current New Vegas masterlist, 53 items were skipped for `version()`.
 * `dirty` / `clean` are read as data; CRCs are not compared and no cleaning messages are produced.
 * No userlist, no prelude replacement, no `url`, no localised message selection (English is used), no Markdown
   rendering, no metadata merging across masterlist and userlist, no ghosted plugins (`.ghost`).
@@ -95,12 +112,9 @@ skipped with a warning instead of matching wrongly.
 
 ## Open questions
 
-* Use `loot-condition-interpreter` (MIT, by the LOOT authors) instead of the evaluator here? It would give
-  `version` and the rest of the language and LOOT's exact version comparison, at the cost of a dependency tree and
-  a game-state adapter. This slice keeps its own small evaluator so the limits are visible.
-* Implementing `version()` for plugins needs the description field and LOOT's version grammar (documented, long);
-  for executables it needs PE version resources. Which of them matters first: plugins (e.g. TTW), or `.exe`/`.dll`
-  (NVSE, the game)?
+* `loot-condition-interpreter` is used only for executable and DLL versions, behind a cargo feature, and our own
+  evaluator stays the default so the limits stay visible. Should it also serve `version()` on plugins (the
+  version in the description field, which the interpreter takes from a map the caller fills)?
 * Should group violations be hard by default? They are soft here because LOOT treats groups as a sorting hint that
   yields to other rules.
 * A golden comparison against LOOT's real report for one profile (run under MO2 or Wine) is the way to find

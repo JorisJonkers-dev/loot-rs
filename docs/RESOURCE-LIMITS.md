@@ -16,6 +16,8 @@ measures the rise in peak resident memory for each input) and in the unit tests.
 | `plugins.txt` | 1 MiB (`cli::MAX_PLUGINS_FILE`) | read with a cap | A load order of 255 plugins is about 5 KB |
 | Plugin header | 4 MiB of header data (`plugin::MAX_HEADER_DATA`) and never more than the file holds | the size field is checked against the file's real length before any buffer is allocated by it | Real headers are a few KiB; a file that claims 4 MiB and holds 30 bytes allocates nothing |
 
+| Executable version (cargo feature `executable-versions`) | 1024 data directories (`exe_version::MAX_DATA_DIRECTORIES`), a 16 MiB resource directory and never more than the file holds (`MAX_RESOURCE_DIRECTORY`), 64 KiB of version block (`MAX_VERSION_BLOCK`), 256 entries per resource table, every 32-bit sum checked for overflow | `exe_version::preflight`, a bounded walk over the headers before `loot-condition-interpreter` is called | The interpreter allocates buffers from `u32` fields of the file (one of them as `capacity * 8` bytes), adds 32-bit offsets without checks (a panic in a debug build) and, by reading its code, can loop without advancing on a string table whose first string has length 0, so none of that is left to it. Real images declare 16 directories and a version block of a few hundred bytes |
+
 All limits are errors, never panics and never silent truncation: the masterlist limits are `MetadataError`, the
 condition limits are `ConditionError::Syntax`, the plugin limit is `PluginError::Truncated`, the file limits are exit
 code 2 with a message naming the file.
@@ -26,7 +28,10 @@ code 2 with a message naming the file.
   oversized masterlist, nested, chained and very long conditions, a header with a huge size field in bytes and in a
   small file, an oversized `plugins.txt`) and asserts an error, under 3 seconds and under 24 MiB of added peak
   resident memory. Measured locally, every case added at most 1.3 MiB.
-* CI runs the same test with an address-space limit (`task limits`: `prlimit --as=536870912`, 512 MiB), so a
+* `tests/limits_exe.rs` (with the feature) does the same for hostile executables built in the test: huge numbers of
+  data directories, a huge resource directory, a huge version block and a string table that would not advance.
+  Each is refused (or false) in microseconds and a few hundred KiB.
+* CI runs the same tests with an address-space limit (`task limits`: `prlimit --as=536870912`, 512 MiB), so a
   regression fails the build instead of using the runner's memory. The test also passes under 128 MiB.
 * The real-masterlist tests (`tests/real_masterlist.rs`) are ignored by default and serialised with a mutex.
 * Property tests use fixed small case counts (`PROPTEST_CASES` lowers them) and bounded generators.

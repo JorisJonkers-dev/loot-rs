@@ -138,6 +138,16 @@ pub trait Env {
     fn is_master(&self, path: &str) -> bool;
     /// CRC-32 of a file's contents, `None` when it cannot be read.
     fn checksum(&self, path: &str) -> Option<u32>;
+    /// Evaluate `version(...)` or `product_version(...)` (`name`) on a file. The default answers
+    /// [`ConditionError::Unsupported`]: an environment says otherwise only when it can read the file's version
+    /// (see the `executable-versions` cargo feature).
+    ///
+    /// # Errors
+    /// [`ConditionError::Unsupported`] when the environment cannot, other errors when the file cannot be read.
+    fn version_call(&self, name: &str, args: &[Arg]) -> Result<bool, ConditionError> {
+        let _ = args;
+        Err(ConditionError::Unsupported(name.to_string()))
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -337,7 +347,9 @@ pub fn parse(text: &str) -> Result<Expr, ConditionError> {
     Ok(expr)
 }
 
-/// Functions that exist in LOOT but are not implemented here.
+/// Functions that exist in LOOT but are not implemented here. `version` and `product_version` are the
+/// exception that the `executable-versions` feature makes for executables and DLLs; on plugins they stay
+/// unsupported either way.
 pub const UNSUPPORTED_FUNCTIONS: [&str; 5] = [
     "version",
     "product_version",
@@ -407,6 +419,7 @@ fn call(env: &dyn Env, name: &str, args: &[Arg]) -> Result<bool, ConditionError>
             })?;
             Ok(env.checksum(string_arg(name, args, 0)?) == Some(expected))
         }
+        "version" | "product_version" => env.version_call(name, args),
         _ if UNSUPPORTED_FUNCTIONS.contains(&name) => {
             Err(ConditionError::Unsupported(name.to_string()))
         }

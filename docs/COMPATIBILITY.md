@@ -60,12 +60,12 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | `readable(path)` | supported | |
 | `is_master(path)` | supported | Master flag of the plugin header |
 | `checksum(path, crc)` | supported | CRC-32 of the whole file; `0x` prefix accepted |
-| `version(path, op, version)` and the older argument order | unsupported | Parsed; evaluates to "unsupported", the item is not applied |
-| `product_version(path, op, version)` | unsupported | Same |
+| `version(path, op, version)` and the older argument order | partial | Executables and DLLs with the cargo feature `executable-versions` (fixed file version, LOOT's comparison). Plugins, and every file without the feature: parsed, evaluates to "unsupported", the item is not applied |
+| `product_version(path, op, version)` | partial | Executables and DLLs with the feature (the `ProductVersion` string); otherwise unsupported |
 | `filename_version(regex, op, version)` | unsupported | Same |
 | `description_contains(path, regex)` | unsupported | Same |
 | `is_executable(path)` | unsupported | Same |
-| Version comparison grammar | unsupported | Needed by the four version functions |
+| Version comparison grammar | partial | With the feature, LOOT's own (the interpreter's). Without it unsupported, and needed by `filename_version` |
 | Evaluation caching | unsupported | Directory listings are cached; results are not |
 
 ## Messages and output

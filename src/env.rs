@@ -246,6 +246,21 @@ impl Env for FsEnv {
             .flatten()
             .map(|bytes| crc32(&bytes))
     }
+
+    #[cfg(feature = "executable-versions")]
+    fn version_call(
+        &self,
+        name: &str,
+        args: &[crate::condition::Arg],
+    ) -> Result<bool, ConditionError> {
+        use crate::condition::Arg;
+        let Some(Arg::Str(path)) = args.first() else {
+            return Err(ConditionError::Syntax(format!(
+                "{name}() expects a quoted string as argument 1"
+            )));
+        };
+        crate::exe_version::evaluate(name, args, self.resolve(path).as_deref())
+    }
 }
 
 #[cfg(test)]
