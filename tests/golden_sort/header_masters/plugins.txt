@@ -1,0 +1,4 @@
+FalloutNV.esm
+Patch.esp
+Other.esp
+Base.esp

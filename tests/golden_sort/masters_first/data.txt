@@ -1,0 +1,4 @@
+plugin FalloutNV.esm esm
+plugin A.esp
+plugin B.esm esm
+plugin C.esp

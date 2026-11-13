@@ -1,8 +1,9 @@
-//! The command line: argument parsing and the `check` command. `main` only forwards here, so everything
+//! The command line: argument parsing and the `check` and `sort` commands. `main` only forwards here, so everything
 //! is testable without spawning the binary.
 
+use crate::api::{Masterlist, PluginSlot, SortOptions, sort};
 use crate::check::{Options, run};
-use crate::env::{FsEnv, parse_plugins_txt};
+use crate::env::{FsEnv, Slot, parse_plugins_txt};
 use crate::{metadata, render};
 use std::fs::File;
 use std::io::{Read, Write};
@@ -23,17 +24,30 @@ pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
 pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups] [--json]
+pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups] [--json]
 
-Reports the messages that apply, unmet req/inc entries and violated after/group constraints.
-It does not sort and does not write anything.
+check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
+sort: prints the load order sorted by the metadata rules (masters, after, req, groups; not LOOT's algorithm)
+with the messages, tags and findings that apply to it.
+Neither writes anything.
 
 exit codes: 0 no hard violation, 1 a hard violation (unmet req, present inc, load-after
 violated; group violations too with --strict-groups), 2 bad arguments or unreadable input";
 
-/// The arguments of `check`.
+/// What to do.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Command {
+    /// Report what applies to the load order as given.
+    Check,
+    /// Sort the load order by the metadata rules and report what applies to the result.
+    Sort,
+}
+
+/// The arguments of `check` and `sort`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Args {
+    /// The command.
+    pub command: Command,
     /// The masterlist YAML file.
     pub masterlist: PathBuf,
     /// The `plugins.txt` that gives the load order.
@@ -52,11 +66,12 @@ pub struct Args {
 /// A message naming the problem: unknown command or flag, a missing value or a missing required flag.
 pub fn parse_args(args: &[String]) -> Result<Args, String> {
     let mut args = args.iter();
-    match args.next().map(String::as_str) {
-        Some("check") => {}
+    let command = match args.next().map(String::as_str) {
+        Some("check") => Command::Check,
+        Some("sort") => Command::Sort,
         Some(other) => return Err(format!("unknown command {other:?}")),
         None => return Err("missing command".into()),
-    }
+    };
     let (mut masterlist, mut plugins, mut data) = (None, None, None);
     let mut options = Options::default();
     let mut json = false;
@@ -76,6 +91,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         }
     }
     Ok(Args {
+        command,
         masterlist: masterlist.ok_or("--masterlist is required")?,
         plugins: plugins.ok_or("--plugins is required")?,
         data: data.ok_or("--data is required")?,
@@ -119,6 +135,9 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
         return Err(format!("{}: not a directory", args.data.display()));
     }
     let slots = parse_plugins_txt(&String::from_utf8_lossy(&list));
+    if args.command == Command::Sort {
+        return execute_sort(args, &yaml, &slots, out);
+    }
     let report = run(&metadata, &FsEnv::new(&args.data, slots), args.options);
     let text = if args.json {
         render::render_json(&report)
@@ -132,6 +151,35 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
     } else {
         EXIT_OK
     })
+}
+
+fn execute_sort(
+    args: &Args,
+    yaml: &str,
+    slots: &[Slot],
+    out: &mut dyn Write,
+) -> Result<u8, String> {
+    let masterlist = Masterlist::parse(yaml).map_err(|error| error.to_string())?;
+    let load_order: Vec<PluginSlot> = slots
+        .iter()
+        .map(|slot| PluginSlot::new(slot.name.clone(), slot.active))
+        .collect();
+    let options = SortOptions::default().with_strict_groups(args.options.strict_groups);
+    let result = sort(&load_order, &masterlist, &args.data, &options)
+        .map_err(|error| format!("cannot sort: {error}"))?;
+    let text = if args.json {
+        render::render_sort_json(&result)
+    } else {
+        render::render_sort(&result)
+    };
+    out.write_all(text.as_bytes())
+        .map_err(|error| format!("cannot write the result: {error}"))?;
+    let hard = result
+        .plugins
+        .iter()
+        .flat_map(|plugin| &plugin.findings)
+        .any(|finding| finding.hard);
+    Ok(if hard { EXIT_VIOLATION } else { EXIT_OK })
 }
 
 /// Run the program on `args` (without the program name): the report goes to `out`, problems to `err`.

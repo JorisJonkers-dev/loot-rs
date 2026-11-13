@@ -1,9 +1,10 @@
 # Differential testing against LOOT (the oracle)
 
-**Status: planned. No real LOOT run has been made, and nothing in this repository records LOOT output.** The
-harness below compares two files; the LOOT side has to be produced on a machine that has libloot. Do not add
-"expected" LOOT results to the repository unless they came from such a run (or can be derived from LOOT's public
-documentation, which for message text and ordering they cannot).
+**Status: the harness is complete and tested on invented data; no real LOOT run has been made, and nothing in this
+repository records LOOT output.** Nothing here needs the game, and CI never runs libloot: CI runs the self-tests of the
+scripts (`task scripts`) and the golden tests of the Rust side. The LOOT side runs on the owner's machine, where libloot
+and (for a real load order) the game files are. Do not add "expected" LOOT results to the repository unless they came
+from such a run (or can be derived from LOOT's public documentation, which for message text and ordering they cannot).
 
 ## What is compared
 
@@ -18,62 +19,85 @@ two should agree on:
 | Messages per plugin | `plugins[].messages` | the plugin's metadata from the database, conditions evaluated, including the messages LOOT generates itself from `req`, `inc` and the like |
 | Bash Tags | `tags_add`, `tags_remove` | the plugin's metadata tags, conditions evaluated |
 | Group | `plugins[].group` | the plugin's group as resolved by the database |
-| Ordering constraints | load-after findings | the order a LOOT sort produces |
+| Ordering constraints | `rules` of `loot-rs sort`, load-after findings of `check` | the order a LOOT sort produces |
+| Cleaning data | `dirty` | the plugin metadata's dirty and clean info whose CRC is the installed file's |
 
-Ordering is only checked one way: every constraint `loot-rs` reports as violated (a plugin that has to load after
-another and does not) must hold in the order LOOT's sort produces. The other direction is not comparable: LOOT
-also orders by master flags, overlap and group, which `loot-rs` does not do.
+Ordering is only checked one way: every `after`, `req` and header-master rule of `loot-rs sort`, and every
+constraint `check` reports as violated, must hold in the order LOOT's sort produces. Group rules are listed as
+notes. The other direction is not comparable: LOOT also orders by overlap, record counts and priorities, which
+`loot-rs sort` does not do, so the two orders differ and only the rules are compared.
 
-Known, expected differences (not bugs): `loot-rs` does not implement `version()`, `product_version()`,
-`filename_version()`, `description_contains()` and `is_executable()`, so items that use them are reported as
-unsupported and left out (about 29% of the conditions in the current falloutnv masterlist, see
+Known, expected differences (not bugs): `loot-rs` does not implement `filename_version()`,
+`description_contains()` and `is_executable()`, and implements `version()` and `product_version()` only on
+executables and DLLs with the cargo feature `executable-versions` (build with `--features executable-versions` for the
+comparison), so other items that use them are reported as unsupported and left out (see
 [TESTING.md](TESTING.md)); LOOT localises and renders Markdown in messages, `loot-rs` keeps the English text with
 substitutions applied; LOOT adds messages of its own (for example about missing masters or inactive requirements)
 that `loot-rs` does not generate.
 
 ## How to run it
 
-1. Materialise a case on disk, with the same plugin bytes the Rust tests use:
+The pieces, all under `scripts/oracle/` (Python 3, standard library only):
 
-   ```sh
-   scripts/oracle/materialise.py tests/golden/req_missing /tmp/oracle/req_missing
-   ```
+| Script | Does |
+| --- | --- |
+| `materialise.py` | builds the `Data` directory, `plugins.txt` and `masterlist.yaml` of a golden case on disk, with the same synthetic plugin bytes the Rust tests write; `ensure_master` adds an empty `FalloutNV.esm` because libloot refuses a game directory without it |
+| `loot_driver.py` | the libloot side: opens the game directory with libloot's Python bindings (`loot_api`), loads the masterlist, loads the plugins (headers only), asks the database for the evaluated general messages and per-plugin metadata, runs LOOT's sort, and writes `loot.json` |
+| `compare.py` | compares `ours.json` (`loot-rs sort --json`) with `loot.json`; its header documents both shapes |
+| `run.py` | does all of it for one case, all cases, or a real load order, and keeps the JSON files under `--work` |
 
-   This writes `Data/` (synthetic header-only plugins and files), `plugins.txt` and `masterlist.yaml`.
+### On the synthetic cases (no game)
 
-2. Run `loot-rs`:
+You need libloot's Python bindings (`loot_api`, from <https://github.com/loot/libloot>, GPL-3.0; the version is whatever
+you install, write it down with the results). Then:
 
-   ```sh
-   loot-rs check --json --masterlist /tmp/oracle/req_missing/masterlist.yaml \
-     --plugins /tmp/oracle/req_missing/plugins.txt --data /tmp/oracle/req_missing/Data > ours.json
-   ```
+```sh
+cargo build --release
+scripts/oracle/run.py --loot-rs target/release/loot-rs \
+  --driver "python3 scripts/oracle/loot_driver.py" --all --work ~/oracle-work
+```
 
-3. Run LOOT on the same inputs with a small driver written against libloot (not in this repository, because it
-   needs libloot and a C++ or Python toolchain). The driver must write JSON in the shape documented at the top of
-   `scripts/oracle/compare.py`. Its steps, in terms of the documented API: create a game handle for Fallout: New
-   Vegas on the materialised `Data` directory; load the masterlist with an empty userlist; load the plugins listed in
-   `plugins.txt` (headers only is enough for synthetic plugins); for the general messages and each plugin ask the
-   database for the evaluated metadata; run the sort and write its result as `sorted`. LOOT itself has no command
-   that prints a report, so the library is the way in.
+`--all` runs the 22 cases of `tests/golden` and the 6 of `tests/golden_sort`; `--case tests/golden_sort/groups` runs one.
+Without `--driver`, or when `loot_api` is not installed, it still runs `loot-rs` on every case, prints `skipped` and
+exits 3: that means nothing was compared, never "no difference". Exit codes: 0 compared and no difference, 1
+differences, 2 an error, 3 skipped.
 
-4. Compare:
+### On a real load order (the owner, locally)
 
-   ```sh
-   scripts/oracle/compare.py --ours ours.json --loot loot.json
-   ```
+Read only: nothing is written to the game directory, `plugins.txt` or the masterlist.
 
-   Exit status 0 means no difference, 1 prints the differences, 2 is a usage error.
+```sh
+scripts/oracle/run.py --loot-rs target/release/loot-rs \
+  --driver "python3 scripts/oracle/loot_driver.py" --real \
+  --game-path ~/Games/FNV            `# the directory that holds Data/` \
+  --data ~/Games/FNV/Data \
+  --masterlist ~/Downloads/masterlist.yaml \
+  --plugins ~/.config/mo2/profiles/Default/plugins.txt \
+  --work ~/oracle-work
+```
 
-`python3 -I scripts/oracle/compare.py --selftest` and `python3 -I scripts/oracle/materialise.py --selftest` test the
-two scripts on invented data (they run in `task scripts`); they say nothing about LOOT.
+With Mod Organizer 2 give the profile's `plugins.txt` and a `Data` directory that already shows the merged files (the
+virtual file system's output, or a `Data` folder that you linked together). Use `--plugins` with the load order
+you want compared; the order of its lines is the load order given to both tools. Keep `--work` out of any repository.
+Mod names, paths and load orders belong to you: do not paste them into issues or commits.
+
+Reading the result: `ours.json` and `loot.json` are the two sides; `differences.txt` lists the differences. A line
+starting with `info:` says how many pairs of plugins are in a different order in the two sorts, which is expected
+(LOOT also sorts by overlap and priority); `note:` lines are group rules that LOOT's order does not follow, which is
+worth a look but not a difference; everything else is a difference to explain: a bug here, or an entry in the list of
+known differences below.
+
+`python3 -I scripts/oracle/<script>.py --selftest` tests each script on invented data (they run in `task scripts`);
+they say nothing about LOOT.
 
 ## What a first run should answer
 
 * Do the golden cases agree on messages and tags? Each disagreement is either a bug here or a documented limit.
 * Does the real masterlist (`LOOT_RS_MASTERLIST`, see [TESTING.md](TESTING.md)) over a real profile give the same
-  messages for the 400 plugins of the benchmark?
+  messages, and does LOOT's order satisfy every `after`, `req` and header-master rule of `loot-rs sort`?
 * Is `constraint` (the `req` and `inc` condition that decides whether a file counts as present) read the way LOOT
   reads it? The golden case `req_conditional` encodes one reading.
 
-When a run exists, store LOOT's output next to the case as `tests/golden/<case>/loot.json` together with the libloot
-version and the masterlist revision it came from, and make `compare.py` part of the golden test.
+When a run on the synthetic cases exists, store LOOT's output next to the case as `tests/golden*/<case>/loot.json`
+together with the libloot version it came from (synthetic inputs only; never the output of a real load order), and make
+`compare.py` part of the golden test.

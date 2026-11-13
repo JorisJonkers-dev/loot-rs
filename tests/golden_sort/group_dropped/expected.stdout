@@ -1,0 +1,9 @@
+Sorted load order (3 plugin(s)):
+   1. FalloutNV.esm
+   2. A.esp
+   3. B.esp
+
+A.esp (group "Late")
+  note group order: (group "Late") loads before B.esp (group "Early"), but "Late" loads after "Early"
+
+note: group rule dropped: A.esp should load after B.esp

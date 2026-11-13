@@ -69,6 +69,14 @@ tasks:
     cmds:
       - python3 -I scripts/oracle/compare.py --selftest
       - python3 -I scripts/oracle/materialise.py --selftest
+      - python3 -I scripts/oracle/loot_driver.py --selftest
+      - python3 -I scripts/oracle/run.py --selftest
+
+  oracle:
+    desc: Run loot-rs on every oracle case; with ORACLE_DRIVER set (libloot installed) compare with LOOT. Not part of check
+    cmds:
+      - cargo build --locked --release
+      - python3 -I scripts/oracle/run.py --loot-rs target/release/loot-rs --all {{if .ORACLE_DRIVER}}--driver "{{.ORACLE_DRIVER}}"{{end}}
 
   real:
     desc: Ignored tests against the real masterlist (set LOOT_RS_MASTERLIST)

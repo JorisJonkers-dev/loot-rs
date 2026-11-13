@@ -1,0 +1,9 @@
+groups:
+  - name: Early
+  - name: Late
+    after: [Early]
+plugins:
+  - name: 'A.esp'
+    group: Late
+  - name: 'B.esp'
+    group: Early

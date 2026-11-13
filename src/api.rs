@@ -282,6 +282,46 @@ pub struct DirtyInfo {
     pub nav: u32,
 }
 
+/// Where an ordering rule comes from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RuleSource {
+    /// The plugin lists the other as a master in its header.
+    HeaderMaster,
+    /// The masterlist's `after` entry.
+    After,
+    /// The masterlist's `req` entry.
+    Req,
+    /// The groups of the two plugins.
+    Group,
+}
+
+impl RuleSource {
+    /// A short word for output: `header-master`, `after`, `req` or `group`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::HeaderMaster => "header-master",
+            Self::After => "after",
+            Self::Req => "req",
+            Self::Group => "group",
+        }
+    }
+}
+
+/// A rule that the sorted order honours: `before` loads before `after`. Rules that were dropped are not listed
+/// (see [`SortOutput::dropped_group_rules`]); "masters load first" is a rule of the whole sort and not listed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct OrderingRule {
+    /// The plugin that loads first.
+    pub before: String,
+    /// The plugin that loads later.
+    pub after: String,
+    /// Why.
+    pub source: RuleSource,
+}
+
 /// The result of [`sort`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
@@ -293,6 +333,8 @@ pub struct SortOutput {
     pub general_messages: Vec<Message>,
     /// One entry per plugin of [`SortOutput::order`], in that order.
     pub plugins: Vec<PluginResult>,
+    /// The rules the order honours, to explain it or to check it against another tool's order.
+    pub ordering_rules: Vec<OrderingRule>,
     /// Cleaning data that matches installed files.
     pub dirty: Vec<DirtyInfo>,
     /// Plugins of the load order that are not in the `Data` directory.
@@ -463,29 +505,32 @@ pub fn sort(
         .iter()
         .map(|slot| facts_of(&env, metadata, slot, &mut output.warnings))
         .collect();
-    let (hard, soft) = rules(&env, metadata, &facts, &mut output.warnings);
+    let rules = rules(&env, metadata, &facts, &mut output.warnings);
+    let hard: Edges = rules.hard.iter().map(|&(a, b, _)| (a, b)).collect();
 
     let is_master: Vec<bool> = facts.iter().map(|fact| fact.is_master).collect();
     let name_of = |index: usize| facts[index].name.to_string();
-    let sorted = order(facts.len(), &is_master, &hard, &soft).map_err(|error| match error {
-        GraphError::Cycle(a, b) => SortError::Conflict {
-            first: name_of(a),
-            second: name_of(b),
-        },
-        GraphError::MasterOrder(a, b) => SortError::MasterOrder {
-            plugin: name_of(a),
-            master: name_of(b),
-        },
-        GraphError::TooMany(count) => SortError::TooManyPlugins(count),
-        // The edges are built from indices of `facts`.
-        GraphError::TooMuchWork | GraphError::BadIndex(_) => SortError::TooMuchWork,
-    })?;
+    let sorted =
+        order(facts.len(), &is_master, &hard, &rules.soft).map_err(|error| match error {
+            GraphError::Cycle(a, b) => SortError::Conflict {
+                first: name_of(a),
+                second: name_of(b),
+            },
+            GraphError::MasterOrder(a, b) => SortError::MasterOrder {
+                plugin: name_of(a),
+                master: name_of(b),
+            },
+            GraphError::TooMany(count) => SortError::TooManyPlugins(count),
+            // The edges are built from indices of `facts`.
+            GraphError::TooMuchWork | GraphError::BadIndex(_) => SortError::TooMuchWork,
+        })?;
     output.dropped_group_rules = sorted
         .dropped
         .iter()
         .map(|&(earlier, later)| (name_of(later), name_of(earlier)))
         .collect();
     output.order = sorted.order.iter().map(|&index| name_of(index)).collect();
+    output.ordering_rules = ordering_rules(&rules, &sorted.dropped, &name_of);
 
     // What the masterlist says, with the plugins in their sorted places: a rule that the sort could not satisfy
     // shows up as a finding.
@@ -506,6 +551,32 @@ pub fn sort(
     output.plugins = report.plugins.iter().map(plugin_result).collect();
     output.dirty = dirty_info(&facts, &sorted.order, &sorted_env);
     Ok(output)
+}
+
+/// The rules that were kept, once each.
+fn ordering_rules(
+    rules: &Rules,
+    dropped: &[(usize, usize)],
+    name_of: &dyn Fn(usize) -> String,
+) -> Vec<OrderingRule> {
+    let soft = rules
+        .soft
+        .iter()
+        .filter(|edge| !dropped.contains(edge))
+        .map(|&(a, b)| (a, b, RuleSource::Group));
+    let mut seen = HashSet::new();
+    rules
+        .hard
+        .iter()
+        .copied()
+        .chain(soft)
+        .filter(|&(a, b, source)| seen.insert((a, b, source.label())))
+        .map(|(a, b, source)| OrderingRule {
+            before: name_of(a),
+            after: name_of(b),
+            source,
+        })
+        .collect()
 }
 
 /// The slots without repeated names (the first of a name is kept, the rest are noted).
@@ -563,32 +634,33 @@ fn facts_of<'a>(
 /// Edges `(earlier, later)` over indices of the installed plugins.
 type Edges = Vec<(usize, usize)>;
 
+/// The edges that must hold with where each comes from, and those that hold when they can.
+struct Rules {
+    hard: Vec<(usize, usize, RuleSource)>,
+    soft: Edges,
+}
+
 /// The edges `(earlier, later)` over the indices of `facts`: those that must hold (masters, `after`, `req`) and
 /// those that hold when they can (groups), the latter in an order that depends on names only.
-fn rules(
-    env: &FsEnv,
-    metadata: &Metadata,
-    facts: &[Facts],
-    warnings: &mut Vec<String>,
-) -> (Edges, Edges) {
+fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<String>) -> Rules {
     let index_of: HashMap<String, usize> = facts
         .iter()
         .enumerate()
         .map(|(index, fact)| (fact.name.to_lowercase(), index))
         .collect();
     let mut conditions = Conditions { env, warnings };
-    let mut hard: Vec<(usize, usize)> = Vec::new();
+    let mut hard: Vec<(usize, usize, RuleSource)> = Vec::new();
     for (index, fact) in facts.iter().enumerate() {
         for master in &fact.masters {
             if let Some(&before) = index_of.get(&master.to_lowercase()) {
-                hard.push((before, index));
+                hard.push((before, index, RuleSource::HeaderMaster));
             }
         }
-        for file in fact
-            .entries
-            .iter()
-            .flat_map(|entry| entry.after.iter().chain(entry.req.iter()))
-        {
+        let wanted = fact.entries.iter().flat_map(|entry| {
+            let after = entry.after.iter().map(|file| (file, RuleSource::After));
+            after.chain(entry.req.iter().map(|file| (file, RuleSource::Req)))
+        });
+        for (file, source) in wanted {
             let Some(&before) = index_of.get(&file.name.to_lowercase()) else {
                 continue;
             };
@@ -596,7 +668,7 @@ fn rules(
                 && (file.constraint.is_none()
                     || conditions.holds(file.constraint.as_deref(), fact.name))
             {
-                hard.push((before, index));
+                hard.push((before, index, source));
             }
         }
     }
@@ -626,7 +698,7 @@ fn rules(
             }
         }
     }
-    (hard, soft)
+    Rules { hard, soft }
 }
 
 fn plugin_result(plugin: &check::PluginReport) -> PluginResult {

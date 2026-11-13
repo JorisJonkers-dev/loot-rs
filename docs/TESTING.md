@@ -21,6 +21,7 @@ On NixOS run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld nixpkgs#cargo-llvm-
 | Golden | `tests/golden.rs`, `tests/golden/<case>/` | 22 cases (5 also in JSON) | The binary's output and exit code on synthetic game directories, one case per rule kind |
 | Library API | `src/api_tests.rs`, `src/sort_tests.rs`, `tests/api.rs`, `tests/prop_sort.rs` | 17 + 13 + 5 + 5 properties | The sorter on indices (masters, cycles, dropped soft edges, fixed point, the largest load order within the work budget), `api::sort` over synthetic plugins (headers, `after`, `req`, groups, strict groups, case, duplicates, unreadable headers, cleaning data by CRC, errors) and a consumer of the public API from outside the crate. Properties: the result is a permutation that honours every kept rule, errors exist only for real conflicts, a dropped rule really could not be kept, sorting is deterministic and a sorted order is a fixed point |
 | Binary, end to end | `tests/cli.rs` | 15 | Whole runs on generated plugins, including that nothing is written |
+| Golden, sort | `tests/golden_sort.rs`, `tests/golden_sort/<case>/` | 6 cases (text and JSON) | `loot-rs sort`: masters first, header masters, `after` and `req`, groups, a dropped group rule, messages with cleaning data |
 | Binary, errors | `tests/cli_errors.rs` | 25 | Exit code 2 and its messages: arguments, bad or unreadable masterlist, plugin list, Data directory, unreadable plugins |
 | Executable versions (feature) | `src/exe_version_tests.rs`, `tests/limits_exe.rs` | 15 + 1 | `version()` and `product_version()` on synthetic PE images built in the test (no game files): both argument orders, LOOT's comparison, case-insensitive paths, missing and non-PE files, plugins still unsupported, hostile sizes, every truncation and byte flip. `task test:features` runs them; CI does too |
 | Resource limits | `tests/limits.rs` | 1 (11 hostile inputs) | Every size that comes from the input is bounded; see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md). CI runs it under a 512 MiB address-space limit |
@@ -123,8 +124,10 @@ Textually the masterlist calls `version()` 17 times (9 on executables or DLLs, 8
 
 ## Differential testing against LOOT
 
-Planned, not done: see [ORACLE.md](ORACLE.md). `scripts/oracle/` holds a comparison script and a fixture builder with
-self-tests on invented data (`task scripts`). No LOOT output is recorded anywhere.
+The harness is done, the LOOT runs are not: see [ORACLE.md](ORACLE.md). `scripts/oracle/` holds the fixture builder, the
+libloot driver, the comparison and the runner, with self-tests on invented data (`task scripts`, in CI), and
+`task oracle` runs `loot-rs sort` on the 28 cases (and compares with LOOT when `ORACLE_DRIVER` names a driver). No LOOT
+output is recorded anywhere, and CI never needs libloot or the game.
 
 ## Fuzzing
 

@@ -82,7 +82,7 @@ fn no_arguments_is_an_error_with_the_usage() {
 
 #[test]
 fn an_unknown_command_is_an_error() {
-    assert_error(&run(&["sort"]), "unknown command \"sort\"");
+    assert_error(&run(&["frobnicate"]), "unknown command \"frobnicate\"");
     assert_error(&run(&["--help"]), "unknown command \"--help\"");
 }
 
@@ -396,4 +396,43 @@ fn reports_go_to_stdout_and_errors_to_stderr() {
     let violation = check(&broken, &plugins, &fixture.data(), &[]);
     assert!(violation.stdout.contains("VIOLATION"));
     assert_eq!(violation.stderr, "");
+}
+
+#[test]
+fn sort_with_rules_that_contradict_each_other_is_exit_code_two_naming_both_plugins() {
+    let fixture = Fixture::new();
+    fixture.plugin("A.esp", &[]).plugin("B.esp", &[]);
+    let masterlist = fixture.masterlist(
+        "plugins:\n  - {name: A.esp, after: [B.esp]}\n  - {name: B.esp, after: [A.esp]}\n",
+    );
+    let plugins = fixture.plugins_txt("A.esp\nB.esp\n");
+    let mut args = vec!["sort", "--masterlist", masterlist.to_str().expect("utf8")];
+    args.extend(["--plugins", plugins.to_str().expect("utf8")]);
+    let data = fixture.data();
+    args.extend(["--data", data.to_str().expect("utf8")]);
+    let result = run(&args);
+    assert_eq!(result.code, 2);
+    assert_eq!(result.stdout, "");
+    assert!(result.stderr.contains("cannot sort"), "{}", result.stderr);
+    assert!(result.stderr.contains("A.esp") && result.stderr.contains("B.esp"));
+}
+
+#[test]
+fn sort_reports_a_bad_masterlist_like_check_does() {
+    let fixture = Fixture::new();
+    fixture.plugin("A.esp", &[]);
+    let masterlist = fixture.masterlist("- not a map\n");
+    let plugins = fixture.plugins_txt("A.esp\n");
+    let data = fixture.data();
+    let result = run(&[
+        "sort",
+        "--masterlist",
+        masterlist.to_str().expect("utf8"),
+        "--plugins",
+        plugins.to_str().expect("utf8"),
+        "--data",
+        data.to_str().expect("utf8"),
+    ]);
+    assert_eq!(result.code, 2);
+    assert!(result.stderr.contains("masterlist"), "{}", result.stderr);
 }

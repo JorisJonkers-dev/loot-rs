@@ -1,0 +1,4 @@
+plugin FalloutNV.esm esm
+plugin Patch.esp masters=FalloutNV.esm,Base.esp
+plugin Base.esp masters=FalloutNV.esm
+plugin Other.esp

@@ -1,0 +1,13 @@
+Sorted load order (3 plugin(s)):
+   1. FalloutNV.esm
+   2. A.esp
+   3. B.esp
+
+say: Global note
+
+A.esp (group "default")
+  warn: A applies
+  tag +Relev
+  tag -Delev
+  VIOLATION missing requirement: requires Missing Mod, which is not present.
+note: Gone.esp is listed but not installed, left out

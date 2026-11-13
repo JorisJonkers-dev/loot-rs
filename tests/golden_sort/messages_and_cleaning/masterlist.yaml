@@ -1,0 +1,21 @@
+globals:
+  - type: say
+    content: 'Global note'
+plugins:
+  - name: 'A.esp'
+    msg:
+      - type: warn
+        content: 'A applies'
+        condition: 'file("B.esp")'
+      - type: error
+        content: 'never'
+        condition: 'file("Nope.esp")'
+    tag: ['Relev', {name: '-Delev', condition: 'active("B.esp")'}]
+    req:
+      - name: 'Missing.esp'
+        display: 'Missing Mod'
+  - name: 'B.esp'
+    dirty:
+      - crc: 0x265A59CF
+        util: 'FNVEdit'
+        itm: 3

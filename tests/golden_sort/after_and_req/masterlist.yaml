@@ -1,0 +1,9 @@
+plugins:
+  - name: 'A.esp'
+    after: ['C.esp']
+  - name: 'B.esp'
+    req: ['D.esp']
+  - name: 'C.esp'
+    after:
+      - name: 'B.esp'
+        condition: 'file("Nope.esp")'

@@ -14,8 +14,7 @@
 
 mod common;
 
-use common::Fixture;
-use loot_rs::plugin::{FLAG_ESM, synthetic_plugin};
+use common::{Fixture, build_data};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,37 +28,6 @@ fn cases() -> Vec<PathBuf> {
         .collect();
     dirs.sort();
     dirs
-}
-
-fn build_data(fixture: &Fixture, spec: &str) {
-    for line in spec.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        let mut words = line.split_whitespace();
-        match words.next() {
-            Some("plugin") => {
-                let name = words.next().expect("plugin name");
-                let (mut flags, mut masters) = (0, Vec::new());
-                for word in words {
-                    if word == "esm" {
-                        flags |= FLAG_ESM;
-                    } else if let Some(list) = word.strip_prefix("masters=") {
-                        masters = list.split(',').collect();
-                    } else {
-                        panic!("unknown plugin option {word:?} in {line:?}");
-                    }
-                }
-                fixture.file(name, &synthetic_plugin(flags, &masters, None));
-            }
-            Some("file") => {
-                let path = words.next().expect("file path");
-                let text = words
-                    .next()
-                    .and_then(|word| word.strip_prefix("text="))
-                    .expect("file text=");
-                fixture.file(path, text.as_bytes());
-            }
-            other => panic!("unknown data line {other:?}"),
-        }
-    }
 }
 
 /// Run one case; returns (stdout, stderr, exit code).
