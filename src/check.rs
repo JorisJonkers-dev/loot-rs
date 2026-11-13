@@ -226,7 +226,7 @@ impl Evaluator<'_> {
 }
 
 /// Transitive closure of "loads after" over the merged group definitions.
-fn group_closure(metadata: &Metadata) -> HashMap<String, HashSet<String>> {
+pub(crate) fn group_closure(metadata: &Metadata) -> HashMap<String, HashSet<String>> {
     let direct: HashMap<&str, &[String]> = metadata
         .groups
         .iter()

@@ -78,6 +78,26 @@ pub fn crc32(bytes: &[u8]) -> u32 {
     })
 }
 
+/// CRC-32 of a file, read in blocks so that a large plugin is never held in memory.
+///
+/// # Errors
+/// When the file cannot be opened or read.
+pub fn crc32_file(path: &Path) -> io::Result<u32> {
+    use std::io::Read;
+    let mut file = fs::File::open(path)?;
+    let mut buffer = vec![0u8; 64 * 1024];
+    let mut crc = !0u32;
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            return Ok(!crc);
+        }
+        crc = buffer[..read].iter().fold(crc, |crc, &byte| {
+            CRC_TABLE[usize::from(crc.to_le_bytes()[0] ^ byte)] ^ (crc >> 8)
+        });
+    }
+}
+
 /// A load order over a `Data` directory on disk.
 pub struct FsEnv {
     data: PathBuf,
@@ -241,10 +261,7 @@ impl Env for FsEnv {
 
     fn checksum(&self, path: &str) -> Option<u32> {
         let path = self.resolve(path)?;
-        path.is_file()
-            .then(|| fs::read(path).ok())
-            .flatten()
-            .map(|bytes| crc32(&bytes))
+        path.is_file().then(|| crc32_file(&path).ok()).flatten()
     }
 
     #[cfg(feature = "executable-versions")]

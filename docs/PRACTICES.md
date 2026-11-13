@@ -14,6 +14,7 @@ baseline, adapted to a Linux-first Rust library and CLI (no Windows build, no up
 | Secret scanning | `.gitleaks.toml`, `task secrets` | Every commit, in CI and locally |
 | Workflow lint and security | `actionlint`, `zizmor` (`task lint:actions`) | |
 | Resource limits | `docs/RESOURCE-LIMITS.md`, `tests/limits.rs`, `task limits` | Bounds in the library on every input size; CI runs the bounded tests under `prlimit --as` |
+| Library API | `src/api.rs`, `docs/API.md` | `#[non_exhaustive]` structs and enums, a documented contract and semver policy, `tests/api.rs` as an outside consumer |
 | Optional feature | `Cargo.toml` `executable-versions`, `src/exe_version.rs` | `loot-condition-interpreter` only behind the feature; default build pure; clippy and tests run both ways (`task lint`, `task test:features`) |
 | Fuzzing | `fuzz/`, `scripts/fuzz-run.sh`, `.github/workflows/fuzz.yml`, the `Fuzz smoke` job in `ci.yml` | Six targets, seeded; 15 seconds each on every pull request, ten minutes each weekly; needs `cargo +nightly` |
 | Mutation testing | `.github/workflows/mutants.yml` | Weekly, condition evaluator; not required |
