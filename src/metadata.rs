@@ -3,13 +3,16 @@
 //! Syntax reference: <https://loot-api.readthedocs.io/en/latest/metadata/file_structure.html>.
 //! Read here: `globals`, `groups`, `bash_tags` and `plugins` with `name`, `group`, `after`,
 //! `req`, `inc`, `msg`, `tag`, `dirty` and `clean`. Everything else (`url`, `prelude`
-//! replacement, unknown keys) is ignored. YAML anchors and aliases are resolved by the parser;
-//! YAML merge keys (`<<`) are not.
+//! replacement, unknown keys) is ignored. YAML anchors and aliases are resolved by the parser and YAML merge keys
+//! (`<<`, which the real New Vegas masterlist uses for its message templates) are expanded
+//! before reading: explicit keys win over merged ones, and earlier maps of a merge list win
+//! over later ones.
 //!
 //! Only the English text of a message is kept. `subs` are substituted into `{0}`, `{1}`, ...
 
 use regex::{Regex, RegexBuilder};
 use std::fmt;
+use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlLoader};
 
 /// Name of the group every plugin is in unless the metadata says otherwise.
@@ -184,6 +187,41 @@ pub struct Metadata {
     pub plugins: Vec<PluginEntry>,
     /// Entries that could not be used (for example a regex this engine cannot compile).
     pub warnings: Vec<String>,
+}
+
+/// Expand YAML merge keys (`<<: *alias` or `<<: [*a, *b]`) in `node` and everything below it.
+fn expand_merge_keys(node: &Yaml) -> Yaml {
+    match node {
+        Yaml::Array(items) => Yaml::Array(items.iter().map(expand_merge_keys).collect()),
+        Yaml::Hash(map) => {
+            let mut out = Hash::new();
+            let mut merged: Vec<Hash> = Vec::new();
+            for (key, value) in map {
+                if key.as_str() == Some("<<") {
+                    let sources = match value {
+                        Yaml::Array(items) => items.iter().collect(),
+                        other => vec![other],
+                    };
+                    for source in sources {
+                        if let Yaml::Hash(inner) = expand_merge_keys(source) {
+                            merged.push(inner);
+                        }
+                    }
+                } else {
+                    out.insert(key.clone(), expand_merge_keys(value));
+                }
+            }
+            for inner in merged {
+                for (key, value) in inner {
+                    if !out.contains_key(&key) {
+                        out.insert(key, value);
+                    }
+                }
+            }
+            Yaml::Hash(out)
+        }
+        other => other.clone(),
+    }
 }
 
 fn scalar(node: &Yaml) -> Option<String> {
@@ -366,7 +404,7 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
             after: Vec::new(),
         },
     );
-    let Some(root) = documents.first() else {
+    let Some(root) = documents.first().map(expand_merge_keys) else {
         return Ok(metadata);
     };
     if root.as_hash().is_none() {
@@ -534,6 +572,35 @@ plugins:
         assert_eq!(metadata.plugins.len(), 2);
         assert_eq!(metadata.warnings.len(), 1);
         assert!(metadata.warnings[0].contains("Bad(?=x)"));
+    }
+
+    #[test]
+    fn merge_keys_are_expanded_and_explicit_keys_win() {
+        let text = r#"
+prelude:
+  - &base
+    type: warn
+    content: 'Use {0}.'
+    condition: 'file("x")'
+  - &second
+    type: error
+    content: 'second'
+    subs: ['never']
+globals:
+  - <<: *base
+    subs: ['this']
+  - <<: [*second, *base]
+    content: 'own'
+"#;
+        let metadata = parse(text).expect("parses");
+        assert_eq!(metadata.globals[0].content, "Use this.");
+        assert_eq!(metadata.globals[0].kind, MessageKind::Warn);
+        assert_eq!(
+            metadata.globals[0].condition.as_deref(),
+            Some("file(\"x\")")
+        );
+        assert_eq!(metadata.globals[1].content, "own");
+        assert_eq!(metadata.globals[1].kind, MessageKind::Error);
     }
 
     #[test]
