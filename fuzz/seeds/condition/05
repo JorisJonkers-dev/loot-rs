@@ -1,0 +1,1 @@
+version("../FalloutNV.exe", "1.4.0.525", ==)

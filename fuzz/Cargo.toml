@@ -12,6 +12,7 @@ libfuzzer-sys = "0.4.13"
 
 [dependencies.loot-rs]
 path = ".."
+features = ["executable-versions"]
 
 # Own workspace root: keeps libfuzzer-sys out of the main build and out of cargo-deny.
 [workspace]
@@ -43,6 +44,20 @@ bench = false
 [[bin]]
 name = "plugins_txt"
 path = "fuzz_targets/plugins_txt.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "plugin_roundtrip"
+path = "fuzz_targets/plugin_roundtrip.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "exe_version"
+path = "fuzz_targets/exe_version.rs"
 test = false
 doc = false
 bench = false

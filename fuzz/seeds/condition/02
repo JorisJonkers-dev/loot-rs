@@ -1,0 +1,1 @@
+(file("a.esp") or file("b.esp")) and many("c (a|b).esp")

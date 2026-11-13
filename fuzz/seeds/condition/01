@@ -1,0 +1,1 @@
+file("A.esp") and not active("B.esp")

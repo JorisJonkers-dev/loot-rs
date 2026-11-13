@@ -24,7 +24,7 @@ On NixOS run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld nixpkgs#cargo-llvm-
 | Executable versions (feature) | `src/exe_version_tests.rs`, `tests/limits_exe.rs` | 15 + 1 | `version()` and `product_version()` on synthetic PE images built in the test (no game files): both argument orders, LOOT's comparison, case-insensitive paths, missing and non-PE files, plugins still unsupported, hostile sizes, every truncation and byte flip. `task test:features` runs them; CI does too |
 | Resource limits | `tests/limits.rs` | 1 (11 hostile inputs) | Every size that comes from the input is bounded; see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md). CI runs it under a 512 MiB address-space limit |
 | Real data (ignored) | `tests/real_masterlist.rs` | 2 | The real falloutnv masterlist; run weekly, see below |
-| Fuzz | `fuzz/` | 4 targets | Every parser, with libFuzzer (weekly) |
+| Fuzz | `fuzz/` | 6 targets | Every parser and two round trips, with libFuzzer: 15 seconds each on every pull request (`Fuzz smoke` job of the pipeline), ten minutes each weekly |
 | Mutation | `.github/workflows/mutants.yml` | the condition evaluator | cargo-mutants (weekly) |
 
 Property tests use `proptest` 1.12.0 (published 2026-10-10, MIT OR Apache-2.0, more than the registry proxy's seven
@@ -127,11 +127,24 @@ self-tests on invented data (`task scripts`). No LOOT output is recorded anywher
 
 ## Fuzzing
 
-`fuzz/` is a separate cargo-fuzz workspace with one target per parser: `masterlist_yaml`, `condition`,
-`plugin_header` and `plugins_txt`. `.github/workflows/fuzz.yml` runs each for ten minutes every Monday. The targets
-need a nightly toolchain; `task fuzz:build` builds them and `task fuzz:smoke` runs each for ten seconds. Their crates
-type-check on stable (checked here); no fuzzing campaign has been run yet. A crash input becomes a unit test next to the
-parser before it is fixed.
+`fuzz/` is a separate cargo-fuzz workspace. Targets, and what each asserts beyond "no panic, no hang, no runaway
+allocation":
+
+| Target | Input | Also asserted |
+| --- | --- | --- |
+| `masterlist_yaml` | masterlist text | the alias counter and the reader agree on what is too big; every condition the masterlist carries is parsed |
+| `condition` | condition text | what parses prints to text that parses back to the same expression (and prints the same); both evaluate alike |
+| `plugin_header` | plugin bytes | a parsed header's announced size fits the bytes |
+| `plugin_roundtrip` | a generated plugin (masters, flags, description) | it reads back what was written; no cut of it reads as a different header |
+| `plugins_txt` | `plugins.txt` bytes | no empty inactive names |
+| `exe_version` | a valid synthetic PE image with bytes overwritten | the bounded walk and the interpreter (feature `executable-versions`) answer and return |
+
+`scripts/fuzz-run.sh` runs them, seeded from `fuzz/seeds/<target>/` (and, for the masterlist, the synthetic masterlists
+of the golden tests): `task fuzz:smoke` for `FUZZ_SECONDS` (default 15) each, or `scripts/fuzz-run.sh <target> <seconds>`.
+The `Fuzz smoke` job of `.github/workflows/ci.yml` runs it on every pull request that changes code and is part of
+`Pipeline Complete`; `.github/workflows/fuzz.yml` runs each target for ten minutes every Monday. The targets need a
+nightly toolchain and `cargo-fuzz`; they type-check on stable (checked here). A crash input becomes a unit test next to
+the parser before it is fixed.
 
 Two limits the tests found while being written, both fixed: a condition with a very long or deeply nested chain
 overflowed the stack when parsed, evaluated or dropped (now limited to 64 levels of nesting and 2000 operators and

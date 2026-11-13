@@ -124,9 +124,47 @@ jobs:
         if: ${{ !cancelled() }}
         run: mise exec -- task deny
 
+  # A short run of every fuzz target (seeded), so a parser regression shows on the pull request and not a week
+  # later. The weekly workflow runs each for ten minutes. Not cached on pull requests; main saves the cache.
+  fuzz-smoke:
+    name: Fuzz smoke
+    needs: changes
+    if: ${{ needs.changes.outputs.code == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up the packages proxy
+        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+      - name: Install nightly toolchain
+        run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "fuzz -> target"
+          shared-key: fuzz-smoke
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Install cargo-fuzz
+        run: command -v cargo-fuzz || cargo install --locked cargo-fuzz@0.13.2
+      - name: Fuzz every target for 15 seconds
+        env:
+          FUZZ_SECONDS: "15"
+        run: scripts/fuzz-run.sh
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: fuzz-smoke-artifacts
+          path: fuzz/artifacts
+          if-no-files-found: ignore
+          retention-days: 14
+
   pipeline-complete:
     name: Pipeline Complete
-    needs: [changes, hygiene, pr-title, rust]
+    needs: [changes, hygiene, pr-title, rust, fuzz-smoke]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -156,5 +194,5 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key == "rust" and $n.changes.outputs.code == "false") | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
+          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key | IN("rust", "fuzz-smoke")) and $n.changes.outputs.code == "false" | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
           if [ -n "$failed" ]; then echo "$failed"; exit 1; fi

@@ -1,0 +1,1 @@
+is_master("A.esm") and not is_executable("a.exe")
