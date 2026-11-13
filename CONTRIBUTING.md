@@ -1,6 +1,6 @@
 # Contributing
 
-This is a source-available proprietary project owned by Joris Jonkers.
+This project is licensed GPL-3.0-only (see `LICENSE`) and owned by Joris Jonkers.
 
 External contributions are not accepted unless Joris Jonkers explicitly asks
 for them. Public pull requests may be closed without review.
