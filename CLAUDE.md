@@ -27,3 +27,9 @@ this file stays a pointer. Add repo-specific guidance below.
 ---
 
 ## This repository
+
+`loot-fnv` is a Rust, read-only evaluator of LOOT masterlist rules over a Fallout: New Vegas load order, licensed
+GPL-3.0 because it follows LOOT. Run `task check` (format, clippy with warnings as errors, tests, release build).
+On NixOS, run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld`. Never copy the masterlist data into the
+repository; tests write their own small YAML and generate plugin bytes. `src/plugin.rs` is MIT (see `NOTICE.md`)
+and stays a separate module. `docs/UPSTREAMS.md` records the licences read from the upstream repositories.

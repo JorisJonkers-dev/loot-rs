@@ -6,8 +6,7 @@ target/
 .gradle/
 node_modules/
 
-# Coverage output. REPO_SETUP.md step 4 makes a >=80% coverage gate mandatory,
-# so every repo produces these.
+# Coverage output. the org requires a >=80% line coverage gate, so every repo produces these.
 coverage/
 .nyc_output/
 *.lcov
@@ -53,8 +52,6 @@ scratchpads/
 .claude/commands/speckit*.md
 .claude/skills/speckit*/
 .agents/skills/speckit*/
-templates/**/.specify/
-templates/**/.claude/commands/speckit*.md
 
 # Agent worktrees. `.claude/worktrees/<name>/` is a full git worktree checked
 # out beside the sources; it is machine-local scratch, several MB, and being

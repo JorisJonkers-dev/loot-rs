@@ -5,9 +5,7 @@
 # version manifest. Publishing of artifacts (Maven/npm to GitHub Packages,
 # images to GHCR) hangs off the published-release event below.
 #
-# This gives every repo an explicit, immutable version. Consumers pin exact
-# versions (see VERSIONING.md); nothing deploys or resolves from a moving
-# branch.
+# This gives the repository an explicit, immutable version.
 name: Release
 
 on:
@@ -49,5 +47,5 @@ jobs:
     permissions:
       contents: read
     steps:
-      # This repo is consumed by release tag/ref; the GitHub Release is the artifact.
-      - run: echo 'Released repo-template at ${{ needs.release-please.outputs.tag_name }}'
+      # The GitHub Release is the artifact; the crate is not published to a registry.
+      - run: echo 'Released loot-fnv at ${{ needs.release-please.outputs.tag_name }}'
