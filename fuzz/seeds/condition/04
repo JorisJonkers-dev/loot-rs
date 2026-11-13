@@ -1,0 +1,1 @@
+file_size("A.esp", 1234) or readable("../x.dll")

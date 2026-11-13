@@ -84,12 +84,8 @@ tasks:
     cmd: cargo +nightly fuzz build
 
   fuzz:smoke:
-    desc: Run every fuzz target for ten seconds
-    dir: fuzz
-    cmd: |
-      for target in $(cargo +nightly fuzz list); do
-        cargo +nightly fuzz run "$target" -- -max_total_time=10 -rss_limit_mb=2048
-      done
+    desc: Run every fuzz target for FUZZ_SECONDS (default 15) each, seeded (needs nightly and cargo-fuzz)
+    cmd: scripts/fuzz-run.sh
 
   mutants:
     desc: Mutation testing of the condition evaluator (slow; not part of check)

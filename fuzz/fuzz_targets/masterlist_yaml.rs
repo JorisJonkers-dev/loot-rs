@@ -1,22 +1,52 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
+use loot_rs::condition::parse;
+use loot_rs::metadata::{self, FileRef, Message};
 
-// Only the absence of panics and runaway recursion is asserted: a parse error is a valid outcome for
-// arbitrary text. When the text is a masterlist, every condition it carries is parsed too, as the checker does.
+fn check(condition: Option<&String>) {
+    if let Some(condition) = condition {
+        let _ = parse(condition);
+    }
+}
+
+fn files(refs: &[FileRef]) {
+    for file in refs {
+        check(file.condition.as_ref());
+        check(file.constraint.as_ref());
+    }
+}
+
+fn messages(messages: &[Message]) {
+    for message in messages {
+        check(message.condition.as_ref());
+    }
+}
+
+// Only the absence of panics, runaway recursion and runaway expansion is asserted: an error is a valid outcome for
+// arbitrary text. The alias counter and the reader must agree on what is too big (a text the counter accepts is
+// read, one it refuses is refused by the reader too), and every condition the masterlist carries is parsed, as
+// the checker does.
 fuzz_target!(|data: &[u8]| {
     let Ok(text) = std::str::from_utf8(data) else {
         return;
     };
-    if let Ok(metadata) = loot_rs::metadata::parse(text) {
-        let messages = metadata
-            .globals
-            .iter()
-            .chain(metadata.plugins.iter().flat_map(|entry| entry.msg.iter()));
-        for message in messages {
-            if let Some(condition) = &message.condition {
-                let _ = loot_rs::condition::parse(condition);
+    let counted = metadata::expanded_node_count(text);
+    let parsed = metadata::parse(text);
+    if counted.is_err() {
+        assert!(parsed.is_err(), "the reader accepted what the counter refused");
+    }
+    if let Ok(metadata) = parsed {
+        messages(&metadata.globals);
+        for entry in &metadata.plugins {
+            messages(&entry.msg);
+            files(&entry.after);
+            files(&entry.req);
+            files(&entry.inc);
+            for tag in &entry.tag {
+                check(tag.condition.as_ref());
             }
+            let _ = entry.pattern.matches("Some Plugin.esp");
         }
     }
 });

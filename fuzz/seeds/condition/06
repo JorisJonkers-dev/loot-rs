@@ -1,0 +1,1 @@
+product_version("nvse_loader.exe", >=, "5.0")
