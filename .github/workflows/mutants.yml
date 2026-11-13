@@ -1,0 +1,52 @@
+# Mutation testing of the condition evaluator, weekly. Not required: a surviving mutant is a test to write.
+name: Mutants
+
+on:
+  schedule:
+    # Weekly, Tuesday 04:00 UTC.
+    - cron: "0 4 * * 2"
+  workflow_dispatch:
+
+concurrency:
+  group: mutants-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  mutants:
+    name: cargo-mutants (condition evaluator)
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
+        with:
+          cache: true
+
+      # Routes cargo through the packages proxy.
+      - name: Set up the packages proxy
+        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
+
+      - name: Install cargo-mutants
+        run: cargo install --locked cargo-mutants@27.1.0
+
+      - name: Mutate src/condition.rs
+        run: cargo mutants --file src/condition.rs --jobs 2 --timeout-multiplier 3 --output mutants-out
+
+      - name: Upload the report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: mutants-report
+          path: mutants-out/mutants.out
+          if-no-files-found: ignore
+          retention-days: 30

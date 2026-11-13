@@ -1,0 +1,29 @@
+# The RustSec database against Cargo.lock every day: a new advisory against an unchanged lockfile is the
+# common case. A failed run is the alert. (A pull request is covered by `cargo deny check` in the pipeline.)
+name: Advisories
+
+on:
+  schedule:
+    - cron: "41 5 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: advisories-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  advisories:
+    name: RustSec advisories
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5
+        with:
+          cache: true
+      - run: mise exec -- cargo deny check advisories
