@@ -4,8 +4,8 @@
 use crate::check::{Options, run};
 use crate::env::{FsEnv, parse_plugins_txt};
 use crate::{metadata, render};
-use std::fs;
-use std::io::Write;
+use std::fs::File;
+use std::io::{Read, Write};
 use std::path::PathBuf;
 
 /// Exit code: no hard violation.
@@ -15,6 +15,12 @@ pub const EXIT_OK: u8 = 0;
 pub const EXIT_VIOLATION: u8 = 1;
 /// Exit code: bad arguments or unreadable input.
 pub const EXIT_ERROR: u8 = 2;
+
+/// Largest masterlist file that is read, in bytes.
+pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
+
+/// Largest `plugins.txt` that is read, in bytes (a load order of 255 plugins is about 5 KB).
+pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
 pub const USAGE: &str = "usage: loot-rs check --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups] [--json]
@@ -78,16 +84,37 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
     })
 }
 
+/// Read a file of at most `limit` bytes, never more than `limit + 1` into memory.
+fn read_limited(path: &std::path::Path, limit: u64) -> Result<Vec<u8>, String> {
+    let describe = |error: std::io::Error| format!("{}: {error}", path.display());
+    let file = File::open(path).map_err(describe)?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(describe)?;
+    if bytes.len() as u64 > limit {
+        return Err(format!(
+            "{}: larger than the limit of {limit} bytes",
+            path.display()
+        ));
+    }
+    Ok(bytes)
+}
+
 /// Read the inputs, run the check and write the report to `out`.
 ///
 /// # Errors
 /// A message for an unreadable or invalid input; the caller prints it and exits with [`EXIT_ERROR`].
 pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
-    let yaml = fs::read_to_string(&args.masterlist)
-        .map_err(|error| format!("{}: {error}", args.masterlist.display()))?;
+    let yaml =
+        String::from_utf8(read_limited(&args.masterlist, MAX_MASTERLIST_FILE)?).map_err(|_| {
+            format!(
+                "{}: stream did not contain valid UTF-8",
+                args.masterlist.display()
+            )
+        })?;
     let metadata = metadata::parse(&yaml).map_err(|error| format!("masterlist: {error}"))?;
-    let list =
-        fs::read(&args.plugins).map_err(|error| format!("{}: {error}", args.plugins.display()))?;
+    let list = read_limited(&args.plugins, MAX_PLUGINS_FILE)?;
     if !args.data.is_dir() {
         return Err(format!("{}: not a directory", args.data.display()));
     }

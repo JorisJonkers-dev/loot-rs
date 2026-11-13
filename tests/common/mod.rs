@@ -97,6 +97,10 @@ pub fn proptest_config(cases: u32) -> proptest::test_runner::Config {
         .ok()
         .and_then(|text| text.parse::<u64>().ok())
         .unwrap_or(0x100_7F00D);
+    let cases = std::env::var("PROPTEST_CASES")
+        .ok()
+        .and_then(|text| text.parse::<u32>().ok())
+        .unwrap_or(cases);
     proptest::test_runner::Config {
         cases,
         rng_seed: proptest::test_runner::RngSeed::Fixed(seed),

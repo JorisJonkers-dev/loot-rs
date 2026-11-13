@@ -381,3 +381,65 @@ fn the_expansion_check_reports_yaml_errors_like_the_loader() {
             .starts_with("YAML: ")
     );
 }
+
+#[test]
+fn a_masterlist_over_the_size_limit_is_refused_without_being_read() {
+    let big = "#".repeat(MAX_MASTERLIST_BYTES + 1);
+    assert!(
+        parse(&big)
+            .expect_err("refused")
+            .0
+            .contains("more than the limit")
+    );
+}
+
+#[test]
+fn brackets_nested_beyond_the_limit_are_refused() {
+    let ok = format!(
+        "a: {}{}\n",
+        "[".repeat(MAX_FLOW_DEPTH),
+        "]".repeat(MAX_FLOW_DEPTH)
+    );
+    assert!(parse(&ok).is_ok());
+    let deep = format!("a: {}", "[".repeat(MAX_FLOW_DEPTH + 1));
+    assert!(
+        parse(&deep)
+            .expect_err("refused")
+            .0
+            .contains("nested more than")
+    );
+}
+
+#[test]
+fn the_expanded_node_count_counts_every_alias_use() {
+    assert_eq!(expanded_node_count("a: [x, y]\n").expect("counts"), 5);
+    let aliased = "p: &l [x, y]\nq: [*l, *l]\n";
+    // root map, p's list and two scalars, q's list and two aliases of three nodes each... plus the keys.
+    let plain = expanded_node_count("p: [x, y]\nq: [[x, y], [x, y]]\n").expect("counts");
+    assert_eq!(expanded_node_count(aliased).expect("counts"), plain);
+}
+
+#[test]
+fn the_merge_key_budget_stops_the_expansion_before_it_clones_more() {
+    let yaml = YamlLoader::load_from_str("a: &x {k: v}\nb: {<<: [*x, *x]}\n").expect("loads");
+    let mut budget = Budget { left: 3 };
+    let error = expand_merge_keys(&yaml[0], &mut budget, 0).expect_err("budget runs out");
+    assert!(
+        error.0.contains("merge keys expand to more than"),
+        "{error}"
+    );
+    let mut enough = Budget { left: 1000 };
+    assert!(expand_merge_keys(&yaml[0], &mut enough, 0).is_ok());
+}
+
+#[test]
+fn the_merge_key_expansion_refuses_to_recurse_past_the_depth_limit() {
+    let mut node = Yaml::String("leaf".into());
+    for _ in 0..(MAX_COUNTED_DEPTH + 5) {
+        node = Yaml::Array(vec![node]);
+    }
+    let mut budget = Budget { left: 1_000_000 };
+    let error = expand_merge_keys(&node, &mut budget, 0).expect_err("too deep");
+    assert!(error.0.contains("nested too deeply"));
+    // Dropping the 260-deep tree is fine; a deeper one never gets built by the loader.
+}

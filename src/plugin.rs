@@ -32,7 +32,7 @@ use std::path::Path;
 pub const RECORD_HEADER_SIZE: usize = 24;
 
 /// Header data larger than this is refused instead of read (real headers are a few KiB).
-pub const MAX_HEADER_DATA: usize = 16 * 1024 * 1024;
+pub const MAX_HEADER_DATA: usize = 4 * 1024 * 1024;
 
 /// Record flag: the plugin is a master (ESM).
 pub const FLAG_ESM: u32 = 0x1;
@@ -221,6 +221,11 @@ pub fn read_header(path: &Path) -> io::Result<PluginHeader> {
     let filled = fill(&mut file, &mut buffer)?;
     buffer.truncate(filled);
     let size = header_data_size(&buffer).map_err(invalid)?;
+    // The size comes from the file itself: check it against the real length before allocating by it.
+    let length = file.metadata()?.len();
+    if u64::try_from(RECORD_HEADER_SIZE + size).map_or(true, |needed| needed > length) {
+        return Err(invalid(PluginError::Truncated));
+    }
     buffer.resize(RECORD_HEADER_SIZE + size, 0);
     let filled = fill(&mut file, &mut buffer[RECORD_HEADER_SIZE..])?;
     if filled < size {

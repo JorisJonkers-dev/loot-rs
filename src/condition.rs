@@ -9,7 +9,7 @@
 //! `description_contains`, `is_executable`) parse, but evaluate to
 //! [`ConditionError::Unsupported`]: they are never guessed.
 //!
-//! A condition may nest at most [`MAX_NESTING`] parentheses or `not`s and hold at most [`MAX_NODES`]
+//! A condition may be at most [`MAX_CONDITION_BYTES`] long, nest at most [`MAX_NESTING`] parentheses or `not`s and hold at most [`MAX_NODES`]
 //! operators and calls, so that parsing, evaluating and dropping it cannot exhaust the stack on
 //! hostile input.
 //!
@@ -44,6 +44,9 @@ impl std::error::Error for ConditionError {}
 
 /// Deepest nesting of parentheses and `not` that is accepted.
 pub const MAX_NESTING: usize = 64;
+
+/// Longest condition text that is parsed, in bytes (the longest in the real masterlist is 256).
+pub const MAX_CONDITION_BYTES: usize = 16 * 1024;
 
 /// Most operators and function calls that one condition may hold.
 pub const MAX_NODES: usize = 2_000;
@@ -314,6 +317,11 @@ impl Parser {
 /// # Errors
 /// Returns [`ConditionError::Syntax`] for text that is not a condition.
 pub fn parse(text: &str) -> Result<Expr, ConditionError> {
+    if text.len() > MAX_CONDITION_BYTES {
+        return Err(ConditionError::Syntax(format!(
+            "condition is longer than {MAX_CONDITION_BYTES} bytes"
+        )));
+    }
     let mut parser = Parser {
         tokens: tokenize(text)?,
         at: 0,

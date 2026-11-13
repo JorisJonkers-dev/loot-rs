@@ -242,3 +242,13 @@ fn synthetic_plugins_with_a_description_round_trip() {
     assert_eq!(header.description.as_deref(), Some("Version: 1.2"));
     assert_eq!(header.masters, ["A.esm", "B.esm"]);
 }
+
+#[test]
+fn a_size_field_larger_than_the_file_is_refused_before_allocating_by_it() {
+    let dir = crate::support_tests::TempDir::new();
+    let mut claim = header_bytes(u32::try_from(MAX_HEADER_DATA).expect("fits"));
+    claim.extend_from_slice(b"MAST");
+    let path = dir.file("claims.esp", &claim);
+    let error = read_header(&path).expect_err("truncated");
+    assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+}

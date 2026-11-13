@@ -21,6 +21,9 @@ use loot_rs::metadata::{Metadata, NamePattern, parse as parse_masterlist};
 use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
+/// The two tests parse the whole masterlist: never at the same time.
+static ONE_AT_A_TIME: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 fn masterlist_text() -> String {
     let path = std::env::var("LOOT_RS_MASTERLIST")
         .or_else(|_| std::env::var("LOOT_FNV_MASTERLIST"))
@@ -61,8 +64,17 @@ fn functions(expr: &Expr, found: &mut Vec<String>) {
 #[test]
 #[ignore = "needs the real masterlist: set LOOT_RS_MASTERLIST"]
 fn the_real_masterlist_parses_and_every_condition_in_it_is_valid_syntax() {
+    let _guard = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let text = masterlist_text();
+    println!(
+        "expanded nodes: {} (limit {})",
+        loot_rs::metadata::expanded_node_count(&text).expect("within the limits"),
+        loot_rs::metadata::MAX_EXPANDED_NODES
+    );
     let started = Instant::now();
-    let metadata = parse_masterlist(&masterlist_text()).expect("the real masterlist parses");
+    let metadata = parse_masterlist(&text).expect("the real masterlist parses");
     println!("parse time: {:?}", started.elapsed());
 
     let entries = metadata.plugins.len() + metadata.warnings.len();
@@ -157,6 +169,9 @@ fn the_real_masterlist_parses_and_every_condition_in_it_is_valid_syntax() {
 #[test]
 #[ignore = "needs the real masterlist: set LOOT_RS_MASTERLIST"]
 fn four_hundred_plugins_are_checked_against_the_real_masterlist_within_the_time_budget() {
+    let _guard = ONE_AT_A_TIME
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let metadata = parse_masterlist(&masterlist_text()).expect("the real masterlist parses");
     let budget = Duration::from_secs(
         std::env::var("LOOT_RS_BUDGET_SECS")

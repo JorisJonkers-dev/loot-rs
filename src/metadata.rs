@@ -21,7 +21,16 @@ use yaml_rust2::{Yaml, YamlLoader};
 /// Most nodes a masterlist may expand to once aliases are resolved. A file of a few hundred KiB, like the
 /// real masterlist, expands to well under a million; this stops "billion laughs" documents, whose aliases
 /// multiply on every level, before the loader clones them.
-pub const MAX_EXPANDED_NODES: usize = 4_000_000;
+pub const MAX_EXPANDED_NODES: usize = 200_000;
+
+/// Largest masterlist text that is read, in bytes (the real one is about 250 KB).
+pub const MAX_MASTERLIST_BYTES: usize = 8 * 1024 * 1024;
+
+/// Deepest nesting of `[` and `{` that is accepted (the real masterlist nests two levels).
+pub const MAX_FLOW_DEPTH: usize = 64;
+
+/// Deepest nesting of collections that the alias counter follows.
+const MAX_COUNTED_DEPTH: usize = 256;
 
 /// Name of the group every plugin is in unless the metadata says otherwise.
 pub const DEFAULT_GROUP: &str = "default";
@@ -249,6 +258,10 @@ impl MarkedEventReceiver for ExpansionCounter {
             }
             Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
                 self.total = self.total.saturating_add(1);
+                if self.open.len() >= MAX_COUNTED_DEPTH {
+                    self.exceeded = true;
+                    return;
+                }
                 self.open.push((anchor, 1));
             }
             Event::SequenceEnd | Event::MappingEnd => self.close(),
@@ -257,8 +270,34 @@ impl MarkedEventReceiver for ExpansionCounter {
     }
 }
 
-/// Refuse a document whose aliases expand to more than [`MAX_EXPANDED_NODES`] nodes.
-fn check_expansion(text: &str) -> Result<(), MetadataError> {
+/// The number of nodes the document has once every alias is counted as the node it stands for. Refuses a
+/// document that is too large, nests brackets too deeply or expands to more than [`MAX_EXPANDED_NODES`].
+///
+/// # Errors
+/// [`MetadataError`] for invalid YAML or a document over one of the limits.
+pub fn expanded_node_count(text: &str) -> Result<usize, MetadataError> {
+    if text.len() > MAX_MASTERLIST_BYTES {
+        return Err(MetadataError(format!(
+            "the masterlist is {} bytes, more than the limit of {MAX_MASTERLIST_BYTES}",
+            text.len()
+        )));
+    }
+    let (mut depth, mut deepest) = (0usize, 0usize);
+    for byte in text.bytes() {
+        match byte {
+            b'[' | b'{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    if deepest > MAX_FLOW_DEPTH {
+        return Err(MetadataError(format!(
+            "YAML: brackets are nested more than {MAX_FLOW_DEPTH} levels deep"
+        )));
+    }
     let mut counter = ExpansionCounter::default();
     let mut parser = Parser::new_from_str(text);
     parser
@@ -269,13 +308,44 @@ fn check_expansion(text: &str) -> Result<(), MetadataError> {
             "YAML: the aliases expand to more than {MAX_EXPANDED_NODES} nodes"
         )));
     }
-    Ok(())
+    Ok(counter.total)
 }
 
 /// Expand YAML merge keys (`<<: *alias` or `<<: [*a, *b]`) in `node` and everything below it.
-fn expand_merge_keys(node: &Yaml) -> Yaml {
-    match node {
-        Yaml::Array(items) => Yaml::Array(items.iter().map(expand_merge_keys).collect()),
+/// Work allowed for merge-key expansion: every node visited or copied counts, and the expansion stops the
+/// moment the budget or the depth runs out, before anything more is cloned.
+struct Budget {
+    left: usize,
+}
+
+impl Budget {
+    fn spend(&mut self, amount: usize) -> Result<(), MetadataError> {
+        self.left = self.left.checked_sub(amount).ok_or_else(|| {
+            MetadataError(format!(
+                "YAML: merge keys expand to more than {} nodes",
+                MAX_EXPANDED_NODES * 2
+            ))
+        })?;
+        Ok(())
+    }
+}
+
+fn expand_merge_keys(
+    node: &Yaml,
+    budget: &mut Budget,
+    depth: usize,
+) -> Result<Yaml, MetadataError> {
+    if depth > MAX_COUNTED_DEPTH {
+        return Err(MetadataError("YAML: nested too deeply".into()));
+    }
+    budget.spend(1)?;
+    Ok(match node {
+        Yaml::Array(items) => Yaml::Array(
+            items
+                .iter()
+                .map(|item| expand_merge_keys(item, budget, depth + 1))
+                .collect::<Result<_, _>>()?,
+        ),
         Yaml::Hash(map) => {
             let mut out = Hash::new();
             let mut merged: Vec<Hash> = Vec::new();
@@ -286,15 +356,16 @@ fn expand_merge_keys(node: &Yaml) -> Yaml {
                         other => vec![other],
                     };
                     for source in sources {
-                        if let Yaml::Hash(inner) = expand_merge_keys(source) {
+                        if let Yaml::Hash(inner) = expand_merge_keys(source, budget, depth + 1)? {
                             merged.push(inner);
                         }
                     }
                 } else {
-                    out.insert(key.clone(), expand_merge_keys(value));
+                    out.insert(key.clone(), expand_merge_keys(value, budget, depth + 1)?);
                 }
             }
             for inner in merged {
+                budget.spend(inner.len())?;
                 for (key, value) in inner {
                     if !out.contains_key(&key) {
                         out.insert(key, value);
@@ -304,7 +375,7 @@ fn expand_merge_keys(node: &Yaml) -> Yaml {
             Yaml::Hash(out)
         }
         other => other.clone(),
-    }
+    })
 }
 
 fn scalar(node: &Yaml) -> Option<String> {
@@ -476,7 +547,7 @@ fn merge_group(groups: &mut Vec<Group>, incoming: Group) {
 /// expression that cannot be compiled does not fail the file: the entry is skipped and a
 /// warning is recorded in [`Metadata::warnings`].
 pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
-    check_expansion(text)?;
+    expanded_node_count(text)?;
     let documents =
         YamlLoader::load_from_str(text).map_err(|error| MetadataError(format!("YAML: {error}")))?;
     let mut metadata = Metadata::default();
@@ -488,7 +559,14 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
             after: Vec::new(),
         },
     );
-    let Some(root) = documents.first().map(expand_merge_keys) else {
+    let mut budget = Budget {
+        left: MAX_EXPANDED_NODES * 2,
+    };
+    let Some(root) = documents
+        .first()
+        .map(|document| expand_merge_keys(document, &mut budget, 0))
+        .transpose()?
+    else {
         return Ok(metadata);
     };
     if root.as_hash().is_none() {

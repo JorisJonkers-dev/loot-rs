@@ -210,11 +210,20 @@ fn nesting_is_limited() {
 #[test]
 fn the_number_of_operators_is_limited() {
     let chain = |count: usize| vec![r#"file("a.esp")"#; count].join(" and ");
-    assert_eq!(eval(&chain(MAX_NODES / 2 - 10)), Ok(true));
-    let error = eval(&chain(MAX_NODES + 10)).expect_err("too long");
+    assert_eq!(eval(&chain(500)), Ok(true));
+    // Short calls fit more operators than the text limit would allow with long ones.
+    let error = parse(&format!("{}f()", "f()and ".repeat(MAX_NODES))).expect_err("too many");
     assert!(
         matches!(&error, ConditionError::Syntax(text) if text.contains("more than")),
         "{error}"
+    );
+}
+
+#[test]
+fn text_over_the_length_limit_is_refused_before_it_is_read() {
+    let long = format!("file(\"{}\")", "a".repeat(MAX_CONDITION_BYTES));
+    assert!(
+        matches!(parse(&long), Err(ConditionError::Syntax(text)) if text.contains("longer than"))
     );
 }
 
