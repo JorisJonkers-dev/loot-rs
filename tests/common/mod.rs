@@ -107,3 +107,36 @@ pub fn proptest_config(cases: u32) -> proptest::test_runner::Config {
         ..proptest::test_runner::Config::default()
     }
 }
+
+/// Build the `Data` directory a golden case describes (`data.txt`): `plugin NAME [esm] [masters=A,B]` writes a
+/// synthetic plugin, `file PATH text=TEXT` writes a file.
+pub fn build_data(fixture: &Fixture, spec: &str) {
+    for line in spec.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        let mut words = line.split_whitespace();
+        match words.next() {
+            Some("plugin") => {
+                let name = words.next().expect("plugin name");
+                let (mut flags, mut masters) = (0, Vec::new());
+                for word in words {
+                    if word == "esm" {
+                        flags |= FLAG_ESM;
+                    } else if let Some(list) = word.strip_prefix("masters=") {
+                        masters = list.split(',').collect();
+                    } else {
+                        panic!("unknown plugin option {word:?} in {line:?}");
+                    }
+                }
+                fixture.file(name, &synthetic_plugin(flags, &masters, None));
+            }
+            Some("file") => {
+                let path = words.next().expect("file path");
+                let text = words
+                    .next()
+                    .and_then(|word| word.strip_prefix("text="))
+                    .expect("file text=");
+                fixture.file(path, text.as_bytes());
+            }
+            other => panic!("unknown data line {other:?}"),
+        }
+    }
+}

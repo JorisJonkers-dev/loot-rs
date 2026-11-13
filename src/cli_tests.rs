@@ -59,7 +59,8 @@ fn a_later_flag_replaces_an_earlier_one() {
 fn problems_with_the_command_and_flags_are_named() {
     let error = |args: &[&str]| parse_args(&strings(args)).expect_err("fails");
     assert_eq!(error(&[]), "missing command");
-    assert_eq!(error(&["sort"]), "unknown command \"sort\"");
+    assert_eq!(error(&["frobnicate"]), "unknown command \"frobnicate\"");
+    assert_eq!(error(&["sort"]), "--masterlist is required");
     assert_eq!(error(&["check"]), "--masterlist is required");
     assert_eq!(
         error(&["check", "--masterlist", "m"]),
@@ -220,4 +221,12 @@ fn json_output_is_one_line_and_keeps_the_exit_code() {
     assert_eq!(out.lines().count(), 1, "{out}");
     assert!(out.starts_with("{\"general_messages\":[]"), "{out}");
     assert!(out.contains("\"hard_violations\":1}"), "{out}");
+}
+
+#[test]
+fn the_command_is_check_or_sort() {
+    let mut sort = full();
+    sort[0] = "sort".into();
+    assert_eq!(parse_args(&full()).expect("parses").command, Command::Check);
+    assert_eq!(parse_args(&sort).expect("parses").command, Command::Sort);
 }

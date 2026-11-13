@@ -4,8 +4,8 @@
 PENDING REAL LOOT RUNS: nothing in this repository records LOOT output yet. This script only compares two
 JSON files; docs/ORACLE.md describes how the LOOT side is produced and what is and is not comparable.
 
-    loot-rs check --json ... > ours.json
-    <driver around libloot> > loot.json
+    loot-rs sort --json ... > ours.json          (or `check --json`: then there is no order to compare)
+    scripts/oracle/loot_driver.py ... > loot.json
     scripts/oracle/compare.py --ours ours.json --loot loot.json
 
 The LOOT file has the shape (every key optional):
@@ -13,12 +13,16 @@ The LOOT file has the shape (every key optional):
     {
       "general_messages": [{"type": "say|warn|error", "text": "..."}],
       "plugins": {"A.esp": {"messages": [...], "tags_add": [...], "tags_remove": [...], "group": "..."}},
-      "sorted": ["FalloutNV.esm", "A.esp", ...]       # the order LOOT's sort produced
+      "sorted": ["FalloutNV.esm", "A.esp", ...],      # the order LOOT's sort produced
+      "dirty": [{"plugin": "A.esp", "crc": 1, "status": "dirty|clean", "utility": "", "itm": 0, "udr": 0, "nav": 0}]
     }
 
 Compared: messages (type and normalised text, as sets: order is not significant), bash tags, groups when LOOT
-gives them, and, when "sorted" is given, whether every load-after constraint loot-rs reports as violated is
-satisfied by LOOT's own order. Exit status: 0 no difference, 1 differences, 2 bad input.
+gives them, cleaning data matched by CRC (the `dirty` list), and, when "sorted" is given, whether every
+load-after constraint loot-rs reports as violated, and every `after`, `req` and header-master rule of `loot-rs sort`
+(its `rules`), is satisfied by LOOT's own order. Rules that come from groups are printed as `note:` lines and
+do not count, and so does how far the two orders are apart (`info:`): LOOT also sorts by overlap and priority.
+Exit status: 0 no difference, 1 differences, 2 bad input.
 """
 import json
 import re
@@ -50,6 +54,7 @@ def violated_constraints(ours):
 
 
 def compare(ours: dict, loot: dict) -> list[str]:
+    """All lines; those starting with `note:` or `info:` are not differences."""
     differences = []
     ours_general = message_set(ours.get("general_messages"))
     if "general_messages" in loot and ours_general != message_set(loot["general_messages"]):
@@ -73,11 +78,35 @@ def compare(ours: dict, loot: dict) -> list[str]:
                 differences.append(f"{name}: {key} differ: loot-rs {sorted(mine[key])}, LOOT {sorted(theirs[key])}")
         if "group" in theirs and mine["group"] != theirs["group"]:
             differences.append(f"{name}: group differs: loot-rs {mine['group']!r}, LOOT {theirs['group']!r}")
+    if "dirty" in loot:
+        def cleaning(report):
+            return {(d["plugin"].lower(), d["status"], d["crc"], d["utility"], d["itm"], d["udr"], d["nav"]) for d in report.get("dirty", [])}
+        mine, theirs = cleaning(ours), cleaning(loot)
+        if mine != theirs:
+            differences.append(f"cleaning data differs: only loot-rs {sorted(mine - theirs)}, only LOOT {sorted(theirs - mine)}")
     if "sorted" in loot:
         position = {name.lower(): index for index, name in enumerate(loot["sorted"])}
+
+        def before(first, second):
+            return first.lower() in position and second.lower() in position and position[first.lower()] < position[second.lower()]
+
+        def known(first, second):
+            return first.lower() in position and second.lower() in position
+
         for later, earlier in violated_constraints(ours):
-            if later.lower() in position and earlier.lower() in position and position[earlier.lower()] > position[later.lower()]:
+            if known(later, earlier) and not before(earlier, later):
                 differences.append(f"loot-rs says {later} must load after {earlier}, LOOT's order puts it before")
+        for rule in ours.get("rules", []):
+            if not known(rule["before"], rule["after"]) or before(rule["before"], rule["after"]):
+                continue
+            text = f"{rule['source']} rule: {rule['before']} before {rule['after']}, LOOT's order has them the other way"
+            differences.append(text if rule["source"] != "group" else "note: " + text)
+        if "sorted" in ours:
+            names = [name for name in ours["sorted"] if name.lower() in position]
+            apart = sum(
+                1 for i, a in enumerate(names) for b in names[i + 1:] if position[a.lower()] > position[b.lower()]
+            )
+            differences.append(f"info: {apart} of {len(names) * (len(names) - 1) // 2} plugin pairs are in a different order")
     return differences
 
 
@@ -115,6 +144,24 @@ def selftest() -> None:
     assert compare(ours, {"sorted": ["Other.esp"]}) == []
     assert violated_constraints(ours) == [("A.esp", "B.esp")]
     assert normalise(" a \n b ") == "a b"
+    sorted_ours = {
+        "sorted": ["B.esp", "A.esp", "C.esp"],
+        "plugins": [],
+        "rules": [
+            {"before": "B.esp", "after": "A.esp", "source": "after"},
+            {"before": "C.esp", "after": "A.esp", "source": "group"},
+        ],
+        "dirty": [{"plugin": "A.esp", "crc": 5, "status": "dirty", "utility": "u", "itm": 1, "udr": 0, "nav": 0}],
+    }
+    agree = {"sorted": ["B.esp", "C.esp", "A.esp"], "dirty": sorted_ours["dirty"]}
+    lines = compare(sorted_ours, agree)
+    assert [line for line in lines if not line.startswith("info:")] == [], lines
+    assert "1 of 3" in lines[0]
+    flipped = compare(sorted_ours, {"sorted": ["A.esp", "B.esp", "C.esp"]})
+    assert any(line.startswith("after rule: B.esp before A.esp") for line in flipped), flipped
+    assert any(line.startswith("note: group rule: C.esp before A.esp") for line in flipped), flipped
+    assert "cleaning data differs" in compare(sorted_ours, {"dirty": []})[0]
+    assert compare(sorted_ours, {"sorted": ["X.esp"]}) == ["info: 0 of 0 plugin pairs are in a different order"]
     print("compare.py: selftest ok")
 
 
@@ -131,8 +178,9 @@ def main(argv: list[str]) -> int:
         return 2
     for line in differences:
         print(line)
-    print(f"{len(differences)} difference(s)")
-    return 1 if differences else 0
+    counted = [line for line in differences if not line.startswith(("note:", "info:"))]
+    print(f"{len(counted)} difference(s)")
+    return 1 if counted else 0
 
 
 if __name__ == "__main__":

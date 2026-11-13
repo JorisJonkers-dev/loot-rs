@@ -59,6 +59,16 @@ def materialise(case: Path, out: Path) -> None:
     (out / "masterlist.yaml").write_text((case / "masterlist.yaml").read_text())
 
 
+def ensure_master(out: Path, name: str = "FalloutNV.esm") -> None:
+    """libloot refuses a game directory without the game's master file: add an empty one (and list it first)."""
+    target = out / "Data" / name
+    if not target.exists():
+        target.write_bytes(synthetic_plugin(FLAG_ESM, []))
+    listed = (out / "plugins.txt").read_text()
+    if name.lower() not in [line.strip().lstrip("*").lower() for line in listed.splitlines()]:
+        (out / "plugins.txt").write_text(f"{name}\n{listed}")
+
+
 def selftest() -> None:
     plugin = synthetic_plugin(FLAG_ESM, ["FalloutNV.esm"])
     assert plugin[:4] == b"TES4"
@@ -78,6 +88,11 @@ def selftest() -> None:
         assert (out / "Data" / "docs" / "x.txt").read_bytes() == b"hello"
         assert struct.unpack_from("<I", (out / "Data" / "A.esm").read_bytes(), 8)[0] == FLAG_ESM
         assert (out / "plugins.txt").read_text() == "A.esm\nB.esp\n"
+        ensure_master(out)
+        assert (out / "plugins.txt").read_text() == "FalloutNV.esm\nA.esm\nB.esp\n"
+        assert (out / "Data" / "FalloutNV.esm").exists()
+        ensure_master(out)
+        assert (out / "plugins.txt").read_text() == "FalloutNV.esm\nA.esm\nB.esp\n"
     print("materialise.py: selftest ok")
 
 

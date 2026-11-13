@@ -355,3 +355,68 @@ fn errors_read_as_sentences() {
         assert!(text.len() > 5, "{text}");
     }
 }
+
+#[test]
+fn the_rules_that_were_kept_say_where_they_come_from() {
+    let dir = TempDir::new();
+    dir.plugin("Base.esp", &[]);
+    dir.plugin("Patch.esp", &["Base.esp"]);
+    dir.plugin("C.esp", &[]);
+    dir.plugin("D.esp", &[]);
+    dir.plugin("E.esp", &[]);
+    let yaml = r"
+groups:
+  - name: Early
+  - name: Late
+    after: [Early]
+plugins:
+  - {name: C.esp, after: [D.esp]}
+  - {name: D.esp, req: [Base.esp]}
+  - {name: E.esp, group: Late}
+  - {name: Base.esp, group: Early}
+";
+    let output = run(
+        yaml,
+        &dir,
+        &["Patch.esp", "Base.esp", "C.esp", "D.esp", "E.esp"],
+    )
+    .expect("sorts");
+    let rule = |before: &str, after: &str, source: RuleSource| OrderingRule {
+        before: before.into(),
+        after: after.into(),
+        source,
+    };
+    for wanted in [
+        rule("Base.esp", "Patch.esp", RuleSource::HeaderMaster),
+        rule("D.esp", "C.esp", RuleSource::After),
+        rule("Base.esp", "D.esp", RuleSource::Req),
+        rule("Base.esp", "E.esp", RuleSource::Group),
+    ] {
+        assert!(
+            output.ordering_rules.contains(&wanted),
+            "{wanted:?} in {:?}",
+            output.ordering_rules
+        );
+    }
+    for source in [
+        RuleSource::HeaderMaster,
+        RuleSource::After,
+        RuleSource::Req,
+        RuleSource::Group,
+    ] {
+        assert!(source.label().len() > 2);
+    }
+    let position = |name: &str| {
+        output
+            .order
+            .iter()
+            .position(|n| n == name)
+            .expect("present")
+    };
+    assert!(
+        output
+            .ordering_rules
+            .iter()
+            .all(|r| position(&r.before) < position(&r.after))
+    );
+}

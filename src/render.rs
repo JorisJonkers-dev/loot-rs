@@ -1,5 +1,6 @@
 //! Plain-text rendering of a [`Report`].
 
+use crate::api::SortOutput;
 use crate::check::{AppliedMessage, Finding, FindingKind, Report};
 use std::fmt::Write;
 
@@ -204,6 +205,198 @@ pub fn render_json(report: &Report) -> String {
     json_strings(&mut out, &report.metadata_warnings);
     let _ = writeln!(out, ",\"hard_violations\":{}}}", report.hard_count());
     out
+}
+
+/// The sorted load order as text: the order, then what applies to each plugin that has something to say.
+#[must_use]
+pub fn render_sort(result: &SortOutput) -> String {
+    let mut out = String::new();
+    let _ = writeln!(out, "Sorted load order ({} plugin(s)):", result.order.len());
+    for (index, plugin) in result.plugins.iter().enumerate() {
+        let _ = writeln!(
+            out,
+            "{:>4}. {}{}",
+            index + 1,
+            plugin.name,
+            if plugin.active { "" } else { " (inactive)" }
+        );
+    }
+    for message in &result.general_messages {
+        let _ = writeln!(
+            out,
+            "\n{}: {}",
+            message_label(message.kind),
+            message.text.trim()
+        );
+    }
+    for plugin in &result.plugins {
+        let quiet = plugin.messages.is_empty()
+            && plugin.tags_added.is_empty()
+            && plugin.tags_removed.is_empty()
+            && plugin.findings.is_empty();
+        if quiet {
+            continue;
+        }
+        let _ = writeln!(out, "\n{} (group \"{}\")", plugin.name, plugin.group);
+        for message in &plugin.messages {
+            let _ = writeln!(
+                out,
+                "  {}: {}",
+                message_label(message.kind),
+                message.text.trim()
+            );
+        }
+        for tag in &plugin.tags_added {
+            let _ = writeln!(out, "  tag +{tag}");
+        }
+        for tag in &plugin.tags_removed {
+            let _ = writeln!(out, "  tag -{tag}");
+        }
+        for finding in &plugin.findings {
+            let _ = writeln!(
+                out,
+                "  {} {}: {}",
+                if finding.hard { "VIOLATION" } else { "note" },
+                finding_label(finding.kind),
+                finding.text
+            );
+        }
+    }
+    for (later, earlier) in &result.dropped_group_rules {
+        let _ = writeln!(
+            out,
+            "\nnote: group rule dropped: {later} should load after {earlier}"
+        );
+    }
+    for plugin in &result.not_installed {
+        let _ = writeln!(out, "note: {plugin} is listed but not installed, left out");
+    }
+    for warning in &result.warnings {
+        let _ = writeln!(out, "warning: {warning}");
+    }
+    out
+}
+
+fn message_label(kind: crate::api::MessageKind) -> &'static str {
+    match kind {
+        crate::api::MessageKind::Say => "say",
+        crate::api::MessageKind::Warn => "warn",
+        crate::api::MessageKind::Error => "error",
+    }
+}
+
+fn finding_label(kind: crate::api::FindingKind) -> &'static str {
+    use crate::api::FindingKind as Kind;
+    match kind {
+        Kind::MissingRequirement => FindingKind::MissingRequirement.label(),
+        Kind::Incompatible => FindingKind::Incompatible.label(),
+        Kind::LoadAfter => FindingKind::LoadAfter.label(),
+        Kind::GroupOrder => FindingKind::GroupOrder.label(),
+        Kind::UndefinedGroup => FindingKind::UndefinedGroup.label(),
+        Kind::Unsupported => FindingKind::Unsupported.label(),
+        Kind::ConditionError => FindingKind::ConditionError.label(),
+    }
+}
+
+/// The result of a sort as one line of JSON, in the shape of [`render_json`] plus the sort.
+///
+/// Keys: `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
+/// `messages`, `tags_add`, `tags_remove`, `findings`), `dirty`, `rules` (`before`, `after`, `source`),
+/// `dropped_group_rules` (`later`, `earlier`), `not_installed`, `warnings`, `hard_violations`.
+#[must_use]
+pub fn render_sort_json(result: &SortOutput) -> String {
+    let mut out = String::from("{\"sorted\":");
+    json_strings(&mut out, &result.order);
+    out.push_str(",\"general_messages\":");
+    json_list(&mut out, &result.general_messages, json_api_message);
+    out.push_str(",\"plugins\":");
+    json_list(&mut out, &result.plugins, |out, plugin| {
+        out.push_str("{\"name\":");
+        json_string(out, &plugin.name);
+        let _ = write!(
+            out,
+            ",\"position\":{},\"active\":{},\"group\":",
+            plugin.position, plugin.active
+        );
+        json_string(out, &plugin.group);
+        out.push_str(",\"messages\":");
+        json_list(out, &plugin.messages, json_api_message);
+        out.push_str(",\"tags_add\":");
+        json_strings(out, &plugin.tags_added);
+        out.push_str(",\"tags_remove\":");
+        json_strings(out, &plugin.tags_removed);
+        out.push_str(",\"findings\":");
+        json_list(out, &plugin.findings, |out, finding| {
+            out.push_str("{\"kind\":");
+            json_string(out, finding_label(finding.kind));
+            let _ = write!(out, ",\"hard\":{},\"text\":", finding.hard);
+            json_string(out, &finding.text);
+            out.push('}');
+        });
+        out.push('}');
+    });
+    out.push_str(",\"dirty\":");
+    json_list(&mut out, &result.dirty, |out, info| {
+        out.push_str("{\"plugin\":");
+        json_string(out, &info.plugin);
+        let status = match info.status {
+            crate::api::CleaningStatus::Dirty => "dirty",
+            crate::api::CleaningStatus::Clean => "clean",
+        };
+        let _ = write!(
+            out,
+            ",\"crc\":{},\"status\":\"{status}\",\"utility\":",
+            info.crc
+        );
+        json_string(out, &info.utility);
+        let _ = write!(
+            out,
+            ",\"itm\":{},\"udr\":{},\"nav\":{}}}",
+            info.itm, info.udr, info.nav
+        );
+    });
+    out.push_str(",\"rules\":");
+    json_list(&mut out, &result.ordering_rules, |out, rule| {
+        out.push_str("{\"before\":");
+        json_string(out, &rule.before);
+        out.push_str(",\"after\":");
+        json_string(out, &rule.after);
+        out.push_str(",\"source\":");
+        json_string(out, rule.source.label());
+        out.push('}');
+    });
+    out.push_str(",\"dropped_group_rules\":");
+    json_list(
+        &mut out,
+        &result.dropped_group_rules,
+        |out, (later, earlier)| {
+            out.push_str("{\"later\":");
+            json_string(out, later);
+            out.push_str(",\"earlier\":");
+            json_string(out, earlier);
+            out.push('}');
+        },
+    );
+    out.push_str(",\"not_installed\":");
+    json_strings(&mut out, &result.not_installed);
+    out.push_str(",\"warnings\":");
+    json_strings(&mut out, &result.warnings);
+    let hard = result
+        .plugins
+        .iter()
+        .flat_map(|plugin| &plugin.findings)
+        .filter(|finding| finding.hard)
+        .count();
+    let _ = writeln!(out, ",\"hard_violations\":{hard}}}");
+    out
+}
+
+fn json_api_message(out: &mut String, message: &crate::api::Message) {
+    out.push_str("{\"type\":");
+    json_string(out, message_label(message.kind));
+    out.push_str(",\"text\":");
+    json_string(out, message.text.trim());
+    out.push('}');
 }
 
 #[cfg(test)]

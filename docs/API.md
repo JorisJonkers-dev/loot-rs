@@ -17,6 +17,13 @@ let load_order = vec![
 let result = sort(&load_order, &masterlist, Path::new("Data"), &SortOptions::default())?;
 ```
 
+## Command line
+
+`loot-rs sort --masterlist <file> --plugins <plugins.txt> --data <Data> [--strict-groups] [--json]` runs the same code: the
+text is the order with what applies to each plugin, `--json` is one line with `sorted`, `plugins`, `general_messages`,
+`dirty`, `rules`, `dropped_group_rules`, `not_installed`, `warnings` and `hard_violations`. Exit code 0, or 1 when a
+finding is hard, or 2 when the rules contradict each other or an input cannot be read.
+
 ## `sort(load_order, masterlist, data_dir, options) -> Result<SortOutput, SortError>`
 
 | Argument | Meaning |
@@ -31,6 +38,7 @@ let result = sort(&load_order, &masterlist, Path::new("Data"), &SortOptions::def
 | Field | Content |
 | --- | --- |
 | `order` | The installed plugins in sorted order, named as given |
+| `ordering_rules` | The rules the order honours: `before`, `after` and `source` (`header-master`, `after`, `req`, `group`); to explain a move, or to check the order against another tool's |
 | `plugins` | One `PluginResult` per plugin of `order`, in that order: `position`, `active`, `group`, `messages` (kind and text), `tags_added`, `tags_removed`, `findings` (kind, text, `hard`) |
 | `general_messages` | Masterlist messages that belong to no plugin |
 | `dirty` | `DirtyInfo` (plugin, CRC-32, dirty or clean, utility, ITM, UDR, NAV) where an installed file's CRC-32 is on the masterlist's `dirty` or `clean` list. Only files that have such data are read |

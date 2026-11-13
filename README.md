@@ -26,6 +26,10 @@ LOOT's algorithm) and the semver policy.
 
 ## Use (command line)
 
+`loot-rs sort` takes the same arguments as `check` and prints the load order sorted by the metadata rules (see
+[docs/API.md](docs/API.md)), with what applies to it; `--json` prints it for tools. It writes nothing. The rest of this
+section describes `check`.
+
 ```text
 loot-rs check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
 ```
@@ -47,7 +51,7 @@ It prints, for every installed plugin of the load order that has something to re
 Group findings are soft unless `--strict-groups` is given, see [docs/GROUPS.md](docs/GROUPS.md).
 
 Exit code `0`: no hard violation. `1`: at least one hard violation (with `--strict-groups`, group violations and
-undefined groups count too). `2`: bad arguments or unreadable input. It does not sort and writes nothing.
+undefined groups count too). `2`: bad arguments or unreadable input. `check` does not sort and writes nothing.
 
 ## Executable versions (opt-in)
 
@@ -67,8 +71,8 @@ field. Every size read from the file is checked before the interpreter sees it, 
 
 ## What it does NOT do
 
-* The command line does not sort, and nothing here writes `plugins.txt`, `loadorder.txt` or anything else. The
-  library sorts by the metadata rules only (masters first, header masters, `after`, `req`, groups), which is not
+* Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) orders by
+  the metadata rules only (masters first, header masters, `after`, `req`, groups), which is not
   LOOT's algorithm: no overlap, record counts or priorities. Its result is a valid order, not LOOT's order.
 * It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
 * The condition functions `filename_version`, `description_contains` and `is_executable` are **not implemented**,
