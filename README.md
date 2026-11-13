@@ -37,6 +37,8 @@ It prints, for every installed plugin of the load order that has something to re
 * `note` lines (soft): group-order violations, an undefined group, conditions that could not be evaluated, listed
   plugins that are not in `Data`.
 
+Group findings are soft unless `--strict-groups` is given, see [docs/GROUPS.md](docs/GROUPS.md).
+
 Exit code `0`: no hard violation. `1`: at least one hard violation (with `--strict-groups`, group violations and
 undefined groups count too). `2`: bad arguments or unreadable input. It does not sort and writes nothing.
 
@@ -115,7 +117,7 @@ skipped with a warning instead of matching wrongly.
 * `loot-condition-interpreter` is used only for executable and DLL versions, behind a cargo feature, and our own
   evaluator stays the default so the limits stay visible. Should it also serve `version()` on plugins (the
   version in the description field, which the interpreter takes from a map the caller fills)?
-* Should group violations be hard by default? They are soft here because LOOT treats groups as a sorting hint that
-  yields to other rules.
+* Group violations are soft by default and hard with `--strict-groups`; see [docs/GROUPS.md](docs/GROUPS.md).
+  Open: applying LOOT's dropping of group edges before reporting.
 * A golden comparison against LOOT's real report for one profile (run under MO2 or Wine) is the way to find
   disagreements; it needs a decision on where the oracle files may live.
