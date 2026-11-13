@@ -1,4 +1,5 @@
 //! Exit codes and error messages of the binary: what a user sees when the input is wrong.
+#![allow(clippy::format_push_string)]
 
 mod common;
 
@@ -308,7 +309,7 @@ fn an_unreadable_plugin_is_not_an_error_but_is_not_a_master() {
     let root = std::fs::File::open(&locked).is_ok();
     let result = check(&masterlist, &plugins, &fixture.data(), &[]);
     assert_eq!(result.code, 0, "{}", result.stderr);
-    assert!(result.stderr.is_empty());
+    assert_eq!(result.stderr, "");
     if root {
         assert!(result.stdout.contains("locked is a master"));
     } else {
@@ -394,5 +395,5 @@ fn reports_go_to_stdout_and_errors_to_stderr() {
     let broken = fixture.masterlist("plugins:\n  - name: A.esp\n    req: ['Gone.esp']\n");
     let violation = check(&broken, &plugins, &fixture.data(), &[]);
     assert!(violation.stdout.contains("VIOLATION"));
-    assert!(violation.stderr.is_empty());
+    assert_eq!(violation.stderr, "");
 }

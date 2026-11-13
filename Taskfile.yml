@@ -6,7 +6,7 @@ version: "3"
 
 vars:
   # Line coverage the tests must reach. The organisation requires at least 80.
-  COVERAGE_MIN: 90
+  COVERAGE_MIN: 95
   # The unit-test files are not counted (cargo-llvm-cov already skips tests/ and the separate fuzz workspace).
   COVERAGE_IGNORE: '_tests\.rs$'
 

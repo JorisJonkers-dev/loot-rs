@@ -1,6 +1,6 @@
 //! Tests against the real LOOT masterlist for Fallout: New Vegas. Ignored by default.
 //!
-//! The masterlist is community data (CC0-1.0, https://github.com/loot/falloutnv). It is never committed:
+//! The masterlist is community data (CC0-1.0, <https://github.com/loot/falloutnv>). It is never committed:
 //! point `LOOT_RS_MASTERLIST` at a copy, for example
 //!
 //! ```sh

@@ -202,7 +202,7 @@ pub fn render_json(report: &Report) -> String {
     json_strings(&mut out, &report.not_installed);
     out.push_str(",\"warnings\":");
     json_strings(&mut out, &report.metadata_warnings);
-    let _ = write!(out, ",\"hard_violations\":{}}}\n", report.hard_count());
+    let _ = writeln!(out, ",\"hard_violations\":{}}}", report.hard_count());
     out
 }
 
