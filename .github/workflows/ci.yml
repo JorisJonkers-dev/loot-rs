@@ -20,7 +20,7 @@
 #
 # WHEN TO ADD A SECOND JOB: only when you must. A reusable workflow (`uses:`)
 # cannot be a step, so calling one requires its own job — see the typed
-# callers in templates/workflows/. In that case something has to gate it, and
+# callers. In that case something has to gate it, and
 # you have two options:
 #
 #   1. Keep this job as the gate: add `needs: [<that-job>]` and, as the LAST
@@ -70,6 +70,12 @@ jobs:
         run: |
           rustup toolchain install 1.99.1 --profile minimal --component clippy,rustfmt,llvm-tools-preview
           rustup default 1.99.1
+
+      # Routes cargo through the packages proxy; the hygiene guard fails a cargo build outside it.
+      - name: Set up the packages proxy
+        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
+        with:
+          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
