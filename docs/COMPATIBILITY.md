@@ -45,7 +45,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | Edge dropped when it clashes with master, `after` or `req` edges | unsupported | A note can appear that LOOT would not enforce |
 | Group named but undefined | supported | Reported as a note (hard with `--strict-groups`) |
 | Group order violation | supported | A note by default, a violation with `--strict-groups`; see [GROUPS.md](GROUPS.md) |
-| Sorting | unsupported | Not a goal of this tool |
+| Sorting | partial | Library only (`api::sort`, [API.md](API.md)): masters first, header masters, `after`, `req`, group edges that do not contradict them, earlier position first among equals. Not LOOT's algorithm (no overlap, record counts, priorities) |
 
 ## Condition language
 

@@ -238,3 +238,20 @@ fn directory_listings_are_cached() {
         "a differently cased name is looked up in the cached listing"
     );
 }
+
+#[test]
+fn crc32_of_a_file_is_the_crc32_of_its_bytes_across_block_boundaries() {
+    let dir = TempDir::new();
+    for len in [0usize, 1, 65_535, 65_536, 65_537, 200_000] {
+        let bytes: Vec<u8> = (0..len)
+            .map(|n| u8::try_from(n * 7 % 251).expect("byte"))
+            .collect();
+        let path = dir.file("f.bin", &bytes);
+        assert_eq!(
+            crc32_file(&path).expect("reads"),
+            crc32(&bytes),
+            "{len} bytes"
+        );
+    }
+    assert!(crc32_file(&dir.path().join("missing")).is_err());
+}

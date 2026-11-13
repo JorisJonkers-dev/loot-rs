@@ -18,6 +18,8 @@ measures the rise in peak resident memory for each input) and in the unit tests.
 
 | Executable version (cargo feature `executable-versions`) | 1024 data directories (`exe_version::MAX_DATA_DIRECTORIES`), a 16 MiB resource directory and never more than the file holds (`MAX_RESOURCE_DIRECTORY`), 64 KiB of version block (`MAX_VERSION_BLOCK`), 256 entries per resource table, every 32-bit sum checked for overflow | `exe_version::preflight`, a bounded walk over the headers before `loot-condition-interpreter` is called | The interpreter allocates buffers from `u32` fields of the file (one of them as `capacity * 8` bytes), adds 32-bit offsets without checks (a panic in a debug build) and, by reading its code, can loop without advancing on a string table whose first string has length 0, so none of that is left to it. Real images declare 16 directories and a version block of a few hundred bytes |
 
+| Sorting (`api::sort`) | 4096 listed plugins, 1024 installed plugins (`sort::MAX_PLUGINS`), 400 million steps of reachability updates (`sort::WORK_BUDGET`), checksums read in 64 KiB blocks | `api::sort`, `sort::order` | The game loads 255 plugins. The reachability matrix is `n * n / 8` bytes (128 KiB at the limit); a pathological set of group rules is stopped by the step count, not by time |
+
 All limits are errors, never panics and never silent truncation: the masterlist limits are `MetadataError`, the
 condition limits are `ConditionError::Syntax`, the plugin limit is `PluginError::Truncated`, the file limits are exit
 code 2 with a message naming the file.

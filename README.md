@@ -17,7 +17,14 @@ contributors: https://github.com/loot/loot. The masterlist is community data und
 (MIT OR Apache-2.0, JorisJonkers-dev/NV-Linux-Modding), taken under MIT and kept as a separate module. See
 [NOTICE.md](NOTICE.md).
 
-## Use
+## Use as a library
+
+`loot_rs::api::sort(load_order, masterlist, data_dir, options)` returns the sorted order, the messages and Bash Tags
+that apply, the findings, and the cleaning data that matches the installed files, for a program such as a mod
+manager. It reads files and writes nothing. See [docs/API.md](docs/API.md) for the contract, the sorting rules (not
+LOOT's algorithm) and the semver policy.
+
+## Use (command line)
 
 ```text
 loot-rs check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
@@ -60,7 +67,9 @@ field. Every size read from the file is checked before the interpreter sees it, 
 
 ## What it does NOT do
 
-* It does not sort, and it does not write `plugins.txt`, `loadorder.txt` or anything else.
+* The command line does not sort, and nothing here writes `plugins.txt`, `loadorder.txt` or anything else. The
+  library sorts by the metadata rules only (masters first, header masters, `after`, `req`, groups), which is not
+  LOOT's algorithm: no overlap, record counts or priorities. Its result is a valid order, not LOOT's order.
 * It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
 * The condition functions `filename_version`, `description_contains` and `is_executable` are **not implemented**,
   and `version` and `product_version` are implemented only for executables and DLLs and only when built with the
