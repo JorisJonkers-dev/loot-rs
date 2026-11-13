@@ -15,7 +15,7 @@ set -euo pipefail
 
 mode=apply
 if [ "${1:-}" = "--audit" ]; then mode=audit; shift; fi
-repo=${1:-JorisJonkers-dev/loot-fnv}
+repo=${1:-JorisJonkers-dev/loot-rs}
 here=$(dirname "$(readlink -f "$0")")
 dry=${DRY_RUN:-0}
 pin=${SHA_PINNING_REQUIRED:-true}
