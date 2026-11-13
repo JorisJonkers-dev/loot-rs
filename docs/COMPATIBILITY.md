@@ -44,6 +44,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | Cyclic group relations | partial | Both directions of a cycle are ignored; LOOT ignores the edge that would create the cycle |
 | Edge dropped when it clashes with master, `after` or `req` edges | unsupported | A note can appear that LOOT would not enforce |
 | Group named but undefined | supported | Reported as a note (hard with `--strict-groups`) |
+| Group order violation | supported | A note by default, a violation with `--strict-groups`; see [GROUPS.md](GROUPS.md) |
 | Sorting | unsupported | Not a goal of this tool |
 
 ## Condition language
