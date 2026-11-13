@@ -108,7 +108,7 @@ jobs:
             echo '### Line coverage per module'
             echo
             echo '```'
-            mise exec -- cargo llvm-cov report --summary-only --ignore-filename-regex '(^|/)(tests?|fuzz)/|_tests\.rs$'
+            mise exec -- cargo llvm-cov report --summary-only --ignore-filename-regex '_tests\.rs$'
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
       - name: Release build
