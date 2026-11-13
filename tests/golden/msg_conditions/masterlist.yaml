@@ -1,0 +1,44 @@
+globals:
+  - type: say
+    content: 'Global note, always shown.'
+  - type: warn
+    content: 'Global warning, hidden.'
+    condition: 'file("NotInstalled.esp")'
+plugins:
+  - name: 'A.esp'
+    msg:
+      - type: say
+        content: 'say, no condition'
+      - type: warn
+        content: 'warn when B is installed'
+        condition: 'file("B.esp")'
+      - type: error
+        content: "error when B is active and Nope.esp is not.\nSecond line of the same message."
+        condition: 'active("B.esp") and not active("Nope.esp")'
+      - type: say
+        content: 'hidden: B is not a master'
+        condition: 'is_master("B.esp")'
+      - type: say
+        content: 'shown: FalloutNV.esm is a master'
+        condition: 'is_master("FalloutNV.esm")'
+      - type: say
+        content: 'checksum matches'
+        condition: 'checksum("docs/readme.txt", 3610A686)'
+      - type: say
+        content: 'size matches'
+        condition: 'file_size("docs/readme.txt", 5)'
+      - type: say
+        content: 'many esp files'
+        condition: 'many("[ABC]\.esp")'
+      - type: say
+        content: 'one of the files is readable'
+        condition: 'readable("docs/readme.txt") and not readable("docs/absent.txt")'
+      - type: say
+        content: 'Use {0} instead of {1}.'
+        subs: ['the patch', 'the mod']
+      - type: say
+        content:
+          - lang: de
+            text: 'Deutsch'
+          - lang: en
+            text: 'English text'

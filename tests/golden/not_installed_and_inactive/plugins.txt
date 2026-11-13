@@ -1,0 +1,5 @@
+*FalloutNV.esm
+*A.esp
+B.esp
+*Ghost.esp
+*C.esp

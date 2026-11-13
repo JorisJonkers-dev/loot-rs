@@ -1,0 +1,9 @@
+plugins:
+  - name: 'A.esp'
+    req:
+      - name: 'Missing.esp'
+        condition: 'file("NotInstalled.esp")'
+      - name: 'AlsoMissing.esp'
+        condition: 'file("B.esp")'
+      - name: 'Constrained.esp'
+        constraint: 'file("NotInstalled.esp")'

@@ -1,0 +1,7 @@
+plugins:
+  - name: 'A.esp'
+    req:
+      - name: 'Missing.esp'
+        display: 'Missing Mod'
+        detail: 'Download it from the usual place.'
+      - 'AlsoMissing.esp'

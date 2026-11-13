@@ -1,0 +1,9 @@
+plugins:
+  - name: '[AB]\.esp'
+    msg:
+      - type: say
+        content: 'matches A and B'
+  - name: '.*\.esm'
+    tag: ['Relev']
+  - name: 'C\.esp'
+    req: ['(Patch|Fix)\.esp']

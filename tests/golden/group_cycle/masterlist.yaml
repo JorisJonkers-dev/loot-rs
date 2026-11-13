@@ -1,0 +1,10 @@
+groups:
+  - name: X
+    after: [Y]
+  - name: Y
+    after: [X]
+plugins:
+  - name: 'A.esp'
+    group: X
+  - name: 'B.esp'
+    group: Y

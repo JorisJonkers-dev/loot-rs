@@ -1,0 +1,7 @@
+A.esp (position 1, group "default")
+  VIOLATION load after: must load after B.esp, but B.esp is later in the load order
+
+B.esp (position 2, group "default")
+  VIOLATION load after: must load after C.esp, but C.esp is later in the load order
+
+Checked 4 plugin(s), 2 with masterlist entries. Hard violations: 2.

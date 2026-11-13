@@ -1,0 +1,11 @@
+Global messages
+  [say] Thanks to the author.
+
+A.esp (position 1, group "default")
+  [warn] Compatibility note for A.
+  [say] Own text wins.
+
+B.esp (position 2, group "default")
+  [warn] Compatibility note for B.
+
+Checked 4 plugin(s), 2 with masterlist entries. Hard violations: 0.

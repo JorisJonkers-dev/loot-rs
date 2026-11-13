@@ -1,0 +1,10 @@
+groups:
+  - name: Early
+    description: 'Loads first'
+  - name: Late
+    after: [Early]
+plugins:
+  - name: 'A.esp'
+    group: Late
+  - name: 'B.esp'
+    group: Early

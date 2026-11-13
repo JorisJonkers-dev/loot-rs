@@ -1,0 +1,9 @@
+plugins:
+  - name: 'A.esp'
+    inc:
+      - name: 'B.esp'
+        display: 'Mod B'
+        detail: 'Use one of them.'
+      - 'NotInstalled.esp'
+      - name: 'C.esp'
+        condition: 'file("NotInstalled.esp")'
