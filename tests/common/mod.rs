@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use loot_fnv::plugin::{FLAG_ESM, synthetic_plugin};
+use loot_rs::plugin::{FLAG_ESM, synthetic_plugin};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -17,7 +17,7 @@ pub struct Fixture {
 impl Fixture {
     pub fn new() -> Self {
         let root = std::env::temp_dir().join(format!(
-            "loot-fnv-test-{}-{}",
+            "loot-rs-test-{}-{}",
             std::process::id(),
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));

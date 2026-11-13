@@ -1,13 +1,13 @@
-//! `loot-fnv check`: report which masterlist rules apply to a load order. Read-only.
+//! `loot-rs check`: report which masterlist rules apply to a load order. Read-only.
 
-use loot_fnv::check::{Options, run};
-use loot_fnv::env::{FsEnv, parse_plugins_txt};
-use loot_fnv::{metadata, render};
+use loot_rs::check::{Options, run};
+use loot_rs::env::{FsEnv, parse_plugins_txt};
+use loot_rs::{metadata, render};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::{env, fs};
 
-const USAGE: &str = "usage: loot-fnv check --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
+const USAGE: &str = "usage: loot-rs check --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
 
 Reports the messages that apply, unmet req/inc entries and violated after/group constraints.
 It does not sort and does not write anything.
@@ -77,12 +77,12 @@ fn main() -> ExitCode {
     let parsed = match parse_args(&args) {
         Ok(parsed) => parsed,
         Err(error) => {
-            eprintln!("loot-fnv: {error}\n\n{USAGE}");
+            eprintln!("loot-rs: {error}\n\n{USAGE}");
             return ExitCode::from(2);
         }
     };
     execute(&parsed).unwrap_or_else(|error| {
-        eprintln!("loot-fnv: {error}");
+        eprintln!("loot-rs: {error}");
         ExitCode::from(2)
     })
 }

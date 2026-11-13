@@ -1,4 +1,12 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["github>JorisJonkers-dev/renovate-config"]
+  "extends": ["github>JorisJonkers-dev/renovate-config"],
+  "description": "Cargo (the library and the separate fuzz workspace), mise.toml and the workflow pins. Rust crates are pinned exactly by the estate preset; the fuzz crate has its own Cargo.lock.",
+  "includePaths": [
+    "Cargo.toml",
+    "Cargo.lock",
+    "fuzz/**",
+    "mise.toml",
+    ".github/workflows/**"
+  ]
 }

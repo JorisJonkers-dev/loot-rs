@@ -1,8 +1,10 @@
-# loot-fnv
+# loot-rs
 
 Read-only evaluation of [LOOT](https://github.com/loot/loot) masterlist rules (requirements, incompatibilities,
 load-after, groups, messages, Bash Tag suggestions) over a Fallout: New Vegas / Tale of Two Wastelands load order,
 in Rust, for use on Linux.
+
+This is an independent port, not an official LOOT project.
 
 **Licence: GPL-3.0**, the licence of LOOT and libloot (read from their `LICENSE` files, see
 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)). This is a port in the licensing sense: it follows LOOT's rule semantics,
@@ -18,7 +20,7 @@ contributors: https://github.com/loot/loot. The masterlist is community data und
 ## Use
 
 ```text
-loot-fnv check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
+loot-rs check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
 ```
 
 * `--masterlist`: a LOOT masterlist (for example `masterlist.yaml` from https://github.com/loot/falloutnv).

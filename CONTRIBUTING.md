@@ -12,7 +12,8 @@ If you were invited to contribute:
    planning artifacts
 3. do not hand-edit `CHANGELOG.md`; release-please owns changelog updates
 4. include the relevant tests or validation output in the pull request
-5. use impersonal, professional commit and pull request wording
+5. use Conventional Commits for every commit and pull request title (`scripts/install-git-hooks.sh`
+   installs the local check), with impersonal, professional wording
 
 Security vulnerabilities must be reported privately as described in
 `SECURITY.md`.

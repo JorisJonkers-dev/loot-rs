@@ -1,4 +1,4 @@
-//! End-to-end tests of the `loot-fnv` binary on synthetic game directories.
+//! End-to-end tests of the `loot-rs` binary on synthetic game directories.
 
 mod common;
 
@@ -6,10 +6,10 @@ use common::Fixture;
 use std::process::{Command, Output};
 
 fn run(args: &[&str]) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_loot-fnv"))
+    Command::new(env!("CARGO_BIN_EXE_loot-rs"))
         .args(args)
         .output()
-        .expect("run loot-fnv")
+        .expect("run loot-rs")
 }
 
 fn check(
@@ -199,7 +199,7 @@ fn unsupported_functions_are_reported_and_the_item_is_not_applied() {
 #[test]
 fn checksum_and_master_flag_conditions_read_the_files() {
     let fixture = game();
-    let crc = loot_fnv::env::crc32(&std::fs::read(fixture.data().join("B.esp")).expect("read"));
+    let crc = loot_rs::env::crc32(&std::fs::read(fixture.data().join("B.esp")).expect("read"));
     let masterlist = format!(
         "plugins:\n  - name: 'A.esp'\n    msg:\n      - type: say\n        content: 'crc matches'\n        condition: 'checksum(\"B.esp\", {crc:08X})'\n      - type: say\n        content: 'is master'\n        condition: 'is_master(\"FalloutNV.esm\") and not is_master(\"B.esp\")'\n"
     );

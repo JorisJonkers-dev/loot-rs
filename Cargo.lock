@@ -68,7 +68,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "loot-fnv"
+name = "loot-rs"
 version = "0.1.0"
 dependencies = [
  "regex",

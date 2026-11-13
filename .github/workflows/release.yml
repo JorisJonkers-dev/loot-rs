@@ -1,27 +1,28 @@
 # Tag -> release flow (org standard).
 #
-# release-please maintains a release PR that accumulates conventional commits
-# and, when merged, creates a vX.Y.Z git tag + GitHub Release and bumps the
-# version manifest. Publishing of artifacts (Maven/npm to GitHub Packages,
-# images to GHCR) hangs off the published-release event below.
-#
-# This gives the repository an explicit, immutable version.
+# release-please maintains a release PR that accumulates conventional commits and, when merged, creates a
+# vX.Y.Z git tag and GitHub Release and bumps Cargo.toml, Cargo.lock and the version manifest. Nothing is
+# published to crates.io: the package has `publish = false` and the tag is the release.
 name: Release
 
 on:
   push:
     branches: [main]
 
-permissions:
-  contents: write
-  pull-requests: write
+# Releases are serialised and never cancelled half way.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions: {}
 
 jobs:
   release-please:
     runs-on: ubuntu-latest
-    outputs:
-      release_created: ${{ steps.rp.outputs.release_created }}
-      tag_name: ${{ steps.rp.outputs.tag_name }}
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       # Author the release PR with the personal-stack-agents App token (not the
       # default GITHUB_TOKEN) so CI runs on the PR without a manual approval
@@ -33,19 +34,10 @@ jobs:
         with:
           app-id: ${{ secrets.RELEASE_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
       - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        id: rp
         with:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
-
-  publish:
-    needs: release-please
-    if: needs.release-please.outputs.release_created == 'true'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    steps:
-      # The GitHub Release is the artifact; the crate is not published to a registry.
-      - run: echo 'Released loot-fnv at ${{ needs.release-please.outputs.tag_name }}'
