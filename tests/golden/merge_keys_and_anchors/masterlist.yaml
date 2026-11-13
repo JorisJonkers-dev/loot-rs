@@ -1,0 +1,21 @@
+prelude:
+  - &thanks
+    type: say
+    content: 'Thanks to the author.'
+  - &compat
+    type: warn
+    content: 'Compatibility note for {0}.'
+globals:
+  - *thanks
+plugins:
+  - name: 'A.esp'
+    msg:
+      - <<: *compat
+        subs: ['A']
+      - <<: *thanks
+        content: 'Own text wins.'
+  - name: 'B.esp'
+    msg:
+      - <<: *compat
+        subs: ['B']
+        condition: 'file("A.esp")'

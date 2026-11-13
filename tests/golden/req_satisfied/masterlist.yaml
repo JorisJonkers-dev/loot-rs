@@ -1,0 +1,3 @@
+plugins:
+  - name: 'C.esp'
+    req: ['A.esp', 'B.esp']

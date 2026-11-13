@@ -1,0 +1,24 @@
+globals:
+  - type: say
+    content: 'Global note'
+groups:
+  - name: Late
+    after: [default]
+plugins:
+  - name: 'A.esp'
+    group: Late
+    after: ['B.esp']
+    req:
+      - name: 'Missing.esp'
+        display: 'Missing Mod'
+    inc: ['C.esp']
+    msg:
+      - type: warn
+        content: 'A applies'
+        condition: 'file("B.esp")'
+    tag: ['Relev', {name: '-Delev', condition: 'active("B.esp")'}]
+  - name: 'B.esp'
+    msg:
+      - type: say
+        content: 'version unknown'
+        condition: 'version("B.esp", ==, "1")'

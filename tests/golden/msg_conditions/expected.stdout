@@ -1,0 +1,17 @@
+Global messages
+  [say] Global note, always shown.
+
+A.esp (position 1, group "default")
+  [say] say, no condition
+  [warn] warn when B is installed
+  [error] error when B is active and Nope.esp is not.
+        Second line of the same message.
+  [say] shown: FalloutNV.esm is a master
+  [say] checksum matches
+  [say] size matches
+  [say] many esp files
+  [say] one of the files is readable
+  [say] Use the patch instead of the mod.
+  [say] English text
+
+Checked 4 plugin(s), 1 with masterlist entries. Hard violations: 0.

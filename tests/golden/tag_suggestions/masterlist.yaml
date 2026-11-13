@@ -1,0 +1,12 @@
+bash_tags: [Relev, Delev, Names]
+plugins:
+  - name: 'A.esp'
+    tag:
+      - 'Relev'
+      - '-Delev'
+      - name: 'Names'
+        condition: 'file("B.esp")'
+      - name: 'Stats'
+        condition: 'file("NotInstalled.esp")'
+  - name: 'B.esp'
+    tag: ['Delev', '-Delev']

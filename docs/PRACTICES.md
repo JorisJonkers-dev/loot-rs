@@ -13,13 +13,16 @@ baseline, adapted to a Linux-first Rust library and CLI (no Windows build, no up
 | Licences, bans, sources, advisories | `deny.toml`, `task deny`, `advisories.yml` | Daily advisory run against the unchanged lockfile |
 | Secret scanning | `.gitleaks.toml`, `task secrets` | Every commit, in CI and locally |
 | Workflow lint and security | `actionlint`, `zizmor` (`task lint:actions`) | |
+| Resource limits | `docs/RESOURCE-LIMITS.md`, `tests/limits.rs`, `task limits` | Bounds in the library on every input size; CI runs the bounded tests under `prlimit --as` |
 | Fuzzing | `fuzz/`, `.github/workflows/fuzz.yml` | Weekly, four parsers; needs `cargo +nightly` |
 | Mutation testing | `.github/workflows/mutants.yml` | Weekly, condition evaluator; not required |
+| Real masterlist | `.github/workflows/masterlist.yml`, `tests/real_masterlist.rs` | Weekly; the data is downloaded into the runner's temporary directory, never committed |
 | Conventional Commits | `pr-title` job, `scripts/hooks/commit-msg` | The pull request title is the squash commit, so it is what release-please reads |
 | Releases | `release-please-config.json`, `.release-please-manifest.json`, `release.yml` | `release-type: rust`, see below. No crates.io publication |
 | Dependency cooldown | `.cargo/config.toml`, `renovate.json` | Cargo ignores versions younger than 7 days from 1.100 on (1.99 warns that it ignores the setting); Renovate has the estate preset's `minimumReleaseAge`. The registry proxy refuses younger versions |
 | Dependency updates | `renovate.json` | Extends `github>JorisJonkers-dev/renovate-config` |
 | Repository settings | `scripts/setup-repo.sh`, `scripts/apply-ruleset.sh` | `--audit` is read-only, `DRY_RUN=1` prints the calls; the owner applies |
+| Oracle scripts | `scripts/oracle/`, `docs/ORACLE.md` | Pending real LOOT runs; the scripts have self-tests (`task scripts`) |
 | Local setup | `mise.toml`, `Taskfile.yml`, `scripts/install-git-hooks.sh` | `mise install`, then `task check` |
 
 ## Why release-please uses `rust`

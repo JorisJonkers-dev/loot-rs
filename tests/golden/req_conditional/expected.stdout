@@ -1,0 +1,5 @@
+A.esp (position 1, group "default")
+  VIOLATION missing requirement: requires AlsoMissing.esp, which is not present.
+  VIOLATION missing requirement: requires Constrained.esp, which is not present.
+
+Checked 4 plugin(s), 1 with masterlist entries. Hard violations: 2.

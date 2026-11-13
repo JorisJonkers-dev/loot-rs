@@ -1,0 +1,5 @@
+plugin FalloutNV.esm esm
+plugin A.esp masters=FalloutNV.esm
+plugin B.esp masters=FalloutNV.esm
+plugin C.esp masters=FalloutNV.esm
+file docs/readme.txt text=hello

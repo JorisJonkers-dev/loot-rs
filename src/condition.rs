@@ -9,6 +9,10 @@
 //! `description_contains`, `is_executable`) parse, but evaluate to
 //! [`ConditionError::Unsupported`]: they are never guessed.
 //!
+//! A condition may be at most [`MAX_CONDITION_BYTES`] long, nest at most [`MAX_NESTING`] parentheses or `not`s and hold at most [`MAX_NODES`]
+//! operators and calls, so that parsing, evaluating and dropping it cannot exhaust the stack on
+//! hostile input.
+//!
 //! `and` / `or` follow boolean logic with errors treated as unknown: `false and <unsupported>`
 //! is `false`, `true or <unsupported>` is `true`, anything else involving an error is that
 //! error.
@@ -38,6 +42,15 @@ impl fmt::Display for ConditionError {
 
 impl std::error::Error for ConditionError {}
 
+/// Deepest nesting of parentheses and `not` that is accepted.
+pub const MAX_NESTING: usize = 64;
+
+/// Longest condition text that is parsed, in bytes (the longest in the real masterlist is 256).
+pub const MAX_CONDITION_BYTES: usize = 16 * 1024;
+
+/// Most operators and function calls that one condition may hold.
+pub const MAX_NODES: usize = 2_000;
+
 /// An argument of a function call.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Arg {
@@ -58,6 +71,49 @@ pub enum Expr {
     And(Box<Expr>, Box<Expr>),
     /// `or`.
     Or(Box<Expr>, Box<Expr>),
+}
+
+impl fmt::Display for Arg {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Str(text) => write!(f, "\"{text}\""),
+            Self::Word(text) => f.write_str(text),
+        }
+    }
+}
+
+/// The canonical text of a condition: every operand of `and`, `or` and `not` that is not a call is
+/// parenthesised, so `parse(&expr.to_string())` gives back `expr`.
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Call(name, args) => {
+                write!(f, "{name}(")?;
+                for (index, arg) in args.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{arg}")?;
+                }
+                f.write_str(")")
+            }
+            Self::Not(inner) => write!(f, "not {}", Operand(inner)),
+            Self::And(left, right) => write!(f, "{} and {}", Operand(left), Operand(right)),
+            Self::Or(left, right) => write!(f, "{} or {}", Operand(left), Operand(right)),
+        }
+    }
+}
+
+/// An operand: calls print bare, everything else in parentheses.
+struct Operand<'a>(&'a Expr);
+
+impl fmt::Display for Operand<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.0 {
+            Expr::Call(..) => write!(f, "{}", self.0),
+            other => write!(f, "({other})"),
+        }
+    }
 }
 
 /// The facts a condition can ask about. Paths are as written in the condition: relative to
@@ -152,6 +208,8 @@ fn tokenize(text: &str) -> Result<Vec<Token>, ConditionError> {
 struct Parser {
     tokens: Vec<Token>,
     at: usize,
+    nesting: usize,
+    nodes: usize,
 }
 
 impl Parser {
@@ -169,10 +227,21 @@ impl Parser {
         matches!(self.peek(), Some(Token::Word(word)) if word == keyword)
     }
 
+    fn node(&mut self) -> Result<(), ConditionError> {
+        self.nodes += 1;
+        if self.nodes > MAX_NODES {
+            return Err(ConditionError::Syntax(format!(
+                "condition has more than {MAX_NODES} operators and calls"
+            )));
+        }
+        Ok(())
+    }
+
     fn expr(&mut self) -> Result<Expr, ConditionError> {
         let mut left = self.and_expr()?;
         while self.peek_keyword("or") {
             self.at += 1;
+            self.node()?;
             left = Expr::Or(Box::new(left), Box::new(self.and_expr()?));
         }
         Ok(left)
@@ -182,12 +251,26 @@ impl Parser {
         let mut left = self.unary()?;
         while self.peek_keyword("and") {
             self.at += 1;
+            self.node()?;
             left = Expr::And(Box::new(left), Box::new(self.unary()?));
         }
         Ok(left)
     }
 
     fn unary(&mut self) -> Result<Expr, ConditionError> {
+        self.nesting += 1;
+        if self.nesting > MAX_NESTING {
+            return Err(ConditionError::Syntax(format!(
+                "condition is nested more than {MAX_NESTING} levels deep"
+            )));
+        }
+        let result = self.unary_inner();
+        self.nesting -= 1;
+        result
+    }
+
+    fn unary_inner(&mut self) -> Result<Expr, ConditionError> {
+        self.node()?;
         match self.next() {
             Some(Token::Word(word)) if word == "not" => Ok(Expr::Not(Box::new(self.unary()?))),
             Some(Token::Open) => {
@@ -234,9 +317,16 @@ impl Parser {
 /// # Errors
 /// Returns [`ConditionError::Syntax`] for text that is not a condition.
 pub fn parse(text: &str) -> Result<Expr, ConditionError> {
+    if text.len() > MAX_CONDITION_BYTES {
+        return Err(ConditionError::Syntax(format!(
+            "condition is longer than {MAX_CONDITION_BYTES} bytes"
+        )));
+    }
     let mut parser = Parser {
         tokens: tokenize(text)?,
         at: 0,
+        nesting: 0,
+        nodes: 0,
     };
     let expr = parser.expr()?;
     if parser.at < parser.tokens.len() {
@@ -363,158 +453,5 @@ pub fn eval_str(text: &str, env: &dyn Env) -> Result<bool, ConditionError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::HashMap;
-
-    #[derive(Default)]
-    struct Fake {
-        files: Vec<&'static str>,
-        active: Vec<&'static str>,
-        sizes: HashMap<&'static str, u64>,
-        crcs: HashMap<&'static str, u32>,
-    }
-
-    impl Env for Fake {
-        fn count_files(&self, path: &str) -> Result<usize, ConditionError> {
-            Ok(self.files.iter().filter(|file| **file == path).count())
-        }
-        fn count_active(&self, path: &str) -> Result<usize, ConditionError> {
-            Ok(self.active.iter().filter(|file| **file == path).count())
-        }
-        fn file_size(&self, path: &str) -> Option<u64> {
-            self.sizes.get(path).copied()
-        }
-        fn readable(&self, path: &str) -> bool {
-            self.files.contains(&path)
-        }
-        fn is_master(&self, path: &str) -> bool {
-            path == "m.esm"
-        }
-        fn checksum(&self, path: &str) -> Option<u32> {
-            self.crcs.get(path).copied()
-        }
-    }
-
-    fn fake() -> Fake {
-        Fake {
-            files: vec!["a.esp", "a.esp", "b.esp", "m.esm"],
-            active: vec!["a.esp"],
-            sizes: HashMap::from([("a.esp", 10)]),
-            crcs: HashMap::from([("a.esp", 0xDEAD_BEEF)]),
-        }
-    }
-
-    fn eval(text: &str) -> Result<bool, ConditionError> {
-        eval_str(text, &fake())
-    }
-
-    #[test]
-    fn file_and_active() {
-        assert_eq!(eval(r#"file("b.esp")"#), Ok(true));
-        assert_eq!(eval(r#"file("zzz.esp")"#), Ok(false));
-        assert_eq!(eval(r#"active("a.esp")"#), Ok(true));
-        assert_eq!(eval(r#"active("b.esp")"#), Ok(false));
-    }
-
-    #[test]
-    fn many_counts_more_than_one() {
-        assert_eq!(eval(r#"many("a.esp")"#), Ok(true));
-        assert_eq!(eval(r#"many("b.esp")"#), Ok(false));
-        assert_eq!(eval(r#"many_active("a.esp")"#), Ok(false));
-    }
-
-    #[test]
-    fn precedence_is_not_then_and_then_or() {
-        // true or (false and false) = true; (true or false) and false would be false.
-        assert_eq!(
-            eval(r#"file("a.esp") or file("x") and file("y")"#),
-            Ok(true)
-        );
-        assert_eq!(
-            eval(r#"(file("a.esp") or file("x")) and file("y")"#),
-            Ok(false)
-        );
-        assert_eq!(
-            eval(r#"file("x") and file("y") or not file("x")"#),
-            Ok(true)
-        );
-        assert_eq!(eval(r#"not not file("a.esp")"#), Ok(true));
-    }
-
-    #[test]
-    fn whitespace_and_line_breaks_are_allowed() {
-        assert_eq!(
-            eval("file( \"a.esp\" )\n and\n( not file(\"x\") )"),
-            Ok(true)
-        );
-    }
-
-    #[test]
-    fn size_checksum_master_and_readable() {
-        assert_eq!(eval(r#"file_size("a.esp", 10)"#), Ok(true));
-        assert_eq!(eval(r#"file_size("a.esp", 11)"#), Ok(false));
-        assert_eq!(eval(r#"checksum("a.esp", DEADBEEF)"#), Ok(true));
-        assert_eq!(eval(r#"checksum("a.esp", 0xdeadbeef)"#), Ok(true));
-        assert_eq!(eval(r#"checksum("b.esp", DEADBEEF)"#), Ok(false));
-        assert_eq!(eval(r#"is_master("m.esm")"#), Ok(true));
-        assert_eq!(eval(r#"is_master("a.esp")"#), Ok(false));
-        assert_eq!(eval(r#"readable("a.esp")"#), Ok(true));
-    }
-
-    #[test]
-    fn version_functions_are_reported_unsupported_never_guessed() {
-        for text in [
-            r#"version("a.esp", ==, "1.0")"#,
-            r#"product_version("a.exe", >=, "1.0")"#,
-            r#"filename_version("a (.+).7z", >, "1")"#,
-            r#"description_contains("a.esp", "x")"#,
-            r#"is_executable("a.exe")"#,
-        ] {
-            assert!(
-                matches!(eval(text), Err(ConditionError::Unsupported(_))),
-                "{text}"
-            );
-        }
-    }
-
-    #[test]
-    fn unsupported_only_matters_when_it_decides_the_result() {
-        assert_eq!(
-            eval(r#"file("x") and version("a.esp", ==, "1")"#),
-            Ok(false)
-        );
-        assert_eq!(
-            eval(r#"file("a.esp") or version("a.esp", ==, "1")"#),
-            Ok(true)
-        );
-        assert!(eval(r#"file("a.esp") and version("a.esp", ==, "1")"#).is_err());
-        assert!(eval(r#"file("x") or version("a.esp", ==, "1")"#).is_err());
-        assert!(eval(r#"not version("a.esp", ==, "1")"#).is_err());
-    }
-
-    #[test]
-    fn syntax_errors() {
-        for text in [
-            r#"file("a.esp""#,
-            r#"file("a.esp") and"#,
-            r#"file "a.esp""#,
-            r#"file("a.esp") file("b")"#,
-            r#"file("unterminated)"#,
-            r#"frobnicate("x")"#,
-            r"file()",
-            r#"checksum("a", zz)"#,
-            "file(\"a\") # no",
-        ] {
-            assert!(
-                matches!(eval(text), Err(ConditionError::Syntax(_))),
-                "{text}"
-            );
-        }
-    }
-
-    #[test]
-    fn blank_condition_is_true() {
-        assert_eq!(eval("  "), Ok(true));
-    }
-}
+#[path = "condition_tests.rs"]
+mod tests;

@@ -1,0 +1,9 @@
+plugins:
+  - name: 'B.esp'
+    msg:
+      - type: say
+        content: 'B is listed but inactive'
+  - name: 'Ghost.esp'
+    msg:
+      - type: say
+        content: 'never shown, not installed'

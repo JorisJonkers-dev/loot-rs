@@ -101,6 +101,9 @@ jobs:
       - name: Tests with the coverage gate
         if: ${{ !cancelled() }}
         run: mise exec -- task coverage
+      - name: Resource limits (512 MiB address space)
+        if: ${{ !cancelled() }}
+        run: mise exec -- task limits
       - name: Coverage per module
         if: ${{ !cancelled() }}
         run: |
@@ -108,7 +111,7 @@ jobs:
             echo '### Line coverage per module'
             echo
             echo '```'
-            mise exec -- cargo llvm-cov report --summary-only --ignore-filename-regex '(^|/)(tests?|fuzz)/|_tests\.rs$'
+            mise exec -- cargo llvm-cov report --summary-only --ignore-filename-regex '_tests\.rs$'
             echo '```'
           } >>"$GITHUB_STEP_SUMMARY"
       - name: Release build
@@ -135,6 +138,9 @@ jobs:
 
       - name: Workflows
         run: mise exec -- task lint:actions
+      - name: Script self-tests
+        if: ${{ !cancelled() }}
+        run: mise exec -- task scripts
       - name: Secrets
         if: ${{ !cancelled() }}
         run: mise exec -- task secrets

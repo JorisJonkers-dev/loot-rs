@@ -1,0 +1,22 @@
+globals:
+  - type: say
+    content: 'hidden by an unsupported function'
+    condition: 'version("A.esp", ==, "1.0")'
+plugins:
+  - name: 'A.esp'
+    msg:
+      - type: say
+        content: 'needs the description'
+        condition: 'description_contains("B.esp", "patch")'
+      - type: say
+        content: 'decided by the supported part'
+        condition: 'file("NotInstalled.esp") and product_version("x.exe", >, "1")'
+      - type: say
+        content: 'true or unsupported is true'
+        condition: 'file("B.esp") or is_executable("x.exe")'
+    tag:
+      - name: 'Relev'
+        condition: 'filename_version("A (.+).esp", ==, "1")'
+    req:
+      - name: 'Missing.esp'
+        condition: 'version("Missing.esp", >=, "2")'

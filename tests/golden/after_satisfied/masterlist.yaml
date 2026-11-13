@@ -1,0 +1,7 @@
+plugins:
+  - name: 'C.esp'
+    after: ['A.esp', 'B.esp']
+  - name: 'B.esp'
+    after:
+      - name: 'C.esp'
+        condition: 'file("NotInstalled.esp")'

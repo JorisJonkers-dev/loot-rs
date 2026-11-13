@@ -11,9 +11,26 @@
 //! Only the English text of a message is kept. `subs` are substituted into `{0}`, `{1}`, ...
 
 use regex::{Regex, RegexBuilder};
+use std::collections::HashMap;
 use std::fmt;
+use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
+use yaml_rust2::scanner::Marker;
 use yaml_rust2::yaml::Hash;
 use yaml_rust2::{Yaml, YamlLoader};
+
+/// Most nodes a masterlist may expand to once aliases are resolved. A file of a few hundred KiB, like the
+/// real masterlist, expands to well under a million; this stops "billion laughs" documents, whose aliases
+/// multiply on every level, before the loader clones them.
+pub const MAX_EXPANDED_NODES: usize = 200_000;
+
+/// Largest masterlist text that is read, in bytes (the real one is about 250 KB).
+pub const MAX_MASTERLIST_BYTES: usize = 8 * 1024 * 1024;
+
+/// Deepest nesting of `[` and `{` that is accepted (the real masterlist nests two levels).
+pub const MAX_FLOW_DEPTH: usize = 64;
+
+/// Deepest nesting of collections that the alias counter follows.
+const MAX_COUNTED_DEPTH: usize = 256;
 
 /// Name of the group every plugin is in unless the metadata says otherwise.
 pub const DEFAULT_GROUP: &str = "default";
@@ -189,10 +206,146 @@ pub struct Metadata {
     pub warnings: Vec<String>,
 }
 
+/// Counts the nodes of the document with every alias counted as the node it stands for.
+#[derive(Default)]
+struct ExpansionCounter {
+    /// Nodes counted so far in each open collection.
+    open: Vec<(usize, usize)>,
+    /// Expanded size of each anchored node.
+    anchors: HashMap<usize, usize>,
+    total: usize,
+    exceeded: bool,
+}
+
+impl ExpansionCounter {
+    fn add(&mut self, size: usize) {
+        self.total = self.total.saturating_add(size);
+        if let Some(top) = self.open.last_mut() {
+            top.1 = top.1.saturating_add(size);
+        }
+        self.exceeded |= self.total > MAX_EXPANDED_NODES;
+    }
+
+    fn close(&mut self) {
+        if let Some((anchor, size)) = self.open.pop() {
+            if anchor != 0 {
+                self.anchors.insert(anchor, size);
+            }
+            if let Some(parent) = self.open.last_mut() {
+                parent.1 = parent.1.saturating_add(size);
+            }
+        }
+    }
+}
+
+impl MarkedEventReceiver for ExpansionCounter {
+    fn on_event(&mut self, event: Event, _mark: Marker) {
+        match event {
+            Event::Scalar(_, _, anchor, _) => {
+                self.add(1);
+                if anchor != 0 {
+                    self.anchors.insert(anchor, 1);
+                }
+            }
+            Event::Alias(anchor) => {
+                // The aliased node was counted where it was defined; every use counts it again.
+                let size = self.anchors.get(&anchor).copied().unwrap_or(1);
+                self.total = self.total.saturating_add(size);
+                if let Some(top) = self.open.last_mut() {
+                    top.1 = top.1.saturating_add(size);
+                }
+                self.exceeded |= self.total > MAX_EXPANDED_NODES;
+            }
+            Event::SequenceStart(anchor, _) | Event::MappingStart(anchor, _) => {
+                self.total = self.total.saturating_add(1);
+                if self.open.len() >= MAX_COUNTED_DEPTH {
+                    self.exceeded = true;
+                    return;
+                }
+                self.open.push((anchor, 1));
+            }
+            Event::SequenceEnd | Event::MappingEnd => self.close(),
+            _ => {}
+        }
+    }
+}
+
+/// The number of nodes the document has once every alias is counted as the node it stands for. Refuses a
+/// document that is too large, nests brackets too deeply or expands to more than [`MAX_EXPANDED_NODES`].
+///
+/// # Errors
+/// [`MetadataError`] for invalid YAML or a document over one of the limits.
+pub fn expanded_node_count(text: &str) -> Result<usize, MetadataError> {
+    if text.len() > MAX_MASTERLIST_BYTES {
+        return Err(MetadataError(format!(
+            "the masterlist is {} bytes, more than the limit of {MAX_MASTERLIST_BYTES}",
+            text.len()
+        )));
+    }
+    let (mut depth, mut deepest) = (0usize, 0usize);
+    for byte in text.bytes() {
+        match byte {
+            b'[' | b'{' => {
+                depth += 1;
+                deepest = deepest.max(depth);
+            }
+            b']' | b'}' => depth = depth.saturating_sub(1),
+            _ => {}
+        }
+    }
+    if deepest > MAX_FLOW_DEPTH {
+        return Err(MetadataError(format!(
+            "YAML: brackets are nested more than {MAX_FLOW_DEPTH} levels deep"
+        )));
+    }
+    let mut counter = ExpansionCounter::default();
+    let mut parser = Parser::new_from_str(text);
+    parser
+        .load(&mut counter, true)
+        .map_err(|error| MetadataError(format!("YAML: {error}")))?;
+    if counter.exceeded {
+        return Err(MetadataError(format!(
+            "YAML: the aliases expand to more than {MAX_EXPANDED_NODES} nodes"
+        )));
+    }
+    Ok(counter.total)
+}
+
 /// Expand YAML merge keys (`<<: *alias` or `<<: [*a, *b]`) in `node` and everything below it.
-fn expand_merge_keys(node: &Yaml) -> Yaml {
-    match node {
-        Yaml::Array(items) => Yaml::Array(items.iter().map(expand_merge_keys).collect()),
+/// Work allowed for merge-key expansion: every node visited or copied counts, and the expansion stops the
+/// moment the budget or the depth runs out, before anything more is cloned.
+struct Budget {
+    left: usize,
+}
+
+impl Budget {
+    fn spend(&mut self, amount: usize) -> Result<(), MetadataError> {
+        self.left = self.left.checked_sub(amount).ok_or_else(|| {
+            MetadataError(format!(
+                "YAML: merge keys expand to more than {} nodes",
+                MAX_EXPANDED_NODES * 2
+            ))
+        })?;
+        Ok(())
+    }
+}
+
+fn expand_merge_keys(
+    node: &Yaml,
+    budget: &mut Budget,
+    depth: usize,
+) -> Result<Yaml, MetadataError> {
+    if depth > MAX_COUNTED_DEPTH {
+        return Err(MetadataError("YAML: nested too deeply".into()));
+    }
+    budget.spend(1)?;
+    Ok(match node {
+        Yaml::Array(items) => Yaml::Array(
+            items
+                .iter()
+                .map(|item| expand_merge_keys(item, budget, depth + 1))
+                .collect::<Result<_, _>>()?,
+        ),
         Yaml::Hash(map) => {
             let mut out = Hash::new();
             let mut merged: Vec<Hash> = Vec::new();
@@ -203,15 +356,16 @@ fn expand_merge_keys(node: &Yaml) -> Yaml {
                         other => vec![other],
                     };
                     for source in sources {
-                        if let Yaml::Hash(inner) = expand_merge_keys(source) {
+                        if let Yaml::Hash(inner) = expand_merge_keys(source, budget, depth + 1)? {
                             merged.push(inner);
                         }
                     }
                 } else {
-                    out.insert(key.clone(), expand_merge_keys(value));
+                    out.insert(key.clone(), expand_merge_keys(value, budget, depth + 1)?);
                 }
             }
             for inner in merged {
+                budget.spend(inner.len())?;
                 for (key, value) in inner {
                     if !out.contains_key(&key) {
                         out.insert(key, value);
@@ -221,7 +375,7 @@ fn expand_merge_keys(node: &Yaml) -> Yaml {
             Yaml::Hash(out)
         }
         other => other.clone(),
-    }
+    })
 }
 
 fn scalar(node: &Yaml) -> Option<String> {
@@ -393,6 +547,7 @@ fn merge_group(groups: &mut Vec<Group>, incoming: Group) {
 /// expression that cannot be compiled does not fail the file: the entry is skipped and a
 /// warning is recorded in [`Metadata::warnings`].
 pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
+    expanded_node_count(text)?;
     let documents =
         YamlLoader::load_from_str(text).map_err(|error| MetadataError(format!("YAML: {error}")))?;
     let mut metadata = Metadata::default();
@@ -404,7 +559,14 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
             after: Vec::new(),
         },
     );
-    let Some(root) = documents.first().map(expand_merge_keys) else {
+    let mut budget = Budget {
+        left: MAX_EXPANDED_NODES * 2,
+    };
+    let Some(root) = documents
+        .first()
+        .map(|document| expand_merge_keys(document, &mut budget, 0))
+        .transpose()?
+    else {
         return Ok(metadata);
     };
     if root.as_hash().is_none() {
@@ -461,163 +623,5 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    const SAMPLE: &str = r#"
-prelude:
-  - &thanks
-    type: say
-    content: 'Thanks'
-bash_tags:
-  - Relev
-globals:
-  - *thanks
-  - type: warn
-    content:
-      - lang: de
-        text: 'Hallo'
-      - lang: en
-        text: 'Use {0} {1}'
-    subs: ['this', 'mod']
-    condition: 'file("a.esp")'
-groups:
-  - name: 'Late'
-    after: ['default']
-  - name: 'Late'
-    description: 'later'
-    after: ['default', 'Mid']
-plugins:
-  - name: 'A.esp'
-    group: 'Late'
-    after: ['B.esp', {name: 'C.esp', condition: 'file("c")'}]
-    req:
-      - name: 'D.esp'
-        display: '[D](http://x)'
-        detail: 'get it'
-    inc: ['E.esp']
-    tag: ['Relev', {name: '-Delev', condition: 'file("f")'}]
-    dirty:
-      - crc: 0x1234ABCD
-        util: 'FNVEdit'
-        itm: 3
-    clean:
-      - crc: 0x1
-        util: 'FNVEdit'
-  - name: 'Bad(?=x)\.esp'
-  - name: 'Cat.*\.esp'
-    msg:
-      - type: say
-        content: 'regex entry'
-"#;
-
-    fn sample() -> Metadata {
-        parse(SAMPLE).expect("parses")
-    }
-
-    #[test]
-    fn aliases_in_globals_are_resolved() {
-        let metadata = sample();
-        assert_eq!(metadata.globals.len(), 2);
-        assert_eq!(metadata.globals[0].content, "Thanks");
-        assert_eq!(metadata.globals[0].kind, MessageKind::Say);
-    }
-
-    #[test]
-    fn english_content_is_chosen_and_subs_are_applied() {
-        let message = &sample().globals[1];
-        assert_eq!(message.content, "Use this mod");
-        assert_eq!(message.condition.as_deref(), Some("file(\"a.esp\")"));
-    }
-
-    #[test]
-    fn groups_merge_by_name_and_default_exists() {
-        let metadata = sample();
-        assert_eq!(metadata.groups[0].name, DEFAULT_GROUP);
-        let late = metadata.groups.iter().find(|group| group.name == "Late");
-        let late = late.expect("Late group");
-        assert_eq!(late.description, "later");
-        assert_eq!(late.after, ["default", "Mid"]);
-    }
-
-    #[test]
-    fn plugin_entry_fields_are_read() {
-        let metadata = sample();
-        let entry = &metadata.plugins[0];
-        assert!(entry.pattern.matches("a.ESP"));
-        assert_eq!(entry.group.as_deref(), Some("Late"));
-        assert_eq!(entry.after.len(), 2);
-        assert_eq!(entry.after[1].condition.as_deref(), Some("file(\"c\")"));
-        assert_eq!(entry.req[0].label(), "[D](http://x)");
-        assert_eq!(entry.req[0].detail.as_deref(), Some("get it"));
-        assert_eq!(entry.inc[0].name, "E.esp");
-        assert_eq!(entry.tag[1].name, "-Delev");
-        assert_eq!(entry.dirty[0].crc, Some(0x1234_ABCD));
-        assert_eq!(entry.dirty[0].itm, 3);
-        assert_eq!(entry.clean[0].crc, Some(1));
-    }
-
-    #[test]
-    fn regex_names_match_whole_names_case_insensitively() {
-        let metadata = sample();
-        let entry = metadata.plugins.last().expect("regex entry");
-        assert!(entry.pattern.matches("CATS.esp"));
-        assert!(!entry.pattern.matches("xCats.esp"));
-        assert!(!entry.pattern.matches("Cats.esp.bak"));
-    }
-
-    #[test]
-    fn a_regex_this_engine_cannot_compile_is_skipped_with_a_warning() {
-        let metadata = sample();
-        assert_eq!(metadata.plugins.len(), 2);
-        assert_eq!(metadata.warnings.len(), 1);
-        assert!(metadata.warnings[0].contains("Bad(?=x)"));
-    }
-
-    #[test]
-    fn merge_keys_are_expanded_and_explicit_keys_win() {
-        let text = r#"
-prelude:
-  - &base
-    type: warn
-    content: 'Use {0}.'
-    condition: 'file("x")'
-  - &second
-    type: error
-    content: 'second'
-    subs: ['never']
-globals:
-  - <<: *base
-    subs: ['this']
-  - <<: [*second, *base]
-    content: 'own'
-"#;
-        let metadata = parse(text).expect("parses");
-        assert_eq!(metadata.globals[0].content, "Use this.");
-        assert_eq!(metadata.globals[0].kind, MessageKind::Warn);
-        assert_eq!(
-            metadata.globals[0].condition.as_deref(),
-            Some("file(\"x\")")
-        );
-        assert_eq!(metadata.globals[1].content, "own");
-        assert_eq!(metadata.globals[1].kind, MessageKind::Error);
-    }
-
-    #[test]
-    fn bad_message_type_is_an_error() {
-        let error = parse("globals:\n  - type: shout\n    content: x\n").expect_err("fails");
-        assert!(error.0.contains("say, warn or error"));
-    }
-
-    #[test]
-    fn entry_without_name_is_an_error() {
-        assert!(parse("plugins:\n  - group: x\n").is_err());
-    }
-
-    #[test]
-    fn empty_and_non_map_files() {
-        assert!(parse("").expect("empty is fine").plugins.is_empty());
-        assert!(parse("- a\n- b\n").is_err());
-        assert!(parse("a: [unclosed").is_err());
-    }
-}
+#[path = "metadata_tests.rs"]
+mod tests;

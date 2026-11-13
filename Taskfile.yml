@@ -6,9 +6,9 @@ version: "3"
 
 vars:
   # Line coverage the tests must reach. The organisation requires at least 80.
-  COVERAGE_MIN: 90
-  # Test code is not counted: integration tests, the fuzz crate and the unit-test files.
-  COVERAGE_IGNORE: '(^|/)(tests?|fuzz)/|_tests\.rs$'
+  COVERAGE_MIN: 95
+  # The unit-test files are not counted (cargo-llvm-cov already skips tests/ and the separate fuzz workspace).
+  COVERAGE_IGNORE: '_tests\.rs$'
 
 tasks:
   default:
@@ -35,6 +35,12 @@ tasks:
     desc: HTML coverage report in target/llvm-cov/html
     cmd: cargo llvm-cov --locked --html --ignore-filename-regex '{{.COVERAGE_IGNORE}}'
 
+  limits:
+    desc: The resource-limit tests under a 512 MiB address-space limit (a regression fails instead of swapping)
+    cmds:
+      - cargo test --locked --test limits --no-run --message-format=json | jq -r 'select(.executable != null and .target.name == "limits").executable' > target/limits-binary.txt
+      - prlimit --as=536870912 -- "$(cat target/limits-binary.txt)" --test-threads=1
+
   build:
     desc: Release build of the CLI
     cmd: cargo build --locked --release
@@ -48,6 +54,16 @@ tasks:
     cmds:
       - actionlint
       - zizmor --offline --no-progress .github/workflows
+
+  scripts:
+    desc: Self-tests of the oracle scripts (invented data; no network, no LOOT)
+    cmds:
+      - python3 -I scripts/oracle/compare.py --selftest
+      - python3 -I scripts/oracle/materialise.py --selftest
+
+  real:
+    desc: Ignored tests against the real masterlist (set LOOT_RS_MASTERLIST)
+    cmd: cargo test --locked --release --test real_masterlist -- --ignored --nocapture
 
   secrets:
     desc: Scan every commit for secrets
@@ -76,9 +92,11 @@ tasks:
       - task: fmt
       - task: lint
       - task: coverage
+      - task: limits
       - task: build
       - task: deny
       - task: lint:actions
+      - task: scripts
       - task: secrets
 
   fix:

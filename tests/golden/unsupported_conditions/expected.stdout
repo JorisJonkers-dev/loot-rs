@@ -1,0 +1,11 @@
+A.esp (position 1, group "default")
+  [say] true or unsupported is true
+  note unsupported: unsupported condition function description_contains() (in `description_contains("B.esp", "patch")`), item not applied
+  note unsupported: unsupported condition function filename_version() (in `filename_version("A (.+).esp", ==, "1")`), item not applied
+  note unsupported: unsupported condition function version() (in `version("Missing.esp", >=, "2")`), item not applied
+
+note unsupported: unsupported condition function version() (in `version("A.esp", ==, "1.0")`), item not applied
+note: 1 item(s) use the unsupported condition function description_contains() and were not applied
+note: 1 item(s) use the unsupported condition function filename_version() and were not applied
+note: 2 item(s) use the unsupported condition function version() and were not applied
+Checked 4 plugin(s), 1 with masterlist entries. Hard violations: 0.

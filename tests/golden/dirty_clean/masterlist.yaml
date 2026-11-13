@@ -1,0 +1,11 @@
+plugins:
+  - name: 'A.esp'
+    dirty:
+      - crc: 0x12345678
+        util: 'FNVEdit'
+        itm: 4
+        udr: 2
+        nav: 1
+    clean:
+      - crc: 0x9ABCDEF0
+        util: 'FNVEdit'
