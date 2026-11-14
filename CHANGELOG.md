@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.3.0...v0.4.0) (2026-11-14)
+
+
+### Features
+
+* **sort:** minimal-change sort mode that keeps the given order and moves only what a hard constraint forces ([#48](https://github.com/JorisJonkers-dev/loot-rs/issues/48)) ([5ed0584](https://github.com/JorisJonkers-dev/loot-rs/commit/5ed0584536c233f8251d4dab7e19e7325035c136))
+
 ## [0.3.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.2.0...v0.3.0) (2026-11-14)
 
 
