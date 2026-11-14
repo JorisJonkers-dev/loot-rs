@@ -150,5 +150,20 @@ Three levels of output, under `~/.local/share/nvmod-oracle/<run-id>/` (mode 0700
 Status is `pass`, `fail`, `skipped` (no driver: nothing compared) or `partial` (compared and equal, but some plugins of
 the load order were not found, so fewer were compared than the order has; never a green gate). Exit codes 0, 1, 3, 4
 respectively; 2 is a usage or config error. libloot loads plugins in full, in memory, to sort them; only the order it
-produces is printed or kept. This is the phase 0 of ADR 0002's private oracle testing: no CI, no workflow, no issue is
-opened by it.
+produces is printed or kept. Run by hand this is phase 0 of ADR 0002's private oracle testing: it opens no issue and posts no status.
+
+### After a merge: the private trigger
+
+The script itself is unchanged; a private runner calls it after every push to `main` and on owner dispatch, and the
+result becomes the commit status `digest/real-data` that the release gate reads. Two workflows, because a self-hosted
+runner is never attached to a public repository:
+
+* `.github/workflows/oracle-trigger.yml` (public, GitHub-hosted, no data, no `pull_request` trigger) marks the commit
+  pending and dispatches the private repository `oracle-ci`.
+* `scripts/oracle/oracle-ci/real-data.yml` is the template of that private workflow. It builds the commit, runs
+  `oracle_run.py` with the config on the runner, and lets `oracle_ci_report.py` (allow-list, selftested) turn the L0 line
+  into the status and an issue. A failure opens or comments on the issue "Real-data oracle is red" with counts and the
+  digest only; a later green run closes it. Only `pass` is green: `skipped`, `partial`, `fail` and an error are red.
+  Nothing is reverted.
+
+The owner-only setup (runner, tokens, config, caps) is in [runbooks/private-oracle-runner.md](runbooks/private-oracle-runner.md).
