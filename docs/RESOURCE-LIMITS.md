@@ -18,7 +18,7 @@ measures the rise in peak resident memory for each input) and in the unit tests.
 
 | Executable version (cargo feature `executable-versions`) | 1024 data directories, 96 sections, a resource directory of at most 256 MiB of which only the few tables on the way to the version block are read (at most 64 tables of at most 256 entries), a version block of at most 64 KiB, every length inside a block checked against its parent and at least its own header, every offset computed in 64 bits and checked against the file | `exe_version::version_block` and `has_product_version`: the file is opened once and read with bounds, and only the validated block, inside a minimal image in a private temporary directory (mode 0700, removed afterwards), reaches `loot-condition-interpreter` | The interpreter's PE reader allocates from `u32` fields of the file (one as `capacity * 8` bytes), adds 32-bit offsets unchecked, reads the PE offset as 16 bits, maps the version data from the section address instead of the directory's, and loops forever on a string of length 0 (confirmed by `the_interpreter_alone_loops_forever_on_a_string_of_length_zero`, an ignored test). None of that sees the file. Because it opens only the copy, nothing can be swapped between the check and the use |
 
-| Sorting (`api::sort`) | 4096 listed plugins, 1024 installed plugins (`sort::MAX_PLUGINS`), 400 million steps of reachability updates (`sort::WORK_BUDGET`), checksums read in 64 KiB blocks | `api::sort`, `sort::order` | The game loads 255 plugins. The reachability matrix is `n * n / 8` bytes (128 KiB at the limit); a pathological set of group rules is stopped by the step count, not by time |
+| Sorting (`api::sort`) | 4096 listed plugins, 1024 installed plugins (`sort::MAX_PLUGINS`), 400 million steps of graph search and record comparison (`sort::WORK_BUDGET`), checksums read in 64 KiB blocks | `api::sort`, `sort::sort` | The game loads 255 plugins. The graph keeps two `n * n` bit matrices (known paths and direct edges, 256 KiB together at the limit) and its edges; every breadth-first search counts the vertices and edges it looks at, and the sort stops with `TooMuchWork` when the total passes the limit. `tests/limits_sort.rs` sorts 1024 plugins with the heaviest shapes (every pair overlapping, a chain of 1023 rules listed backwards, 40 groups) in at most 40 MiB (about 0.7 s in a release build) |
 
 All limits are errors, never panics and never silent truncation: the masterlist limits are `MetadataError`, the
 condition limits are `ConditionError::Syntax`, the plugin limit is `PluginError::Truncated`, the file limits are exit
@@ -30,6 +30,8 @@ code 2 with a message naming the file.
   oversized masterlist, nested, chained and very long conditions, a header with a huge size field in bytes and in a
   small file, an oversized `plugins.txt`) and asserts an error, under 3 seconds and under 24 MiB of added peak
   resident memory. Measured locally, every case added at most 1.3 MiB.
+* `tests/limits_sort.rs` sorts the largest load order in its heaviest shapes and asserts an order or `TooMuchWork`, in under
+  64 MiB of added peak resident memory.
 * `tests/limits_exe.rs` (with the feature) does the same for hostile executables built in the test: huge numbers of
   data directories, a huge resource directory, a huge version block and a string table that would not advance.
   Each is refused (or false) in microseconds and a few hundred KiB.

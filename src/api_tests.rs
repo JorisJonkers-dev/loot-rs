@@ -58,7 +58,8 @@ fn the_masters_in_a_header_load_first() {
     dir.plugin("Patch.esp", &["BASE.ESP"]);
     dir.plugin("Other.esp", &[]);
     let output = run("", &dir, &["Patch.esp", "Other.esp", "Base.esp"]).expect("sorts");
-    assert_eq!(order(&output), ["Other.esp", "Base.esp", "Patch.esp"]);
+    // LOOT keeps Patch before Other (their order in the load order) and moves Base to wherever Patch needs it.
+    assert_eq!(order(&output), ["Base.esp", "Patch.esp", "Other.esp"]);
 }
 
 #[test]

@@ -21,12 +21,12 @@ contributors: https://github.com/loot/loot. The masterlist is community data und
 
 `loot_rs::api::sort(load_order, masterlist, data_dir, options)` returns the sorted order, the messages and Bash Tags
 that apply, the findings, and the cleaning data that matches the installed files, for a program such as a mod
-manager. It reads files and writes nothing. See [docs/API.md](docs/API.md) for the contract, the sorting rules (not
-LOOT's algorithm) and the semver policy.
+manager. It reads files and writes nothing. See [docs/API.md](docs/API.md) for the contract, the sorting algorithm (a
+port of libloot's plugin graph, see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)) and the semver policy.
 
 ## Use (command line)
 
-`loot-rs sort` takes the same arguments as `check` and prints the load order sorted by the metadata rules (see
+`loot-rs sort` takes the same arguments as `check` and prints the load order sorted with LOOT's algorithm (see
 [docs/API.md](docs/API.md)), with what applies to it; `--json` prints it for tools. It writes nothing. The rest of this
 section describes `check`.
 
@@ -71,9 +71,10 @@ field. Every size read from the file is checked before the interpreter sees it, 
 
 ## What it does NOT do
 
-* Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) orders by
-  the metadata rules only (masters first, header masters, `after`, `req`, groups), which is not
-  LOOT's algorithm: no overlap, record counts or priorities. Its result is a valid order, not LOOT's order.
+* Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) is a port
+  of libloot's plugin graph (masters, `req`, `after`, groups, tie-breaks). Overlap edges (records and archives) are
+  not fed yet, so where two plugins change the same records the order can differ from LOOT's, and the userlist is
+  not read; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 * It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
 * The condition functions `filename_version`, `description_contains` and `is_executable` are **not implemented**,
   and `version` and `product_version` are implemented only for executables and DLLs and only when built with the

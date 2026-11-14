@@ -82,8 +82,10 @@ impl fmt::Display for Arg {
     }
 }
 
-/// The canonical text of a condition: every operand of `and`, `or` and `not` that is not a call is
-/// parenthesised, so `parse(&expr.to_string())` gives back `expr`.
+/// The canonical text of a condition: operands are parenthesised only where the grammar needs it (`not` binds
+/// tighter than `and`, which binds tighter than `or`, and both are left-associative), so
+/// `parse(&expr.to_string())` gives back `expr` and a long chain of `or`s stays one level deep instead of
+/// growing a parenthesis per operator, which would pass the nesting limit on the way back in.
 impl fmt::Display for Expr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -97,21 +99,59 @@ impl fmt::Display for Expr {
                 }
                 f.write_str(")")
             }
-            Self::Not(inner) => write!(f, "not {}", Operand(inner)),
-            Self::And(left, right) => write!(f, "{} and {}", Operand(left), Operand(right)),
-            Self::Or(left, right) => write!(f, "{} or {}", Operand(left), Operand(right)),
+            Self::Not(inner) => {
+                f.write_str("not ")?;
+                Operand::new(inner, self.rank(), false).fmt(f)
+            }
+            Self::And(left, right) => {
+                Operand::new(left, self.rank(), false).fmt(f)?;
+                f.write_str(" and ")?;
+                Operand::new(right, self.rank(), true).fmt(f)
+            }
+            Self::Or(left, right) => {
+                Operand::new(left, self.rank(), false).fmt(f)?;
+                f.write_str(" or ")?;
+                Operand::new(right, self.rank(), true).fmt(f)
+            }
         }
     }
 }
 
-/// An operand: calls print bare, everything else in parentheses.
-struct Operand<'a>(&'a Expr);
+impl Expr {
+    /// How tightly the expression binds: calls and `not` 3, `and` 2, `or` 1.
+    const fn rank(&self) -> u8 {
+        match self {
+            Self::Call(..) | Self::Not(_) => 3,
+            Self::And(..) => 2,
+            Self::Or(..) => 1,
+        }
+    }
+}
+
+/// An operand of an operator of rank `parent`: bare when it binds at least as tightly, and, on the right of a
+/// left-associative operator, only when strictly tighter.
+struct Operand<'a> {
+    expr: &'a Expr,
+    parenthesised: bool,
+}
+
+impl<'a> Operand<'a> {
+    fn new(expr: &'a Expr, parent: u8, right: bool) -> Self {
+        let binary = matches!(expr, Expr::And(..) | Expr::Or(..));
+        let parenthesised = expr.rank() < parent || (right && binary && expr.rank() == parent);
+        Self {
+            expr,
+            parenthesised,
+        }
+    }
+}
 
 impl fmt::Display for Operand<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Expr::Call(..) => write!(f, "{}", self.0),
-            other => write!(f, "({other})"),
+        if self.parenthesised {
+            write!(f, "({})", self.expr)
+        } else {
+            write!(f, "{}", self.expr)
         }
     }
 }

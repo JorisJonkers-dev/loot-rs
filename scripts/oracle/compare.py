@@ -17,7 +17,7 @@ The LOOT file has the shape (every key optional):
       "dirty": [{"plugin": "A.esp", "crc": 1, "status": "dirty|clean", "utility": "", "itm": 0, "udr": 0, "nav": 0}]
     }
 
-Compared: messages (type and normalised text, as sets: order is not significant), bash tags, groups when LOOT
+Compared: the sorted order (it should be equal), messages (type and normalised text, as sets: order is not significant), bash tags, groups when LOOT
 gives them, cleaning data matched by CRC (the `dirty` list), and, when "sorted" is given, whether every
 load-after constraint loot-rs reports as violated, and every `after`, `req` and header-master rule of `loot-rs sort`
 (its `rules`), is satisfied by LOOT's own order. Rules that come from groups are printed as `note:` lines and
@@ -107,6 +107,16 @@ def compare(ours: dict, loot: dict) -> list[str]:
                 1 for i, a in enumerate(names) for b in names[i + 1:] if position[a.lower()] > position[b.lower()]
             )
             differences.append(f"info: {apart} of {len(names) * (len(names) - 1) // 2} plugin pairs are in a different order")
+            # loot-rs sort ports LOOT's algorithm, so the same plugins in the same order should come out. (Until the
+            # record and archive overlap data is read, a real load order whose plugins change the same records can
+            # differ: see docs/COMPATIBILITY.md.)
+            ours_order = [name.lower() for name in ours["sorted"]]
+            loot_order = [name.lower() for name in loot["sorted"]]
+            if sorted(ours_order) == sorted(loot_order) and ours_order != loot_order:
+                at = next(i for i, (a, b) in enumerate(zip(ours_order, loot_order)) if a != b)
+                differences.append(
+                    f"order differs from LOOT's, first at position {at + 1}: loot-rs {ours['sorted'][at]}, LOOT {loot['sorted'][at]}"
+                )
     return differences
 
 
@@ -153,10 +163,13 @@ def selftest() -> None:
         ],
         "dirty": [{"plugin": "A.esp", "crc": 5, "status": "dirty", "utility": "u", "itm": 1, "udr": 0, "nav": 0}],
     }
-    agree = {"sorted": ["B.esp", "C.esp", "A.esp"], "dirty": sorted_ours["dirty"]}
+    agree = {"sorted": ["B.esp", "A.esp", "C.esp"], "dirty": sorted_ours["dirty"]}
     lines = compare(sorted_ours, agree)
-    assert [line for line in lines if not line.startswith("info:")] == [], lines
-    assert "1 of 3" in lines[0]
+    assert [line for line in lines if not line.startswith("note:")] == ["info: 0 of 3 plugin pairs are in a different order"], lines
+    other_order = {"sorted": ["B.esp", "C.esp", "A.esp"], "dirty": sorted_ours["dirty"]}
+    lines = compare(sorted_ours, other_order)
+    assert any("1 of 3" in line for line in lines), lines
+    assert "order differs from LOOT's, first at position 2: loot-rs A.esp, LOOT C.esp" in lines, lines
     flipped = compare(sorted_ours, {"sorted": ["A.esp", "B.esp", "C.esp"]})
     assert any(line.startswith("after rule: B.esp before A.esp") for line in flipped), flipped
     assert any(line.startswith("note: group rule: C.esp before A.esp") for line in flipped), flipped

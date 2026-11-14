@@ -22,10 +22,11 @@ two should agree on:
 | Ordering constraints | `rules` of `loot-rs sort`, load-after findings of `check` | the order a LOOT sort produces |
 | Cleaning data | `dirty` | the plugin metadata's dirty and clean info whose CRC is the installed file's |
 
-Ordering is only checked one way: every `after`, `req` and header-master rule of `loot-rs sort`, and every
-constraint `check` reports as violated, must hold in the order LOOT's sort produces. Group rules are listed as
-notes. The other direction is not comparable: LOOT also orders by overlap, record counts and priorities, which
-`loot-rs sort` does not do, so the two orders differ and only the rules are compared.
+Ordering is checked two ways: every `after`, `req` and header-master rule of `loot-rs sort`, and every constraint
+`check` reports as violated, must hold in the order LOOT's sort produces (group rules are listed as notes); and
+`loot-rs sort` is a port of LOOT's algorithm, so on the synthetic cases, which have no records in common, the two
+orders should be **equal**. Until the record and archive overlap data is read (see
+[COMPATIBILITY.md](COMPATIBILITY.md)), a real load order in which plugins change the same records can still differ.
 
 Known, expected differences (not bugs): `loot-rs` does not implement `filename_version()`,
 `description_contains()` and `is_executable()`, and implements `version()` and `product_version()` only on
@@ -83,7 +84,7 @@ Mod names, paths and load orders belong to you: do not paste them into issues or
 
 Reading the result: `ours.json` and `loot.json` are the two sides; `differences.txt` lists the differences. A line
 starting with `info:` says how many pairs of plugins are in a different order in the two sorts, which is expected
-(LOOT also sorts by overlap and priority); `note:` lines are group rules that LOOT's order does not follow, which is
+(it should be 0 on the synthetic cases; real load orders can differ until the overlap data is read); an `order differs` line is a difference. `note:` lines are group rules that LOOT's order does not follow, which is
 worth a look but not a difference; everything else is a difference to explain: a bug here, or an entry in the list of
 known differences below.
 

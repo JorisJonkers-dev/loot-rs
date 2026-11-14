@@ -50,7 +50,7 @@ use crate::metadata::{
     self, DEFAULT_GROUP, MessageKind as InnerMessageKind, Metadata, PluginEntry,
 };
 use crate::plugin;
-use crate::sort::{GraphError, MAX_PLUGINS, order};
+use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, NoOverlaps, PluginInput};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
@@ -386,8 +386,12 @@ pub enum SortError {
         /// The master it has to load before.
         master: String,
     },
+    /// Groups that each load after the other, by name (LOOT refuses such a masterlist too).
+    GroupCycle(Vec<String>),
     /// The load order needs more work than the limit allows.
     TooMuchWork,
+    /// A check inside the sorter failed. This is a bug, never a property of the input.
+    Internal(String),
 }
 
 impl fmt::Display for SortError {
@@ -405,9 +409,17 @@ impl fmt::Display for SortError {
                 f,
                 "{plugin} (not a master) has to load before {master} (a master)"
             ),
+            Self::GroupCycle(groups) => {
+                write!(
+                    f,
+                    "groups that load after each other: {}",
+                    groups.join(", ")
+                )
+            }
             Self::TooMuchWork => {
                 f.write_str("the load order needs more work than the limit allows")
             }
+            Self::Internal(text) => write!(f, "internal error in the sorter: {text}"),
         }
     }
 }
@@ -506,31 +518,43 @@ pub fn sort(
         .map(|slot| facts_of(&env, metadata, slot, &mut output.warnings))
         .collect();
     let rules = rules(&env, metadata, &facts, &mut output.warnings);
-    let hard: Edges = rules.hard.iter().map(|&(a, b, _)| (a, b)).collect();
 
-    let is_master: Vec<bool> = facts.iter().map(|fact| fact.is_master).collect();
     let name_of = |index: usize| facts[index].name.to_string();
-    let sorted =
-        order(facts.len(), &is_master, &hard, &rules.soft).map_err(|error| match error {
-            GraphError::Cycle(a, b) => SortError::Conflict {
-                first: name_of(a),
-                second: name_of(b),
-            },
-            GraphError::MasterOrder(a, b) => SortError::MasterOrder {
-                plugin: name_of(a),
-                master: name_of(b),
-            },
-            GraphError::TooMany(count) => SortError::TooManyPlugins(count),
-            // The edges are built from indices of `facts`.
-            GraphError::TooMuchWork | GraphError::BadIndex(_) => SortError::TooMuchWork,
-        })?;
-    output.dropped_group_rules = sorted
-        .dropped
+    let inputs: Vec<PluginInput> = facts
+        .iter()
+        .enumerate()
+        .map(|(index, fact)| plugin_input(fact, &rules, index))
+        .collect();
+    let groups: Vec<GroupInput> = metadata
+        .groups
+        .iter()
+        .map(|group| GroupInput {
+            name: group.name.clone(),
+            after: group.after.clone(),
+        })
+        .collect();
+    let sorted = sort::sort(&inputs, &groups, &[EARLY_LOADER.to_string()], &NoOverlaps)
+        .map_err(|error| sort_error(&error, &name_of))?;
+    let position: Vec<usize> = {
+        let mut position = vec![0; facts.len()];
+        for (at, &index) in sorted.order.iter().enumerate() {
+            position[index] = at;
+        }
+        position
+    };
+    // Group rules the order does not satisfy: the sorter left them out because they would have closed a cycle.
+    let dropped: Vec<(usize, usize)> = rules
+        .soft
+        .iter()
+        .copied()
+        .filter(|&(earlier, later)| position[earlier] > position[later])
+        .collect();
+    output.dropped_group_rules = dropped
         .iter()
         .map(|&(earlier, later)| (name_of(later), name_of(earlier)))
         .collect();
     output.order = sorted.order.iter().map(|&index| name_of(index)).collect();
-    output.ordering_rules = ordering_rules(&rules, &sorted.dropped, &name_of);
+    output.ordering_rules = ordering_rules(&rules, &dropped, &name_of);
 
     // What the masterlist says, with the plugins in their sorted places: a rule that the sort could not satisfy
     // shows up as a finding.
@@ -551,6 +575,50 @@ pub fn sort(
     output.plugins = report.plugins.iter().map(plugin_result).collect();
     output.dirty = dirty_info(&facts, &sorted.order, &sorted_env);
     Ok(output)
+}
+
+/// The plugin that Fallout: New Vegas always loads first.
+const EARLY_LOADER: &str = "FalloutNV.esm";
+
+/// What the sorter is told about one plugin: the header and the masterlist rules that apply.
+fn plugin_input(fact: &Facts, rules: &Rules, index: usize) -> PluginInput {
+    let mut input = PluginInput::new(fact.name);
+    input.is_master = fact.is_master;
+    input.group.clone_from(&fact.group);
+    input.masters.clone_from(&fact.masters);
+    for &(before, later, source) in &rules.hard {
+        if later != index {
+            continue;
+        }
+        match source {
+            RuleSource::After => input.load_after.push(rules.names[before].clone()),
+            RuleSource::Req => input.requirements.push(rules.names[before].clone()),
+            // Header masters come from the plugin itself; group rules from the group graph.
+            RuleSource::HeaderMaster | RuleSource::Group => {}
+        }
+    }
+    input
+}
+
+fn sort_error(error: &GraphError, name_of: &dyn Fn(usize) -> String) -> SortError {
+    match error {
+        GraphError::Cycle(cycle) => {
+            let first = cycle.first().map_or(0, |&(plugin, _)| plugin);
+            let second = cycle.get(1).map_or(first, |&(plugin, _)| plugin);
+            SortError::Conflict {
+                first: name_of(first),
+                second: name_of(second),
+            }
+        }
+        GraphError::MasterOrder { plugin, master, .. } => SortError::MasterOrder {
+            plugin: name_of(*plugin),
+            master: name_of(*master),
+        },
+        GraphError::TooMany(count) => SortError::TooManyPlugins(*count),
+        GraphError::GroupCycle(groups) => SortError::GroupCycle(groups.clone()),
+        GraphError::TooMuchWork => SortError::TooMuchWork,
+        GraphError::Internal(text) => SortError::Internal((*text).to_string()),
+    }
 }
 
 /// The rules that were kept, once each.
@@ -638,6 +706,8 @@ type Edges = Vec<(usize, usize)>;
 struct Rules {
     hard: Vec<(usize, usize, RuleSource)>,
     soft: Edges,
+    /// Names of the installed plugins, by index.
+    names: Vec<String>,
 }
 
 /// The edges `(earlier, later)` over the indices of `facts`: those that must hold (masters, `after`, `req`) and
@@ -698,7 +768,11 @@ fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<S
             }
         }
     }
-    Rules { hard, soft }
+    Rules {
+        hard,
+        soft,
+        names: facts.iter().map(|fact| fact.name.to_string()).collect(),
+    }
 }
 
 fn plugin_result(plugin: &check::PluginReport) -> PluginResult {

@@ -66,7 +66,7 @@ fn a_mod_manager_gets_the_order_the_messages_and_what_was_left_out() {
 
     assert_eq!(
         result.order,
-        ["FalloutNV.esm", "Other.esp", "Base.esp", "Patch.esp"]
+        ["FalloutNV.esm", "Base.esp", "Patch.esp", "Other.esp"]
     );
     assert_eq!(result.not_installed, ["Gone.esp"]);
     assert!(result.changed(&load_order()));
@@ -78,7 +78,7 @@ fn a_mod_manager_gets_the_order_the_messages_and_what_was_left_out() {
         .iter()
         .find(|p| p.name == "Patch.esp")
         .expect("present");
-    assert_eq!(patch.position, 3);
+    assert_eq!(patch.position, 2);
     assert!(patch.active);
     assert_eq!(patch.group, "late");
     assert_eq!(patch.messages[0].text, "Needs Base.esp");

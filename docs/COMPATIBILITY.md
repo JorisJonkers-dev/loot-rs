@@ -2,7 +2,7 @@
 
 Status of every LOOT metadata and condition feature in this tool: **supported**, **partial** or **unsupported**.
 Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings). "Check" means the read-only
-`loot-rs check`; nothing here sorts.
+`loot-rs check`. Sorting (`api::sort`, `loot-rs sort`) is a port of libloot's algorithm, see Sorting below.
 
 ## Metadata file
 
@@ -45,7 +45,33 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | Edge dropped when it clashes with master, `after` or `req` edges | unsupported | A note can appear that LOOT would not enforce |
 | Group named but undefined | supported | Reported as a note (hard with `--strict-groups`) |
 | Group order violation | supported | A note by default, a violation with `--strict-groups`; see [GROUPS.md](GROUPS.md) |
-| Sorting | partial | Library only (`api::sort`, [API.md](API.md)): masters first, header masters, `after`, `req`, group edges that do not contradict them, earlier position first among equals. Not LOOT's algorithm (no overlap, record counts, priorities) |
+| Sorting | partial | See the Sorting section below |
+
+## Sorting
+
+`api::sort` and `loot-rs sort` run a port of libloot's plugin graph (`src/sort.rs`, `src/sort/`; libloot 0.29.7,
+`src/sorting/`). The graph code is checked against libloot's own unit tests, translated; the rest against golden
+cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACLE.md)).
+
+| libloot stage | Status | Notes |
+| --- | --- | --- |
+| Vertices in lexicographical (byte) order of the names | supported | The result does not depend on the order given except through the tie-break |
+| Separate graphs for masters (master flag) and the others, joined masters first | supported | A rule that puts a plugin without the flag before one with it is an error (`MasterOrder`), as in libloot |
+| Blueprint masters (Starfield) | not applicable | Fallout: New Vegas has none |
+| Edges from header masters, `req` and `after` (masterlist) | supported | Conditions and constraints are evaluated first, as `filter_by_constraints` does. A name that is not installed adds nothing |
+| Edges from the userlist (`req`, `after`, `group`) | unsupported | One masterlist is read; there is no userlist |
+| Hard-coded early loader | supported | `FalloutNV.esm`, the one plugin libloadorder lists for this game |
+| Cycle among these edges is an error naming the cycle | supported | `SortError::Conflict` names the first two plugins of the cycle |
+| Group edges: depth-first searches of the group graph, roots first by longest path, skipped when they would close a cycle, the `default` group last | supported | Same code path as libloot, including which edges are skipped. A group `after` a group nobody defined has that edge ignored, a plugin in an undefined group gets no group edges (libloot refuses both with an error; the finding is in `check`) |
+| Cycle among groups | supported | `SortError::GroupCycle` (LOOT refuses it too) |
+| Record overlap edges | partial | The graph code is ported and tested; the record data is not read yet, so no plugin overlaps another and these edges are absent. A load order where two plugins change the same records can come out in another order than LOOT's |
+| Asset (archive) overlap edges | partial | Same: ported, not fed yet |
+| Tie-break edges and pinning | supported | |
+| Topological sort | supported | petgraph's depth-first topological sort, reproduced |
+| Messages LOOT's application generates while sorting (missing masters, inactive requirements, dirty plugins) | unsupported | |
+
+Everything here is Fallout: New Vegas only. Differences that follow from what is not supported are listed above;
+there are no others known.
 
 ## Condition language
 

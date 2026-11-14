@@ -7,7 +7,7 @@ project started from were from memory; the table below replaces them.
 | Project | Repository | Licence found | Evidence |
 | --- | --- | --- | --- |
 | LOOT (application) | https://github.com/loot/loot | GPL-3.0 | `LICENSE` is the GNU GPL, version 3 |
-| libloot (the library LOOT is built on) | https://github.com/loot/libloot | GPL-3.0 | `LICENSE` is the GNU GPL, version 3. Not MIT, as the research notes guessed |
+| libloot (the library LOOT is built on) | https://github.com/loot/libloot | GPL-3.0-or-later | `LICENSE` is the GNU GPL, version 3; `Cargo.toml` `license = "GPL-3.0-or-later"` (version 0.29.7, a Rust crate). Not MIT, as the research notes guessed |
 | esplugin (plugin parsing) | https://github.com/Ortham/esplugin | GPL-3.0 | `LICENSE`; `Cargo.toml` `license = "GPL-3.0"` (crate `parsing` 6.1.4). Lives under the author's account, not `loot/` |
 | libloadorder (load order handling) | https://github.com/Ortham/libloadorder | GPL-3.0 | `LICENSE`; `Cargo.toml` `license = "GPL-3.0"` (crate `load_order` 18.8.2). Lives under the author's account, not `loot/` |
 | loot-condition-interpreter | https://github.com/loot/loot-condition-interpreter | MIT | `LICENSE` is "The MIT License (MIT), Copyright (c) 2018 Oliver Hamlet"; `Cargo.toml` `license = "MIT"` (crate `eval` 6.0.0). Not GPL |
@@ -19,9 +19,10 @@ Which version each licence was read from is the default branch at the time of re
 ## What this repository takes from them
 
 * **LOOT, libloot**: the rule semantics, read from the public metadata and condition-language
-  documentation (`docs/metadata/` in libloot, published at https://loot-api.readthedocs.io). No source
-  code is copied in this slice. This repository is GPL-3.0 to follow them, so adapting their code later is
-  allowed with attribution and the licence kept.
+  documentation (`docs/metadata/` in libloot, published at https://loot-api.readthedocs.io), and, for the
+  sorter (`src/sort.rs`, `src/sort/`), the source of libloot's `src/sorting/` ported to Rust with its unit
+  tests. This repository is GPL-3.0, libloot GPL-3.0-or-later, so that is allowed with attribution and the
+  licence kept; `NOTICE.md` says what was ported.
 * **esplugin, libloadorder**: nothing. The plugin header reader is `src/plugin.rs`, which comes from
   fnvorder (MIT OR Apache-2.0), see `NOTICE.md`.
 * **loot-condition-interpreter** (6.0.0): a dependency, but only behind the cargo feature
