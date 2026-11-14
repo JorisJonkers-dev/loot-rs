@@ -19,7 +19,7 @@ let result = sort(&load_order, &masterlist, Path::new("Data"), &SortOptions::def
 
 ## Command line
 
-`loot-rs sort --masterlist <file> --plugins <plugins.txt> --data <Data> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--json]` runs the same code: the
+`loot-rs sort --masterlist <file> --plugins <plugins.txt> --data <Data> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]` runs the same code: the
 text is the order with what applies to each plugin, `--json` is one line with `sorted`, `plugins`, `general_messages`,
 `dirty`, `rules`, `dropped_group_rules`, `not_installed`, `warnings` and `hard_violations`. Exit code 0, or 1 when a
 finding is hard, or 2 when the rules contradict each other or an input cannot be read.
@@ -31,7 +31,7 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | `load_order: &[PluginSlot]` | The current order, each plugin with its file name and whether it is active |
 | `masterlist: &Masterlist` | A masterlist read once with `Masterlist::parse(text)` or `Masterlist::from_file(path)` (8 MiB limit, aliases bounded), reusable |
 | `data_dir: &Path` | The game's `Data` directory (or a mod manager's staging `data` folder); condition paths are relative to it |
-| `options: &SortOptions` | `strict_groups` (see [GROUPS.md](GROUPS.md)); default is soft. `game_dir` and `additional_data_dirs` (below) |
+| `options: &SortOptions` | `strict_groups` (see [GROUPS.md](GROUPS.md)); default is soft. `game_dir` and `additional_data_dirs` (below). `mode`: `SortMode::Full` (default) or `SortMode::MinimalChange` (see Minimal-change sort) |
 
 `SortOutput`:
 
@@ -45,6 +45,7 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | `dirty` | `DirtyInfo` (plugin, CRC-32, dirty or clean, utility, ITM, UDR, NAV) where an installed file's CRC-32 is on the masterlist's `dirty` or `clean` list. Only files that have such data are read |
 | `not_installed` | Plugins of the load order that are not in `Data`; they are not in `order`, the caller places them |
 | `dropped_group_rules` | Group rules `(later, earlier)` that the final order does not satisfy: the sorter left the edge out because it would have closed a cycle |
+| `mode`, `moves` | The mode that made the order; with `MinimalChange`, one `PluginMove` per plugin that moved (`plugin`, `from`, `to`, `reason`, `other`, `indirect`), else empty |
 | `warnings` | Skipped things: unreadable plugin headers, duplicate names, an ordering rule whose condition could not be evaluated |
 | `changed(&load_order)` | Whether the order differs from the one given |
 
@@ -97,6 +98,50 @@ The algorithm is libloot's (see [COMPATIBILITY.md](COMPATIBILITY.md) for what is
    therefore moves only for a reason, and sorting a sorted order changes nothing.
 
 Not supported: the userlist. The messages LOOT's application generates when it checks an install are returned apart from the masterlist's (`generated_messages`); `docs/COMPATIBILITY.md` lists which.
+
+## Minimal-change sort
+
+`SortOptions::with_mode(SortMode::MinimalChange)` (`loot-rs sort --mode minimal`) is for an order that is already valid
+for the game but not LOOT-sorted, for example a mod manager's own order. The full sort reorders plugins that no rule
+relates, by the order it was given and by record overlap; this mode keeps the given order wherever no hard constraint is
+violated and moves the fewest plugins that fix the violations. The default mode, the order it returns and the JSON of a
+default sort are unchanged.
+
+Hard constraints: plugins with the master flag before the others; the header masters; the masterlist's `req` and
+`after` (conditions applied); the game's first plugin (`FalloutNV.esm`) before every other plugin of its kind; and, only
+with `strict_groups`, the group rules that libloot's sort satisfies (the ones it did not drop for a cycle). Soft group
+rules, record overlap and asset overlap are not enforced. The full sort runs first, so the same errors are returned
+(`Conflict`, `MasterOrder`, `GroupCycle`, ...) and the constraints are known to be consistent.
+
+The algorithm (`src/sort/minimal.rs`, deterministic, no randomness):
+
+1. A violation is a pair `(u, v)`, `u` required before `v` (directly or through a chain of constraints, including the
+   master flag), that the given order has the other way round. The violations are the edges of a conflict graph.
+2. The plugins that stay must contain no violation among themselves, so they form an independent set of the conflict
+   graph; the moves are `n` minus the size of that set. A largest independent set is found per connected component:
+   plugins without a violation stay, a plugin with one violation left stays and its partner moves (an optimal
+   reduction), and the rest is a branch and bound over the plugin with most violations. Largest independent set is
+   NP-hard in general, so each component has a work cap (`COMPONENT_BUDGET`); when it is reached the best set found is
+   used, the first answer being the greedy "move the plugin with most violations" one, and the result is not proven
+   smallest. Among equally small answers the branching order decides, so the result is the same every time.
+3. The kept plugins keep their relative order. Each moved plugin, in the order given, is inserted at the place nearest
+   its given place that respects every constraint towards the plugins already in the sequence.
+
+Why every constraint holds: the kept plugins have no violation, so they respect the transitive constraints. When a
+moved plugin `m` is inserted, every placed plugin `p` that must load before `m` and every placed plugin `s` that must
+load after it satisfy `p` before `s` (`p < m < s` and the sequence respects the relation), so the interval between the
+last `p` and the first `s` is not empty and the invariant survives. An order without violations has an empty conflict
+graph: nothing moves and the order is returned as given. The tests check these claims: `tests/prop_minimal.rs` on random
+worlds compares the satisfied constraints with the full sort (the libloot port), the move count with a brute-force
+optimum, idempotence and that the full sort's own order is returned unchanged; `scripts/oracle/random_diff.py` does the
+same against libloot itself on synthetic worlds (see [ORACLE.md](ORACLE.md)).
+
+Each move has a reason: the class of the first violated constraint that forced it, in the order of the classes
+(hardcoded, master-flag, header-master, req, after, group), a directly stated constraint before one that follows from a
+chain (`indirect`), and `other`, the plugin on the other side. `from` and `to` are positions among the installed plugins.
+The text output lists the moves after the plugins; the JSON gains two optional keys, `mode` (`minimal`) and `moves`, only
+for this mode. New optional keys do not raise `schema_version`, which stays 1, and a default sort writes neither.
+`SortMode` and `MoveReason` are `#[non_exhaustive]`.
 
 ## Guarantees
 

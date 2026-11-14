@@ -1,7 +1,7 @@
 //! The command line: argument parsing and the `check` and `sort` commands. `main` only forwards here, so everything
 //! is testable without spawning the binary.
 
-use crate::api::{Masterlist, PluginSlot, SortOptions, sort};
+use crate::api::{Masterlist, PluginSlot, SortMode, SortOptions, sort};
 use crate::check::{Options, run};
 use crate::env::{FsEnv, Slot, parse_plugins_txt};
 use crate::{metadata, render};
@@ -24,12 +24,13 @@ pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
 pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--json]
+pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
        loot-rs contracts --json
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
 sort: prints the load order sorted with LOOT's algorithm (a port of libloot's plugin graph)
-with the messages, tags and findings that apply to it.
+with the messages, tags and findings that apply to it. --mode minimal instead keeps the given order and moves
+only the plugins that a hard constraint (master flag, header master, req, after) forces, and says why.
 contracts --json: prints the JSON contracts this build emits and their schema versions.
 Neither check nor sort writes anything.
 
@@ -64,6 +65,8 @@ pub struct Args {
     pub options: Options,
     /// Print the report as JSON (see [`render::render_json`]) instead of text.
     pub json: bool,
+    /// How `sort` orders the plugins (`--mode full|minimal`).
+    pub mode: SortMode,
 }
 
 /// Parse the arguments that follow the program name.
@@ -82,6 +85,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
     let (mut game_dir, mut extra_data) = (None, Vec::new());
     let mut options = Options::default();
     let mut json = false;
+    let mut mode = SortMode::Full;
     while let Some(flag) = args.next() {
         let mut value = |name: &str| {
             args.next()
@@ -96,6 +100,13 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             "--extra-data" => extra_data.push(value("--extra-data")?),
             "--strict-groups" => options.strict_groups = true,
             "--json" => json = true,
+            "--mode" => {
+                mode = match args.next().map(String::as_str) {
+                    Some("full") => SortMode::Full,
+                    Some("minimal") => SortMode::MinimalChange,
+                    _ => return Err("--mode needs full or minimal".into()),
+                };
+            }
             other => return Err(format!("unknown argument {other:?}")),
         }
     }
@@ -108,6 +119,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         extra_data,
         options,
         json,
+        mode,
     })
 }
 
@@ -181,6 +193,7 @@ fn execute_sort(
         .collect();
     let mut options = SortOptions::default()
         .with_strict_groups(args.options.strict_groups)
+        .with_mode(args.mode)
         .with_additional_data_dirs(args.extra_data.iter());
     options.game_dir.clone_from(&args.game_dir);
     let result = sort(&load_order, &masterlist, &args.data, &options)

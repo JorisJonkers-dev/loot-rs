@@ -6,6 +6,11 @@ directory (`Extra`, searched before `Data`), groups with `after` lists and
 `after` and `req` rules; both tools sort the same directory, given the same current order, and the sorted orders
 must be equal. An error is a result too: both refusing counts as agreement. Nothing here uses game files.
 
+The minimal-change mode (`loot-rs sort --mode minimal`) is checked on the same worlds against libloot as the oracle for
+constraint satisfaction: the order must keep every hard constraint (master flag, header masters, `req`, `after`,
+`FalloutNV.esm` first) that libloot's order keeps, must move no more plugins than libloot's order displaces and report a
+reason for each move, and an order that is already valid (libloot's) must come back unchanged with no moves.
+
     # the libloot side: build it once (needs network for the crates), then
     cargo build --release --manifest-path scripts/oracle/libloot-driver/Cargo.toml
     scripts/oracle/random_diff.py --loot-rs target/release/loot-rs \\
@@ -264,11 +269,11 @@ def write(w: dict, root: Path) -> list[str]:
     return order
 
 
-def run_ours_json(binary: str, root: Path) -> dict | str:
+def run_ours_json(binary: str, root: Path, extra: list[str] | None = None) -> dict | str:
     """`loot-rs sort --json` of a world: the whole result, or `error: ...`."""
     done = subprocess.run(
         [binary, "sort", "--masterlist", str(root / "masterlist.yaml"), "--plugins", str(root / "plugins.txt"),
-         "--data", str(root / "Data"), "--extra-data", str(root / "Extra"), "--json"],
+         "--data", str(root / "Data"), "--extra-data", str(root / "Extra"), *(extra or []), "--json"],
         capture_output=True, text=True, check=False,
     )
     if done.returncode in (0, 1):
@@ -364,6 +369,85 @@ def compare_world(w: dict, binary: str, driver: str) -> tuple[bool, object, obje
         shutil.rmtree(root, ignore_errors=True)
 
 
+def hard_constraints(w: dict) -> list[tuple[str, str, str]]:
+    """The hard constraints of a world as `(before, after, class)`: header masters, `req`, `after`, the master flag
+    (every master before every other plugin) and `FalloutNV.esm` before everything."""
+    found: list[tuple[str, str, str]] = []
+    names = [plugin["name"] for plugin in w["plugins"]]
+    for plugin in w["plugins"]:
+        found.extend((master, plugin["name"], "header-master") for master in plugin["masters"] if master in names)
+        found.append(("FalloutNV.esm", plugin["name"], "hardcoded"))
+    for entry in w["entries"]:
+        for key, label in (("after", "after"), ("req", "req")):
+            found.extend((other, entry["name"], label) for other in entry.get(key, []) if entry["name"] in names)
+    esm = [plugin["name"] for plugin in w["plugins"] if plugin["esm"]]
+    found.extend((first, other, "master-flag") for first in esm for other in names if other not in esm)
+    return found
+
+
+def violated(order: list[str], constraints: list[tuple[str, str, str]]) -> set[tuple[str, str, str]]:
+    at = {name: index for index, name in enumerate(order)}
+    return {c for c in constraints if c[0] in at and c[1] in at and at[c[0]] > at[c[1]]}
+
+
+def displaced(given: list[str], result: list[str]) -> int:
+    """Plugins that are not where a stable, order-keeping move of the others would leave them: given minus the
+    longest common subsequence (the fewest moves any tool could make to turn one order into the other)."""
+    a, b = given, result
+    table = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) - 1, -1, -1):
+        for j in range(len(b) - 1, -1, -1):
+            table[i][j] = table[i + 1][j + 1] + 1 if a[i] == b[j] else max(table[i + 1][j], table[i][j + 1])
+    return len(a) - table[0][0]
+
+
+def check_minimal(w: dict, given: list[str], minimal: dict, libloot: list[str]) -> list[str]:
+    """Differences between `loot-rs sort --mode minimal --json` of the world and what libloot's order satisfies."""
+    lines = []
+    constraints = hard_constraints(w)
+    result = minimal["sorted"]
+    if sorted(result) != sorted(given):
+        return [f"minimal: not a permutation: {result}"]
+    if violated(libloot, constraints):
+        lines.append(f"minimal: libloot's order violates {sorted(violated(libloot, constraints))}: a bug in the oracle's constraints")
+    if violated(result, constraints):
+        lines.append(f"minimal: violates {sorted(violated(result, constraints))}")
+    moves = minimal.get("moves", [])
+    if minimal.get("mode") != "minimal":
+        lines.append("minimal: the JSON has no mode")
+    if not violated(given, constraints) and (result != given or moves):
+        lines.append(f"minimal: the given order is valid but came back as {result} with {len(moves)} move(s)")
+    if displaced(given, result) > len(moves):
+        lines.append(f"minimal: {displaced(given, result)} plugin(s) displaced but only {len(moves)} move(s) reported")
+    if len(moves) > displaced(given, libloot):
+        lines.append(f"minimal: {len(moves)} move(s), libloot's order displaces {displaced(given, libloot)}")
+    for move in moves:
+        if not move.get("reason") or move["plugin"] not in given:
+            lines.append(f"minimal: a move without a reason: {move}")
+    return lines
+
+
+def compare_world_minimal(w: dict, binary: str, driver: str) -> list[str]:
+    root = Path(tempfile.mkdtemp(prefix="random-diff-min-"))
+    try:
+        given = write(w, root / "game")
+        theirs = sort_libloot(driver, root / "game", given)
+        ours = run_ours_json(binary, root / "game", ["--mode", "minimal"])
+        if isinstance(theirs, str) or isinstance(ours, str):
+            return []  # a refusal is compared by compare_world
+        lines = check_minimal(w, given, ours, theirs)
+        # libloot's own order is valid: minimal-change returns it unchanged
+        again = {**w, "order": [name for name in theirs if name != "FalloutNV.esm"]}
+        root2 = root / "second"
+        write(again, root2)
+        second = run_ours_json(binary, root2, ["--mode", "minimal"])
+        if isinstance(second, dict) and (second["sorted"] != theirs or second.get("moves")):
+            lines.append(f"minimal: libloot's order {theirs} came back as {second['sorted']} with moves {second.get('moves')}")
+        return lines
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
+
+
 def selftest() -> None:
     rng = random.Random(1)
     for _ in range(20):
@@ -427,6 +511,19 @@ def selftest() -> None:
                     {**loot, "plugins": {"A.esp": {**loot["plugins"]["A.esp"], "group": "default"}}},
                     {**loot, "dirty": []}, {**loot, "groups": [{"name": "g1", "after": ["default"]}, {"name": "default", "after": []}]}):
         assert compare_metadata(sample, ours, altered), altered
+    # the minimal-change checks: a valid order passes, a violated constraint, a missing reason and a changed valid order fail
+    w = {"plugins": [{"name": "A.esm", "esm": True, "masters": ["FalloutNV.esm"]},
+                     {"name": "B.esp", "esm": False, "masters": ["FalloutNV.esm", "A.esm"]},
+                     {"name": "C.esp", "esm": False, "masters": ["FalloutNV.esm"]}],
+         "entries": [{"name": "C.esp", "after": ["B.esp"]}]}
+    valid = ["FalloutNV.esm", "A.esm", "B.esp", "C.esp"]
+    assert check_minimal(w, valid, {"sorted": valid, "mode": "minimal", "moves": []}, valid) == []
+    wrong = ["FalloutNV.esm", "A.esm", "C.esp", "B.esp"]
+    assert any("violates" in line for line in check_minimal(w, valid, {"sorted": wrong, "mode": "minimal", "moves": []}, valid))
+    assert any("valid but came back" in line for line in check_minimal(w, valid, {"sorted": valid, "mode": "minimal", "moves": [{"plugin": "C.esp", "reason": "after"}]}, valid))
+    assert check_minimal(w, wrong, {"sorted": valid, "mode": "minimal", "moves": [{"plugin": "C.esp", "reason": "after"}]}, valid) == []
+    assert any("without a reason" in line for line in check_minimal(w, wrong, {"sorted": valid, "mode": "minimal", "moves": [{"plugin": "C.esp"}]}, valid))
+    assert displaced(["a", "b", "c"], ["a", "c", "b"]) == 1 and displaced(["a", "b"], ["a", "b"]) == 0
     print("random_diff.py: selftest ok")
 
 
@@ -447,7 +544,7 @@ def main(argv: list[str]) -> int:
         return 3
     count, seed, most = int(option("--count", "200")), int(option("--seed", "1")), int(option("--max-plugins", "12"))
     rng = random.Random(seed)
-    differences = errors = meta_differences = 0
+    differences = errors = meta_differences = minimal_differences = 0
     for number in range(count):
         w = world(rng, most)
         lines = compare_world_metadata(w, binary, driver)
@@ -455,6 +552,12 @@ def main(argv: list[str]) -> int:
             meta_differences += 1
             if meta_differences <= 5:
                 print(f"world {number} (seed {seed}): metadata\n  " + "\n  ".join(lines)[:2000])
+                print(f"  world: {json.dumps(w)}")
+        lines = compare_world_minimal(w, binary, driver)
+        if lines:
+            minimal_differences += 1
+            if minimal_differences <= 5:
+                print(f"world {number} (seed {seed}): minimal-change\n  " + "\n  ".join(lines)[:2000])
                 print(f"  world: {json.dumps(w)}")
         same, ours, theirs, order = compare_world(w, binary, driver)
         if isinstance(ours, str) and isinstance(theirs, str):
@@ -465,9 +568,9 @@ def main(argv: list[str]) -> int:
                 print(f"world {number} (seed {seed}): current order {order}\n  loot-rs {ours}\n  libloot {theirs}")
                 print(f"  world: {json.dumps(w)}")
     print(f"{count} worlds (seed {seed}), {differences} order difference(s), {meta_differences} metadata difference(s), "
-          f"{errors} where both refused")
+          f"{minimal_differences} minimal-change difference(s), {errors} where both refused")
     print("what libloot reported and loot-rs matched (after conditions): " + ", ".join(f"{k} {v}" for k, v in COVERED.items()))
-    return 1 if differences or meta_differences else 0
+    return 1 if differences or meta_differences or minimal_differences else 0
 
 
 if __name__ == "__main__":

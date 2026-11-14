@@ -46,6 +46,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | Group named but undefined | supported | Reported as a note (hard with `--strict-groups`) |
 | Group order violation | supported | A note by default, a violation with `--strict-groups`; see [GROUPS.md](GROUPS.md) |
 | Sorting | partial | See the Sorting section below |
+| Minimal-change sort (`SortMode::MinimalChange`) | supported | Not in libloot: keeps the given order and moves the fewest plugins that fix hard-constraint violations. Algorithm, guarantees and per-move reasons in API.md |
 
 ## Sorting
 

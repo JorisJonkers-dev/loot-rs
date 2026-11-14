@@ -152,6 +152,83 @@ impl PluginSlot {
     }
 }
 
+/// How [`sort`] orders the plugins.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum SortMode {
+    /// libloot's full sort: the order LOOT would produce (the default).
+    #[default]
+    Full,
+    /// Keep the given order wherever no hard constraint is violated and move the fewest plugins that fix the
+    /// violations. Hard constraints are the master flag (masters first), header masters, `req`, `after` and the
+    /// game's first plugin, plus the group rules libloot satisfies when `strict_groups` is set. Soft group rules
+    /// and overlap are not enforced. The reason for each move is in [`SortOutput::moves`]. See `docs/API.md`.
+    MinimalChange,
+}
+
+impl SortMode {
+    /// A short word for output and flags: `full` or `minimal`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::MinimalChange => "minimal",
+        }
+    }
+}
+
+/// The class of the constraint that forced a plugin to move in [`SortMode::MinimalChange`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MoveReason {
+    /// A plugin with the master flag has to load before one without it.
+    MasterFlag,
+    /// The game loads the other plugin first (`FalloutNV.esm`).
+    Hardcoded,
+    /// The other plugin is a master of this one in its header, or the reverse.
+    HeaderMaster,
+    /// The masterlist's `req` entry.
+    Req,
+    /// The masterlist's `after` entry.
+    After,
+    /// The group rules (only with `strict_groups`).
+    Group,
+}
+
+impl MoveReason {
+    /// A short word for output: `master-flag`, `hardcoded`, `header-master`, `req`, `after` or `group`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::MasterFlag => "master-flag",
+            Self::Hardcoded => "hardcoded",
+            Self::HeaderMaster => "header-master",
+            Self::Req => "req",
+            Self::After => "after",
+            Self::Group => "group",
+        }
+    }
+}
+
+/// A plugin that [`SortMode::MinimalChange`] moved, and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct PluginMove {
+    /// The plugin that moved.
+    pub plugin: String,
+    /// Its position among the installed plugins in the given order.
+    pub from: usize,
+    /// Its position in [`SortOutput::order`].
+    pub to: usize,
+    /// The class of the first violated constraint that forced the move.
+    pub reason: MoveReason,
+    /// The other plugin of that constraint.
+    pub other: String,
+    /// True when the constraint follows from a chain of constraints rather than being stated directly; `reason`
+    /// is then the class of the first link.
+    pub indirect: bool,
+}
+
 /// Switches for [`sort`].
 ///
 /// Not `Copy` since it holds directories; clone it where a copy is needed.
@@ -166,9 +243,18 @@ pub struct SortOptions {
     /// Further directories that hold plugins and files, searched in this order before `data_dir`. When a file is
     /// in several directories, the first one that has it is used (see `docs/API.md`).
     pub additional_data_dirs: Vec<PathBuf>,
+    /// How to order the plugins (default [`SortMode::Full`]).
+    pub mode: SortMode,
 }
 
 impl SortOptions {
+    /// Choose the sort mode.
+    #[must_use]
+    pub const fn with_mode(mut self, mode: SortMode) -> Self {
+        self.mode = mode;
+        self
+    }
+
     /// Count group violations and undefined groups as hard findings.
     #[must_use]
     pub const fn with_strict_groups(mut self, strict: bool) -> Self {
@@ -421,6 +507,10 @@ pub struct SortOutput {
     pub dropped_group_rules: Vec<(String, String)>,
     /// Things that were skipped: unreadable plugin headers, duplicate names, masterlist entries.
     pub warnings: Vec<String>,
+    /// The mode that produced the order.
+    pub mode: SortMode,
+    /// Plugins that moved and why; empty unless the mode is [`SortMode::MinimalChange`].
+    pub moves: Vec<PluginMove>,
 }
 
 impl SortOutput {
@@ -672,11 +762,12 @@ pub fn sort(
             after: group.after.clone(),
         })
         .collect();
-    let sorted = sort::sort(&inputs, &groups, &[EARLY_LOADER.to_string()], &overlaps)
-        .map_err(|error| sort_error(&error, &name_of))?;
+    let (order, moves) = order_plugins(&inputs, &groups, &overlaps, options, &name_of)?;
+    output.mode = options.mode;
+    output.moves = moves;
     let position: Vec<usize> = {
         let mut position = vec![0; facts.len()];
-        for (at, &index) in sorted.order.iter().enumerate() {
+        for (at, &index) in order.iter().enumerate() {
             position[index] = at;
         }
         position
@@ -692,13 +783,12 @@ pub fn sort(
         .iter()
         .map(|&(earlier, later)| (name_of(later), name_of(earlier)))
         .collect();
-    output.order = sorted.order.iter().map(|&index| name_of(index)).collect();
+    output.order = order.iter().map(|&index| name_of(index)).collect();
     output.ordering_rules = ordering_rules(&rules, &dropped, &name_of);
 
     // What the masterlist says, with the plugins in their sorted places: a rule that the sort could not satisfy
     // shows up as a finding.
-    let sorted_slots: Vec<Slot> = sorted
-        .order
+    let sorted_slots: Vec<Slot> = order
         .iter()
         .map(|&index| installed[index].clone())
         .collect();
@@ -710,14 +800,7 @@ pub fn sort(
             strict_groups: options.strict_groups,
         },
     );
-    describe(
-        &mut output,
-        metadata,
-        &facts,
-        &sorted.order,
-        &sorted_env,
-        &report,
-    );
+    describe(&mut output, metadata, &facts, &order, &sorted_env, &report);
     Ok(output)
 }
 
@@ -891,6 +974,53 @@ fn plugin_input(fact: &Facts, rules: &Rules, index: usize) -> PluginInput {
         }
     }
     input
+}
+
+/// The new order (indices of `inputs`) by the mode of `options`, and the moves a minimal-change sort made.
+fn order_plugins(
+    inputs: &[PluginInput],
+    groups: &[GroupInput],
+    overlaps: &PluginOverlaps,
+    options: &SortOptions,
+    name_of: &dyn Fn(usize) -> String,
+) -> Result<(Vec<usize>, Vec<PluginMove>), SortError> {
+    let early = [EARLY_LOADER.to_string()];
+    match options.mode {
+        SortMode::Full => {
+            let sorted = sort::sort(inputs, groups, &early, overlaps)
+                .map_err(|error| sort_error(&error, name_of))?;
+            Ok((sorted.order, Vec::new()))
+        }
+        SortMode::MinimalChange => {
+            let repaired =
+                sort::sort_minimal(inputs, groups, &early, overlaps, options.strict_groups)
+                    .map_err(|error| sort_error(&error, name_of))?;
+            let moves = repaired
+                .moves
+                .iter()
+                .map(|moved| PluginMove {
+                    plugin: name_of(moved.plugin),
+                    from: moved.from,
+                    to: moved.to,
+                    reason: move_reason(moved.class),
+                    other: name_of(moved.other),
+                    indirect: moved.indirect,
+                })
+                .collect();
+            Ok((repaired.order, moves))
+        }
+    }
+}
+
+fn move_reason(class: sort::EdgeType) -> MoveReason {
+    match class {
+        sort::EdgeType::Hardcoded => MoveReason::Hardcoded,
+        sort::EdgeType::Master => MoveReason::HeaderMaster,
+        sort::EdgeType::MasterlistRequirement => MoveReason::Req,
+        sort::EdgeType::MasterlistLoadAfter => MoveReason::After,
+        sort::EdgeType::MasterlistGroup => MoveReason::Group,
+        _ => MoveReason::MasterFlag,
+    }
 }
 
 fn sort_error(error: &GraphError, name_of: &dyn Fn(usize) -> String) -> SortError {
