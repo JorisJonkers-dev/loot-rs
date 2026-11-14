@@ -75,6 +75,10 @@ def collect(loot_api, game_path: str, masterlist: str, names: list[str]) -> dict
     for name in names:
         metadata = database.plugin_metadata(name, False, True)
         entry = {"messages": [], "tags_add": [], "tags_remove": [], "group": "default"}
+        bash_tags = getattr(handle.get_plugin(name), "bash_tags", None)
+        if callable(bash_tags):
+            # The tags the plugin's description lists, `{{BASH:Tag,Tag}}`.
+            entry["bash_tags"] = [tag.name if hasattr(tag, "name") else str(tag) for tag in bash_tags()]
         if metadata is not None:
             entry["messages"] = [message_json(m) for m in metadata.messages]
             for tag in metadata.tags:
@@ -114,7 +118,7 @@ def selftest() -> None:
         get_database=lambda: database,
         load_plugins=lambda names, headers: None,
         sort_plugins=lambda names: list(reversed(names)),
-        get_plugin=lambda name: NS(crc=lambda: 7),
+        get_plugin=lambda name: NS(crc=lambda: 7, bash_tags=lambda: [NS(name="Delev")] if name == "A.esp" else []),
     )
     fake = NS(GameType=NS(fonv=object()), create_game_handle=lambda game, path: handle)
     result = collect(fake, "/game", "m.yaml", ["A.esp", "B.esp"])
@@ -125,8 +129,15 @@ def selftest() -> None:
         "tags_add": ["Relev"],
         "tags_remove": ["Delev"],
         "group": "late",
+        "bash_tags": ["Delev"],
     }
-    assert result["plugins"]["B.esp"] == {"messages": [], "tags_add": [], "tags_remove": [], "group": "default"}
+    assert result["plugins"]["B.esp"] == {
+        "messages": [],
+        "tags_add": [],
+        "tags_remove": [],
+        "group": "default",
+        "bash_tags": [],
+    }
     assert result["dirty"] == [
         {"plugin": "A.esp", "crc": 7, "status": "dirty", "utility": "FNVEdit", "itm": 2, "udr": 1, "nav": 0}
     ]

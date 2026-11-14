@@ -62,3 +62,11 @@ for `/`, ASCII lower case), each folder and file pair counted once. The reader i
 against the file; Fallout 4 and Starfield archives and the other games' rules are left out. `src/overlap.rs` is the
 "do two sorted lists share an item" test of esplugin and libloot (`do_assets_overlap`) with a cheaper search for a
 short list in a long one. Both files say so in their headers.
+
+## `src/validate.rs` (GPL-3.0-or-later, ported from LOOT)
+
+The messages are those that LOOT's application generates when it checks an install: `checkInstallValidity` and
+`validateActivePluginCounts` in `src/gui/state/game/validation.cpp`, `toSourcedMessage` in
+`src/gui/sourced_message.cpp` and `readBashTagsFile` and `getTagConflicts` in `src/gui/state/game/helpers.cpp` of
+[LOOT](https://github.com/loot/loot) (GPL-3.0-or-later, Copyright (C) Oliver Hamlet), with their English texts, for
+Fallout: New Vegas. The checks of other games are left out. The file says so in its header.

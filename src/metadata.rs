@@ -126,6 +126,8 @@ pub struct Cleaning {
     pub udr: u32,
     /// Deleted navmeshes.
     pub nav: u32,
+    /// Text appended to the message about the data (English).
+    pub detail: Option<String>,
 }
 
 /// A group definition after merging all definitions of the same name.
@@ -501,6 +503,7 @@ fn parse_cleaning(node: &Yaml) -> Cleaning {
         itm: count(node, "itm"),
         udr: count(node, "udr"),
         nav: count(node, "nav"),
+        detail: content_text(&node["detail"]),
     }
 }
 

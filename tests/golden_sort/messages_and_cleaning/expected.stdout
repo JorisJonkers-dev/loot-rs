@@ -7,7 +7,11 @@ say: Global note
 
 A.esp (group "default")
   warn: A applies
+  error: This plugin requires Missing Mod to be installed, but it is missing.
   tag +Relev
   tag -Delev
   VIOLATION missing requirement: requires Missing Mod, which is not present.
+
+B.esp (group "default")
+  warn: FNVEdit found 3 ITM records.
 note: Gone.esp is listed but not installed, left out

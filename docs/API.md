@@ -39,8 +39,9 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | --- | --- |
 | `order` | The installed plugins in sorted order, named as given |
 | `ordering_rules` | The rules the order honours: `before`, `after` and `source` (`header-master`, `after`, `req`, `group`); to explain a move, or to check the order against another tool's. Group rules are listed when the final order satisfies them |
-| `plugins` | One `PluginResult` per plugin of `order`, in that order: `position`, `active`, `group`, `messages` (kind and text), `tags_added`, `tags_removed`, `findings` (kind, text, `hard`) |
+| `plugins` | One `PluginResult` per plugin of `order`, in that order: `position`, `active`, `group`, `messages` (kind and text; the masterlist's), `generated_messages` (the ones LOOT generates from the install, as Markdown), `bash_tags` (from the description), `tags_added`, `tags_removed`, `findings` (kind, text, `hard`) |
 | `general_messages` | Masterlist messages that belong to no plugin |
+| `generated_general_messages` | Messages LOOT generates about the whole load order (more than 255 active plugins) |
 | `dirty` | `DirtyInfo` (plugin, CRC-32, dirty or clean, utility, ITM, UDR, NAV) where an installed file's CRC-32 is on the masterlist's `dirty` or `clean` list. Only files that have such data are read |
 | `not_installed` | Plugins of the load order that are not in `Data`; they are not in `order`, the caller places them |
 | `dropped_group_rules` | Group rules `(later, earlier)` that the final order does not satisfy: the sorter left the edge out because it would have closed a cycle |
@@ -70,7 +71,7 @@ The algorithm is libloot's (see [COMPATIBILITY.md](COMPATIBILITY.md) for what is
 5. Tie-break edges that keep the current load order wherever nothing above forbids it, and a topological sort. A plugin
    therefore moves only for a reason, and sorting a sorted order changes nothing.
 
-Not supported: the userlist, and the messages LOOT's application generates while sorting.
+Not supported: the userlist. The messages LOOT's application generates when it checks an install are returned apart from the masterlist's (`generated_messages`); `docs/COMPATIBILITY.md` lists which.
 
 ## Guarantees
 
@@ -105,4 +106,4 @@ same input (a plugin that is later in the given order stays later wherever the r
 earlier ones forward), adds the `SortError` variants `GroupCycle` and `Internal` (the enum is `#[non_exhaustive]`, so
 callers already have a wildcard arm), and replaces the `sort` module's functions (`sort::order` is now `sort::sort`
 over `PluginInput`s; that module is public for tests and carries no promise). The `api` module's signatures are
-unchanged. Release as a minor version.
+unchanged, but `PluginResult` and `SortOutput` (both `#[non_exhaustive]`) gain fields (`generated_messages`, `bash_tags`, `generated_general_messages`), and the JSON of `loot-rs sort --json` gains the same keys. Release as a minor version.

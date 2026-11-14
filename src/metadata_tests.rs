@@ -39,6 +39,7 @@ plugins:
       - crc: 0x1234ABCD
         util: 'FNVEdit'
         itm: 3
+        detail: [{lang: en, text: 'Clean it.'}]
     clean:
       - crc: 0x1
         util: 'FNVEdit'
@@ -92,6 +93,7 @@ fn plugin_entry_fields_are_read() {
     assert_eq!(entry.tag[1].name, "-Delev");
     assert_eq!(entry.dirty[0].crc, Some(0x1234_ABCD));
     assert_eq!(entry.dirty[0].itm, 3);
+    assert_eq!(entry.dirty[0].detail.as_deref(), Some("Clean it."));
     assert_eq!(entry.clean[0].crc, Some(1));
 }
 

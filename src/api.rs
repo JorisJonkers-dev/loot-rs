@@ -48,12 +48,13 @@ use crate::check::{self, FindingKind as InnerKind};
 use crate::condition::{ConditionError, eval_str};
 use crate::env::{FsEnv, Slot, crc32_file};
 use crate::metadata::{
-    self, DEFAULT_GROUP, MessageKind as InnerMessageKind, Metadata, PluginEntry,
+    self, Cleaning, DEFAULT_GROUP, MessageKind as InnerMessageKind, Metadata, PluginEntry,
 };
 use crate::overlap::PluginOverlaps;
 use crate::plugin;
 use crate::records::{self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordsError};
 use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, PluginInput};
+use crate::validate;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
@@ -253,6 +254,12 @@ pub struct PluginResult {
     pub tags_removed: Vec<String>,
     /// Problems.
     pub findings: Vec<Finding>,
+    /// Messages LOOT generates when it checks the install, in Markdown like the masterlist's own: a master that
+    /// is missing or inactive, a header version below the game's minimum, a group nobody defined, a `BashTags` file
+    /// that overrides suggestions, cleaning data that matches the file, requirements and incompatibilities.
+    pub generated_messages: Vec<Message>,
+    /// The Bash Tags the plugin's description lists (`{{BASH:Tag,Tag}}`).
+    pub bash_tags: Vec<String>,
 }
 
 /// Whether a checksum is on the masterlist's dirty or its clean list.
@@ -334,6 +341,8 @@ pub struct SortOutput {
     pub order: Vec<String>,
     /// Messages of the masterlist that apply to no plugin in particular.
     pub general_messages: Vec<Message>,
+    /// Messages LOOT generates about the load order as a whole (more active plugins than the game supports).
+    pub generated_general_messages: Vec<Message>,
     /// One entry per plugin of [`SortOutput::order`], in that order.
     pub plugins: Vec<PluginResult>,
     /// The rules the order honours, to explain it or to check it against another tool's order.
@@ -467,6 +476,7 @@ struct Facts<'a> {
     name: &'a str,
     /// Whether the header could be read (the plugin's records are only read then).
     readable: bool,
+    header: Option<plugin::PluginHeader>,
     is_master: bool,
     masters: Vec<String>,
     entries: Vec<&'a PluginEntry>,
@@ -479,11 +489,9 @@ struct Facts<'a> {
 /// conditions are relative to it, `..` reaches the game directory). The result is described in the module
 /// documentation and on [`SortOutput`].
 ///
-/// The rules, in the order they win: masters (plugins with the master flag) load before the others; the masters
-/// a plugin's header lists load before it; the masterlist's `after` and `req` plugins load before it; groups
-/// (a plugin in a group that loads after another group loads after that group's plugins) where they do not
-/// contradict the rules before. Among the plugins that may come next, the one that was earlier in the load order
-/// comes first, so a plugin only moves for a reason.
+/// The order is LOOT's: libloot's plugin graph (masters first; edges from header masters, `req`, `after` and groups;
+/// overlap of records and of archive files; then the current load order wherever nothing forbids it), see
+/// `docs/COMPATIBILITY.md` for what is ported. A plugin therefore only moves for a reason.
 ///
 /// # Errors
 /// [`SortError`] when the rules that must hold contradict each other, or the input is too large. A masterlist
@@ -587,10 +595,76 @@ pub fn sort(
             strict_groups: options.strict_groups,
         },
     );
-    output.general_messages = messages(&report.globals);
-    output.plugins = report.plugins.iter().map(plugin_result).collect();
-    output.dirty = dirty_info(&facts, &sorted.order, &sorted_env);
+    describe(
+        &mut output,
+        metadata,
+        &facts,
+        &sorted.order,
+        &sorted_env,
+        &report,
+    );
     Ok(output)
+}
+
+/// What the masterlist and LOOT's own checks say about each plugin, in the sorted order.
+fn describe(
+    output: &mut SortOutput,
+    metadata: &Metadata,
+    facts: &[Facts],
+    order: &[usize],
+    sorted_env: &FsEnv,
+    report: &check::Report,
+) {
+    output.general_messages = messages(&report.globals);
+    let matches: Vec<Vec<(CleaningStatus, &Cleaning)>> = order
+        .iter()
+        .map(|&index| cleaning_matches(&facts[index], sorted_env))
+        .collect();
+    let defined: HashSet<&str> = metadata
+        .groups
+        .iter()
+        .map(|group| group.name.as_str())
+        .collect();
+    output.plugins = report
+        .plugins
+        .iter()
+        .zip(order)
+        .zip(&matches)
+        .map(|((plugin, &index), matched)| {
+            let fact = &facts[index];
+            let dirty: Vec<&Cleaning> = matched
+                .iter()
+                .filter(|(status, _)| *status == CleaningStatus::Dirty)
+                .map(|&(_, data)| data)
+                .collect();
+            let generated = validate::plugin_messages(
+                sorted_env,
+                &validate::Plugin {
+                    name: fact.name,
+                    active: plugin.active,
+                    header: fact.header.as_ref(),
+                    entries: &fact.entries,
+                    groups: &defined,
+                    group: fact.entries.iter().find_map(|entry| entry.group.as_deref()),
+                    dirty: &dirty,
+                },
+            );
+            let bash_tags = fact
+                .header
+                .as_ref()
+                .and_then(|header| header.description.as_deref())
+                .map(validate::description_tags)
+                .unwrap_or_default();
+            plugin_result(plugin, &generated, bash_tags)
+        })
+        .collect();
+    output.dirty = dirty_info(order, facts, &matches);
+    let active = report.plugins.iter().filter(|plugin| plugin.active).count();
+    output.generated_general_messages = messages(
+        &validate::active_plugin_count(active)
+            .into_iter()
+            .collect::<Vec<_>>(),
+    );
 }
 
 /// The record ids of every installed plugin whose header could be read. A file that cannot be read as records is
@@ -758,8 +832,8 @@ fn facts_of<'a>(
         .ok_or_else(|| io_error("not found"))
         .and_then(|path| plugin::read_header(&path));
     let readable = header.is_ok();
-    let (is_master, masters) = match header {
-        Ok(header) => (header.is_master(), header.masters),
+    let (is_master, masters) = match &header {
+        Ok(header) => (header.is_master(), header.masters.clone()),
         Err(error) => {
             warnings.push(format!(
                 "{}: header not readable ({error}); treated as a plugin without masters",
@@ -773,6 +847,7 @@ fn facts_of<'a>(
     Facts {
         name: &slot.name,
         readable,
+        header: header.ok(),
         is_master,
         masters,
         entries,
@@ -856,7 +931,11 @@ fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<S
     }
 }
 
-fn plugin_result(plugin: &check::PluginReport) -> PluginResult {
+fn plugin_result(
+    plugin: &check::PluginReport,
+    generated: &[check::AppliedMessage],
+    bash_tags: Vec<String>,
+) -> PluginResult {
     PluginResult {
         name: plugin.name.clone(),
         position: plugin.position,
@@ -874,6 +953,8 @@ fn plugin_result(plugin: &check::PluginReport) -> PluginResult {
                 hard: finding.hard,
             })
             .collect(),
+        generated_messages: messages(generated),
+        bash_tags,
     }
 }
 
@@ -882,36 +963,18 @@ fn io_error(text: &str) -> std::io::Error {
 }
 
 /// The cleaning data whose checksum is the installed file's. Only files that have such data are read.
-fn dirty_info(facts: &[Facts], order: &[usize], env: &FsEnv) -> Vec<DirtyInfo> {
+fn dirty_info(
+    order: &[usize],
+    facts: &[Facts],
+    matches: &[Vec<(CleaningStatus, &Cleaning)>],
+) -> Vec<DirtyInfo> {
     let mut found = Vec::new();
-    for &index in order {
-        let fact = &facts[index];
-        let wanted = |status: CleaningStatus| {
-            fact.entries.iter().flat_map(move |entry| {
-                let list = match status {
-                    CleaningStatus::Dirty => &entry.dirty,
-                    CleaningStatus::Clean => &entry.clean,
-                };
-                list.iter().map(move |data| (status, data))
-            })
-        };
-        let all: Vec<_> = wanted(CleaningStatus::Dirty)
-            .chain(wanted(CleaningStatus::Clean))
-            .filter(|(_, data)| data.crc.is_some())
-            .collect();
-        if all.is_empty() {
-            continue;
-        }
-        let Some(crc) = env
-            .resolve(fact.name)
-            .and_then(|path| crc32_file(&path).ok())
-        else {
-            continue;
-        };
-        for (status, data) in all.into_iter().filter(|(_, data)| data.crc == Some(crc)) {
+    for (&index, matched) in order.iter().zip(matches) {
+        for &(status, data) in matched {
             found.push(DirtyInfo {
-                plugin: fact.name.to_string(),
-                crc,
+                plugin: facts[index].name.to_string(),
+                // `cleaning_matches` only keeps data that has a checksum, which is the installed file's.
+                crc: data.crc.unwrap_or_default(),
                 status,
                 utility: data.util.clone(),
                 itm: data.itm,
@@ -921,6 +984,36 @@ fn dirty_info(facts: &[Facts], order: &[usize], env: &FsEnv) -> Vec<DirtyInfo> {
         }
     }
     found
+}
+
+/// The cleaning data of the masterlist (dirty and clean) whose checksum is the installed file's. Only files that
+/// have such data are read.
+fn cleaning_matches<'a>(fact: &Facts<'a>, env: &FsEnv) -> Vec<(CleaningStatus, &'a Cleaning)> {
+    let wanted = |status: CleaningStatus| {
+        fact.entries.iter().flat_map(move |entry| {
+            let list = match status {
+                CleaningStatus::Dirty => &entry.dirty,
+                CleaningStatus::Clean => &entry.clean,
+            };
+            list.iter().map(move |data| (status, data))
+        })
+    };
+    let all: Vec<_> = wanted(CleaningStatus::Dirty)
+        .chain(wanted(CleaningStatus::Clean))
+        .filter(|(_, data)| data.crc.is_some())
+        .collect();
+    if all.is_empty() {
+        return Vec::new();
+    }
+    let Some(crc) = env
+        .resolve(fact.name)
+        .and_then(|path| crc32_file(&path).ok())
+    else {
+        return Vec::new();
+    };
+    all.into_iter()
+        .filter(|(_, data)| data.crc == Some(crc))
+        .collect()
 }
 
 struct Conditions<'a> {

@@ -159,15 +159,22 @@ pub struct Options {
     pub strict_groups: bool,
 }
 
-struct Evaluator<'a> {
+pub(crate) struct Evaluator<'a> {
     env: &'a FsEnv,
     findings: Vec<Finding>,
 }
 
-impl Evaluator<'_> {
+impl<'a> Evaluator<'a> {
+    pub(crate) const fn new(env: &'a FsEnv) -> Self {
+        Self {
+            env,
+            findings: Vec::new(),
+        }
+    }
+
     /// Evaluate an optional condition. `None` (absent) is true; an unevaluable condition is
     /// recorded as a finding and returns `None`.
-    fn holds(&mut self, condition: Option<&str>) -> Option<bool> {
+    pub(crate) fn holds(&mut self, condition: Option<&str>) -> Option<bool> {
         let Some(text) = condition else {
             return Some(true);
         };
@@ -203,7 +210,7 @@ impl Evaluator<'_> {
     /// True when the file entry is in force and its target is present.
     /// Returns `None` when the entry could not be evaluated, `Some(false)` when it is not in
     /// force, and `Some(true)` with the presence in the second field otherwise.
-    fn file_state(&mut self, file: &FileRef) -> Option<(bool, bool)> {
+    pub(crate) fn file_state(&mut self, file: &FileRef) -> Option<(bool, bool)> {
         if !self.holds(file.condition.as_deref())? {
             return Some((false, false));
         }

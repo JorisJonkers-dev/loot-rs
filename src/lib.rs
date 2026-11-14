@@ -27,6 +27,7 @@ pub mod plugin;
 pub mod records;
 pub mod render;
 pub mod sort;
+pub mod validate;
 
 #[cfg(test)]
 mod support_tests;

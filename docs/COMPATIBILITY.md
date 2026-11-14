@@ -30,7 +30,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | `inc` | supported | Present file is a hard violation. Same fields as `req` |
 | `msg` | supported | `type`, `content` (string or localised list: English), `condition`, `subs` |
 | `tag` | supported | Scalar and map forms, `-` removal, `condition`; removal beats addition |
-| `dirty`, `clean` | partial | Read as data (`crc`, `util`, `itm`, `udr`, `nav`); not compared with the installed plugin, no messages derived |
+| `dirty`, `clean` | supported | Read (`crc`, `util`, `itm`, `udr`, `nav`, `detail`) and compared with the installed file's CRC-32 in `api::sort`; a `dirty` match gives LOOT's message (`generated_messages`). `check` does not compare |
 | `url` | unsupported | Ignored |
 | `display`, `detail` on file entries | supported | |
 | `constraint` on file entries | supported | |
@@ -68,7 +68,8 @@ cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACL
 | Asset (archive) overlap edges | supported | A plugin loads the BSA files of `Data` whose names begin with its name (case ignored, as libloot does for New Vegas); their folder and file names are read from the tables (version 103, 104 and 105; never the data). Of two plugins that load a file with the same path, the one that loads more files goes first, unless records decide. An archive that cannot be read is noted and skipped. Archives in additional data paths and `.ba2` archives are not looked at |
 | Tie-break edges and pinning | supported | |
 | Topological sort | supported | petgraph's depth-first topological sort, reproduced |
-| Messages LOOT's application generates while sorting (missing masters, inactive requirements, dirty plugins) | unsupported | |
+| Messages LOOT's application generates when it checks the install (`generated_messages`, `generated_general_messages`) | partial | The ones that apply to Fallout: New Vegas, with LOOT's English texts as Markdown: a missing or inactive master of an active plugin (not with the `Filter` tag), a plugin that is its own master, a header version below 1.32, a group named by the masterlist that it does not define, Bash Tags overridden by `Data/BashTags/<plugin>.txt`, a `dirty` entry that matches the file, a requirement that is missing, an incompatibility that is present, and more than 255 active plugins. Not ported: the checks of other games (light, medium, update and blueprint plugins), the case-sensitive path warnings, the "not sorted this session" note, and the text LOOT shows for a sorting cycle |
+| The Bash Tags of the plugin's description (`bash_tags`) | supported | `{{BASH:Tag,Tag}}`, as libloot reads them |
 
 Everything here is Fallout: New Vegas only. Differences that follow from what is not supported are listed above;
 there are no others known. One thing is not verified: no run against a real libloot has been made, see
@@ -97,6 +98,8 @@ there are no others known. One thing is not verified: no run against a real libl
 | Evaluation caching | unsupported | Directory listings are cached; results are not |
 
 ## Messages and output
+
+`api::sort` returns three kinds of message per plugin: `messages` (the masterlist's, conditions evaluated), `generated_messages` (what LOOT's application adds, see Sorting) and `findings` (this crate's own notes, for example a rule the order could not satisfy).
 
 | Item | Status | Notes |
 | --- | --- | --- |
