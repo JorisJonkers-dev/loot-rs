@@ -50,9 +50,9 @@ scripts/oracle/random_diff.py --loot-rs target/release/loot-rs \
   --driver scripts/oracle/libloot-driver/target/release/libloot-driver --count 2000 --seed 11 --max-plugins 12
 ```
 
-A run on 2026-11-14 against libloot 0.29.7: 2,000 worlds (seed 11, up to 12 plugins) and 300 more (seed 2), **0
-differences** in order and in metadata; libloot reported 19,495 messages, 2,313 general messages, 20,023 tags and 5,862
-cleaning entries (2,950 dirty, 2,912 clean) in the first 2,000, all matched.
+A run on 2026-11-14 against libloot 0.29.7: 2,000 worlds (seed 11, up to 12 plugins), **0 differences** in order and
+in metadata; libloot reported 18,850 messages, 2,373 general messages, 19,427 tags and 5,879 cleaning entries (2,946
+dirty, 2,933 clean), all matched by loot-rs.
 
 Known differences are in `KNOWN_DIFFERENCES` in `compare.py`, each with a test; nothing else is ignored: Markdown (link
 syntax reduced to its text, whitespace collapsed), localisation (English only), `generated_*` messages (libloot has
