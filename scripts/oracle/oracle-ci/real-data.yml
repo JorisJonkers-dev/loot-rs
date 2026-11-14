@@ -1,0 +1,112 @@
+# The private half of the real-data oracle (ADR-0002, ADR-0003). THIS FILE IS A TEMPLATE: it lives at
+# .github/workflows/real-data.yml of the PRIVATE repository JorisJonkers-dev/oracle-ci, never in a public
+# repository, because the self-hosted runner is registered to that private repository only and no public workflow
+# may name it. It is kept here so that it is reviewed with the script it calls. Setup: docs/runbooks/private-oracle-runner.md.
+#
+# Runs only on owner dispatch (the public repository's trigger workflow dispatches after a push to its default
+# branch). It checks out the public commit, builds it, runs scripts/oracle/oracle_run.py against a config that lives on
+# the runner outside every repository, and posts the `digest/real-data` commit status and an issue. Nothing a run
+# prints comes from game data: oracle_run.py's L0 line goes to a file and is validated by oracle_ci_report.py, and the
+# workflow itself writes no step summary, no annotation, no artifact and no cache.
+name: Real data
+
+on:
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: Public repository to test (owner/name)
+        required: true
+        type: choice
+        options:
+          - JorisJonkers-dev/loot-rs
+      sha:
+        description: Commit on that repository's default branch
+        required: true
+        type: string
+
+# One job at a time on the one runner; a second dispatch waits instead of failing.
+concurrency:
+  group: oracle
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  real-data:
+    name: Real data
+    # Both checks are repeated here: the repository only has the owner as a member, and this makes it explicit.
+    if: ${{ github.actor == 'ExtraToast' && github.repository == 'JorisJonkers-dev/oracle-ci' }}
+    runs-on: [self-hosted, oracle]
+    timeout-minutes: 60
+    env:
+      # A fine-grained token on the public repositories only: Commit statuses write, Issues write, Contents read.
+      GH_TOKEN: ${{ secrets.ORACLE_STATUS_TOKEN }}
+      REPO: ${{ inputs.repo }}
+      SHA: ${{ inputs.sha }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - name: Check the commit is on the default branch
+        run: |
+          set -euo pipefail
+          printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'
+          default=$(gh api "repos/$REPO" --jq .default_branch)
+          # identical or behind: the commit is the tip of, or inside the history of, the default branch.
+          state=$(gh api "repos/$REPO/compare/$default...$SHA" --jq .status)
+          case "$state" in identical|behind) ;; *) echo "commit is not on the default branch"; exit 1 ;; esac
+          gh api --method POST "repos/$REPO/statuses/$SHA" -f state=pending -f context=digest/real-data \
+            -f description="running on the private runner" -f target_url="$RUN_URL" >/dev/null
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ inputs.repo }}
+          ref: ${{ inputs.sha }}
+          path: tool
+          persist-credentials: false
+
+      # The build has no access to the data: it runs before the oracle step and reads nothing from the config.
+      # The runner's systemd slice is the memory and CPU cap (runbook); no command here raises it.
+      - name: Build and run the oracle
+        id: oracle
+        working-directory: tool
+        env:
+          ORACLE_TOOL_SHA: ${{ inputs.sha }}
+        run: |
+          set -uo pipefail
+          l0="$RUNNER_TEMP/l0.json"
+          rm -f "$l0"
+          code=2
+          if cargo build --locked --release --features executable-versions >/dev/null 2>&1 \
+             && cargo build --release --manifest-path scripts/oracle/libloot-driver/Cargo.toml >/dev/null 2>&1; then
+            # stdout is the L0 line only; stderr names a local path and is dropped. The config path comes from the
+            # runner's environment file (ORACLE_CONFIG), outside every repository.
+            python3 -I scripts/oracle/oracle_run.py --config "${ORACLE_CONFIG:?not set on the runner}" >"$l0" 2>/dev/null
+            code=$?
+          fi
+          echo "code=$code" >>"$GITHUB_OUTPUT"
+
+      - name: Post the status and the issue
+        working-directory: tool
+        env:
+          CODE: ${{ steps.oracle.outputs.code }}
+        run: |
+          set -euo pipefail
+          l0="$RUNNER_TEMP/l0.json"
+          args=(--exit-code "$CODE" --sha "$SHA" --run-url "$RUN_URL")
+          [ -f "$l0" ] && args+=(--l0 "$l0")
+          result=$(python3 -I scripts/oracle/oracle_ci_report.py "${args[@]}")
+          state=$(jq -r .state <<<"$result")
+          gh api --method POST "repos/$REPO/statuses/$SHA" -f state="$state" -f context=digest/real-data \
+            -f description="$(jq -r .description <<<"$result")" -f target_url="$RUN_URL" >/dev/null
+          title=$(jq -r .issue_title <<<"$result")
+          body=$(jq -r .issue_body <<<"$result")
+          number=$(gh issue list --repo "$REPO" --state open --search "\"$title\" in:title" --json number,title \
+                   --jq "[.[] | select(.title == \"$title\")][0].number // empty")
+          if [ "$state" = success ]; then
+            # Fixed forward: a later green run closes the issue. Nothing was reverted by anyone.
+            [ -n "$number" ] && gh issue close "$number" --repo "$REPO" --comment "$body" >/dev/null
+          elif [ -n "$number" ]; then
+            gh issue comment "$number" --repo "$REPO" --body "$body" >/dev/null
+          else
+            gh issue create --repo "$REPO" --title "$title" --body "$body" >/dev/null
+          fi
+          [ "$state" = success ]

@@ -1,0 +1,49 @@
+# Starts the private real-data oracle (ADR-0002) after a merge to the default branch, or when the owner asks.
+#
+# This workflow holds no data and no runner label: it runs on a GitHub-hosted runner and only tells the private
+# `oracle-ci` repository, whose self-hosted runner has the data, to test this commit. A self-hosted runner is never
+# attached to this public repository, so no pull request (fork or not) can address it. There is no pull_request
+# trigger here and none may be added. The private side is scripts/oracle/oracle-ci/real-data.yml; setting it up is
+# the owner's job (docs/runbooks/private-oracle-runner.md). Until the secret below exists this workflow does nothing,
+# and the release gate (which reads the `digest/real-data` status) stays red.
+name: Oracle trigger
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: oracle-trigger-${{ github.sha }}
+  cancel-in-progress: false
+
+permissions: {}
+
+jobs:
+  trigger:
+    name: Start the private oracle
+    # A dispatch by anyone but the owner is ignored; a push to main is already behind the repository ruleset.
+    if: ${{ github.event_name == 'push' || github.actor == 'ExtraToast' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      statuses: write
+    env:
+      DISPATCH_TOKEN: ${{ secrets.ORACLE_DISPATCH_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+      SHA: ${{ github.sha }}
+    steps:
+      - name: Mark the commit pending and dispatch
+        run: |
+          set -euo pipefail
+          if [ -z "$DISPATCH_TOKEN" ]; then
+            echo "::notice::ORACLE_DISPATCH_TOKEN is not set: the private oracle is not configured, nothing was started."
+            exit 0
+          fi
+          # Pending first, so a release gate that reads the status sees a run in flight and not the previous green.
+          gh api --method POST "repos/$REPO/statuses/$SHA" \
+            -f state=pending -f context=digest/real-data \
+            -f description="queued on the private runner" >/dev/null
+          GH_TOKEN="$DISPATCH_TOKEN" gh workflow run real-data.yml \
+            --repo JorisJonkers-dev/oracle-ci -f repo="$REPO" -f sha="$SHA"
