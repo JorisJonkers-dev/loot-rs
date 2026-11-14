@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.2.0...v0.3.0) (2026-11-14)
+
+
+### Features
+
+* **api:** take the game directory and additional data directories ([#41](https://github.com/JorisJonkers-dev/loot-rs/issues/41)) ([236849f](https://github.com/JorisJonkers-dev/loot-rs/commit/236849f4ba88c87309362b4ee1f2fe48bd959aa3))
+* **cli:** name each JSON contract and add a contracts --json handshake ([#43](https://github.com/JorisJonkers-dev/loot-rs/issues/43)) ([3650cbd](https://github.com/JorisJonkers-dev/loot-rs/commit/3650cbd153bc70dfb2592b49742e65171fed08c8))
+* **condition:** evaluate version() on plugins from the description field ([#45](https://github.com/JorisJonkers-dev/loot-rs/issues/45)) ([a2d710a](https://github.com/JorisJonkers-dev/loot-rs/commit/a2d710ad4b85737572fdc25016ffdb18506d0576))
+
 ## [0.2.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.1.0...v0.2.0) (2026-11-14)
 
 
