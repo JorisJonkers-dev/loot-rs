@@ -177,29 +177,384 @@ fn a_directory_that_overflows_32_bits_is_refused() {
     ));
 }
 
-#[test]
-fn a_string_table_that_would_loop_forever_is_not_followed() {
-    // A StringFileInfo whose only string has length 0 and is not ProductVersion: the interpreter's own walk
-    // would never advance. The walk here refuses it before the interpreter is called.
-    let mut block = version_block_bytes([1, 0, 0, 0], "1");
-    let string = block.len() - 40; // the ProductVersion string starts 40 bytes before the end
-    let key = utf16_key_bytes("Xroduct");
-    block[string + 6..string + 6 + key.len()].copy_from_slice(&key);
-    block[string..string + 2].copy_from_slice(&0u16.to_le_bytes());
-    let mut spec = PeSpec::new([1, 0, 0, 0], "1");
-    spec.block = block;
-    let dir = TempDir::new();
-    dir.file("loop.dll", &spec.build());
-    let started = std::time::Instant::now();
-    assert_eq!(
-        eval(&dir, r#"product_version("loop.dll", "1", ==)"#),
-        Ok(false)
-    );
-    assert!(started.elapsed() < std::time::Duration::from_secs(2));
+/// Run `work` on another thread and fail the test, instead of hanging it, when it takes longer than `secs`.
+fn within<T: Send + 'static>(secs: u64, work: impl FnOnce() -> T + Send + 'static) -> T {
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(work());
+    });
+    receiver
+        .recv_timeout(std::time::Duration::from_secs(secs))
+        .expect("finished within the time limit")
 }
 
-fn utf16_key_bytes(text: &str) -> Vec<u8> {
-    text.encode_utf16().flat_map(u16::to_le_bytes).collect()
+/// The product version string of a block starts at 152: 92 (`StringFileInfo`) + 36 + 24 (table header).
+const STRING_AT: usize = 152;
+
+fn block_with(edit: impl FnOnce(&mut Vec<u8>)) -> PeSpec {
+    let mut spec = PeSpec::new([1, 0, 0, 0], "1");
+    edit(&mut spec.block);
+    spec
+}
+
+fn product(spec: &PeSpec) -> Result<bool, ConditionError> {
+    let dir = TempDir::new();
+    dir.file("m.dll", &spec.build());
+    let text = r#"product_version("m.dll", "1", ==)"#;
+    within(20, move || eval(&dir, text))
+}
+
+#[test]
+fn a_string_whose_length_is_zero_is_refused_not_followed() {
+    // The interpreter alone loops forever on this block (see the ignored test below).
+    let spec = block_with(|block| {
+        block[STRING_AT..STRING_AT + 2].copy_from_slice(&0u16.to_le_bytes());
+        block[STRING_AT + 6] = b'X';
+    });
+    assert!(matches!(
+        product(&spec),
+        Err(ConditionError::Environment(_))
+    ));
+}
+
+/// Confirms the claim in the module documentation. Ignored because the thread it leaks spins until the test
+/// process ends; run it with `cargo test --features executable-versions -- --ignored` under a timeout.
+#[test]
+#[ignore = "demonstrates a hang in loot-condition-interpreter"]
+fn the_interpreter_alone_loops_forever_on_a_string_of_length_zero() {
+    let spec = block_with(|block| {
+        block[STRING_AT..STRING_AT + 2].copy_from_slice(&0u16.to_le_bytes());
+        block[STRING_AT + 6] = b'X';
+    });
+    let dir = TempDir::new();
+    dir.file("e.dll", &spec.build());
+    let path = dir.path().to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let state = loot_condition_interpreter::State::new(
+            loot_condition_interpreter::GameType::FalloutNV,
+            path,
+        );
+        let expression: loot_condition_interpreter::Expression =
+            r#"product_version("e.dll", "1", ==)"#.parse().expect("parses");
+        let _ = sender.send(expression.eval(&state).is_ok());
+    });
+    assert!(
+        receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .is_err(),
+        "it returned"
+    );
+}
+
+#[test]
+fn string_tables_with_lengths_that_do_not_fit_are_errors_not_clamped() {
+    let put = |block: &mut Vec<u8>, at: usize, value: u16| {
+        block[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    };
+    for (what, spec) in [
+        (
+            "table longer than its parent",
+            block_with(|b| put(b, 128, 4000)),
+        ),
+        (
+            "table shorter than its header",
+            block_with(|b| put(b, 128, 10)),
+        ),
+        (
+            "string shorter than its header",
+            block_with(|b| put(b, STRING_AT, 4)),
+        ),
+        (
+            "string longer than its table",
+            block_with(|b| put(b, STRING_AT, 4000)),
+        ),
+        (
+            "value longer than its table",
+            block_with(|b| put(b, STRING_AT + 2, 4000)),
+        ),
+        (
+            "StringFileInfo longer than the block",
+            block_with(|b| put(b, 92, 4000)),
+        ),
+        (
+            "StringFileInfo shorter than its header",
+            block_with(|b| put(b, 92, 3)),
+        ),
+    ] {
+        assert!(
+            matches!(product(&spec), Err(ConditionError::Environment(_))),
+            "{what}"
+        );
+    }
+    assert_eq!(product(&PeSpec::new([1, 0, 0, 0], "1")), Ok(true));
+}
+
+#[test]
+fn the_version_block_itself_is_validated_for_both_functions() {
+    let put = |block: &mut Vec<u8>, at: usize, value: u16| {
+        block[at..at + 2].copy_from_slice(&value.to_le_bytes());
+    };
+    let mut cases = vec![
+        ("wLength is not the block", block_with(|b| put(b, 0, 10))),
+        ("wrong key", block_with(|b| b[6] = b'X')),
+        ("odd value length", block_with(|b| put(b, 2, 7))),
+        ("no signature", block_with(|b| b[40] = 0)),
+        ("shorter than a header", block_with(|b| b.truncate(30))),
+    ];
+    let mut empty = PeSpec::new([1, 0, 0, 0], "1");
+    empty.leaf_size = Some(0);
+    cases.push(("an empty resource", empty));
+    for (what, spec) in cases {
+        let dir = TempDir::new();
+        dir.file("b.dll", &spec.build());
+        for text in [
+            r#"version("b.dll", "1", ==)"#,
+            r#"product_version("b.dll", "1", ==)"#,
+        ] {
+            assert!(
+                matches!(eval(&dir, text), Err(ConditionError::Environment(_))),
+                "{what}: {text}"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_directory_that_does_not_start_its_section_is_read_where_it_is() {
+    let dir = TempDir::new();
+    let mut spec = PeSpec::new([4, 5, 6, 7], "4.5");
+    spec.lead = 0x30;
+    dir.file("lead.dll", &spec.build());
+    assert_eq!(
+        eval(&dir, r#"version("lead.dll", "4.5.6.7", ==)"#),
+        Ok(true)
+    );
+    assert_eq!(
+        eval(&dir, r#"product_version("lead.dll", "4.5", ==)"#),
+        Ok(true)
+    );
+}
+
+#[test]
+fn the_pe_header_offset_is_32_bits() {
+    let dir = TempDir::new();
+    let mut spec = PeSpec::new([2, 0, 0, 0], "2");
+    spec.pe_offset = 0x1_0040;
+    dir.file("far.dll", &spec.build());
+    assert_eq!(eval(&dir, r#"version("far.dll", "2", ==)"#), Ok(true));
+    let mut image = PeSpec::new([2, 0, 0, 0], "2").build();
+    image[0x3C..0x40].copy_from_slice(&0xFFFF_FF00u32.to_le_bytes());
+    dir.file("beyond.dll", &image);
+    assert!(matches!(
+        eval(&dir, r#"version("beyond.dll", "2", ==)"#),
+        Err(ConditionError::Environment(_))
+    ));
+}
+
+#[test]
+fn the_file_name_is_never_part_of_what_the_interpreter_parses() {
+    let dir = TempDir::new();
+    let image = PeSpec::new([1, 2, 0, 0], "1.2").build();
+    for name in [
+        "q\"x.exe",
+        "back\\slash.dll",
+        "tab\there.dll",
+        "new\nline.dll",
+        "par(en).dll",
+    ] {
+        dir.file(name, &image);
+        let text = format!("version(\"{}\", \"1.2\", ==)", name.replace('\\', "/"));
+        let env = env_with(&dir);
+        let args = [
+            Arg::Str(name.into()),
+            Arg::Str("1.2".into()),
+            Arg::Word("==".into()),
+        ];
+        let path = dir.path().join(name);
+        assert_eq!(evaluate("version", &args, Some(&path)), Ok(true), "{name}");
+        let _ = (text, env);
+    }
+}
+
+#[test]
+fn versions_and_operators_that_could_not_be_rebuilt_as_text_are_syntax_errors() {
+    let dir = game();
+    let path = dir.path().join("nvse_loader.exe");
+    for args in [
+        [
+            Arg::Str("x".into()),
+            Arg::Str("1\n2".into()),
+            Arg::Word("==".into()),
+        ],
+        [
+            Arg::Str("x".into()),
+            Arg::Str("1\u{7f}".into()),
+            Arg::Word("==".into()),
+        ],
+        [
+            Arg::Str("x".into()),
+            Arg::Str("1".into()),
+            Arg::Word("=~".into()),
+        ],
+        [
+            Arg::Str("x".into()),
+            Arg::Word("1".into()),
+            Arg::Word("==".into()),
+        ],
+    ] {
+        assert!(
+            matches!(
+                evaluate("version", &args, Some(&path)),
+                Err(ConditionError::Syntax(_))
+            ),
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn the_scratch_directory_is_private_and_removed_with_its_content() {
+    use std::os::unix::fs::PermissionsExt;
+    let scratch = Scratch::new().expect("creates");
+    let path = scratch.0.clone();
+    std::fs::write(path.join("v.dll"), b"x").expect("writes");
+    assert_eq!(
+        std::fs::metadata(&path)
+            .expect("exists")
+            .permissions()
+            .mode()
+            & 0o777,
+        0o700
+    );
+    assert_ne!(Scratch::new().expect("creates").0, path);
+    drop(scratch);
+    assert!(!path.exists());
+}
+
+#[test]
+fn evaluating_leaves_no_scratch_directory_behind() {
+    let dir = game();
+    let before = scratch_dirs();
+    for _ in 0..5 {
+        assert_eq!(
+            eval(&dir, r#"version("nvse_loader.exe", "1.4.0.2", ==)"#),
+            Ok(true)
+        );
+    }
+    assert!(
+        scratch_dirs()
+            .iter()
+            .all(|path| before.contains(path) || path_is_in_use(path))
+    );
+}
+
+fn scratch_dirs() -> Vec<std::path::PathBuf> {
+    let me = format!("loot-rs-pe-{}-", std::process::id());
+    std::fs::read_dir(std::env::temp_dir())
+        .expect("lists")
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .is_some_and(|n| n.to_string_lossy().starts_with(&me))
+        })
+        .collect()
+}
+
+/// Other tests of this process may be evaluating right now; a directory they own is not a leak.
+fn path_is_in_use(path: &Path) -> bool {
+    std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_some())
+}
+
+/// A resource tree in a `Vec`, read the way `version_block` reads the file.
+fn walk(tree: &[u8], size: u32) -> Result<Option<(u32, u32)>, &'static str> {
+    find_version_entry(
+        &|at, len| {
+            tree.get(usize::try_from(at).ok()?..usize::try_from(at).ok()? + len)
+                .map(<[u8]>::to_vec)
+        },
+        size,
+    )
+}
+
+fn table(entries: &[(u32, u32)]) -> Vec<u8> {
+    let mut out = vec![0; 12];
+    out.extend_from_slice(&0u16.to_le_bytes());
+    out.extend_from_slice(&u16::try_from(entries.len()).expect("few").to_le_bytes());
+    for (id, target) in entries {
+        out.extend_from_slice(&id.to_le_bytes());
+        out.extend_from_slice(&target.to_le_bytes());
+    }
+    out
+}
+
+fn leaf(rva: u32, size: u32) -> Vec<u8> {
+    let mut out = rva.to_le_bytes().to_vec();
+    out.extend_from_slice(&size.to_le_bytes());
+    out.extend_from_slice(&[0; 8]);
+    out
+}
+
+#[test]
+fn the_walk_takes_the_first_version_leaf_as_the_interpreter_does() {
+    const T: u32 = 0x8000_0000;
+    // root @0: icon (id 3) then RT_VERSION -> names @32; names: a data entry (skipped), then a table @56;
+    // languages: a table (skipped), then a data entry @80; a second data entry @96 is never looked at.
+    let mut tree = table(&[(3, T + 200), (16, T + 32)]); // 32 bytes
+    tree.extend(table(&[(1, 40), (2, T + 56)])); // @32, 32 bytes
+    tree.extend(table(&[(7, T + 200), (9, 80)])); // @64 ... see below
+    let mut padded = tree.clone();
+    padded.resize(256, 0);
+    // fix the offsets: names table is at 32, its second entry points at 64, the languages table
+    padded[32 + 16 + 8 + 4..32 + 16 + 8 + 8].copy_from_slice(&(T + 64).to_le_bytes());
+    padded[64 + 16 + 8 + 4..64 + 16 + 8 + 8].copy_from_slice(&96u32.to_le_bytes());
+    padded[96..112].copy_from_slice(&leaf(0x1234, 0x40));
+    assert_eq!(walk(&padded, 256), Ok(Some((0x1234, 0x40))));
+}
+
+#[test]
+fn the_walk_bounds_tables_entries_and_offsets() {
+    const T: u32 = 0x8000_0000;
+    assert_eq!(walk(&table(&[(5, 0)]), 1000), Ok(None), "no RT_VERSION");
+    let wide = table(&vec![(1, 0); usize::from(MAX_TABLE_ENTRIES) + 1]);
+    assert!(walk(&wide, 100_000).is_err(), "too many entries");
+    assert!(
+        walk(&table(&[(16, T + 5000)]), 64).is_err(),
+        "table beyond the directory"
+    );
+    // A tree that points every entry back at the root is cut by the table budget.
+    // (the depth is fixed at three, so two entries are cheap; ten make a hundred tables)
+    assert!(walk(&table(&[(16, T), (16, T)]), 4096).is_ok());
+    let looping = table(&[(16, T); 10]);
+    assert_eq!(
+        walk(&looping, 4096),
+        Err("too many resource directory tables")
+    );
+    assert!(walk(&[], 0).is_err() || walk(&[], 0) == Ok(None));
+}
+
+#[test]
+fn offsets_are_computed_in_64_bits() {
+    let sections = [(0x1000u32, 0x500u32, 0x200u32)];
+    assert_eq!(
+        rva_to_offset(&sections, 0x1010, 0x20, 0x10000),
+        Ok(Some(0x210))
+    );
+    assert_eq!(rva_to_offset(&sections, u32::MAX, 0x20, 0x10000), Ok(None));
+    assert_eq!(
+        rva_to_offset(&sections, 0x1000, u32::MAX, 0x10000),
+        Ok(None)
+    );
+    assert_eq!(
+        rva_to_offset(&sections, 0x1000, 0x20, 0x100),
+        Err("data is cut off by the end of the file")
+    );
+    let high = [(u32::MAX - 10, 100, u32::MAX)];
+    assert_eq!(
+        rva_to_offset(&high, u32::MAX - 5, 4, u64::MAX),
+        Ok(Some(u64::from(u32::MAX) + 5))
+    );
 }
 
 #[test]

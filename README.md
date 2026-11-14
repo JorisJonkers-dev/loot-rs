@@ -65,7 +65,7 @@ the game directory) read the file's PE version resource and compare it with LOOT
 default build does not contain it. The interpreter depends on `esplugin` (GPL-3.0), which is why the feature is
 off by default; this project is GPL-3.0 as well. A file that does not exist makes the condition false, as in
 LOOT; a file that is not a PE image, or whose headers are out of bounds, is a condition error (the item is not
-applied). Plugins (`.esp`, `.esm`) are still unsupported for `version()`: their version is in the description
+applied). The file is read once with every size checked and the interpreter is given only the validated version block, in a minimal image in a private temporary directory. Plugins (`.esp`, `.esm`) are still unsupported for `version()`: their version is in the description
 field. Every size read from the file is checked before the interpreter sees it, see
 [docs/RESOURCE-LIMITS.md](docs/RESOURCE-LIMITS.md).
 
