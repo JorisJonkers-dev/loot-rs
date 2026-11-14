@@ -63,3 +63,12 @@ scratchpads/
 # Python bytecode
 __pycache__/
 *.py[cod]
+
+# Private oracle runs: config with local paths, and every level of log (never commit either)
+oracle.toml
+oracle*.toml
+nvmod-oracle/
+.oracle/
+l0.json
+l1.json
+l2/

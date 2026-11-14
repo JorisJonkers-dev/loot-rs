@@ -127,3 +127,28 @@ they say nothing about LOOT.
 When a run on the synthetic cases exists, store LOOT's output next to the case as `tests/golden*/<case>/loot.json`
 together with the libloot version it came from (synthetic inputs only; never the output of a real load order), and make
 `compare.py` part of the golden test.
+
+## Real load orders, privately: `oracle_run.py`
+
+`scripts/oracle/oracle_run.py` (`task oracle:real`) runs `loot-rs sort` and the Rust libloot driver on the owner's real
+load order and compares the two orders. It is local only: the paths live in `~/.config/nvmod/oracle.toml`, outside any
+repository (the script refuses a config inside a git work tree, and refuses to write its output inside one; the config
+name and the log folders are also in `.gitignore` as a second line of defence). The config format is in the script's
+docstring. It reads the TES4 header of each plugin for the dataset digest and lists the BSA files; it never reads other
+game files and never writes to the game or to an MO2 instance. Plugins are looked up through the enabled mods of an MO2
+`modlist.txt` (highest priority first) and then the game's `Data`, and are symlinked into a staging directory, so libloot
+never sees the real game directory.
+
+Three levels of output, under `~/.local/share/nvmod-oracle/<run-id>/` (mode 0700):
+
+| Level | File | Content |
+| --- | --- | --- |
+| L2 | `l2/` | everything: names, both sorted orders, the differences, the errors. Local only |
+| L1 | `l1.json` | redacted: hashed ids, counts, digests, a hash per difference. No names, paths or text |
+| L0 | `l0.json`, stdout | `{suite, status, n_datasets, n_plugins, n_missing, n_differences, digest, tool}` |
+
+Status is `pass`, `fail`, `skipped` (no driver: nothing compared) or `partial` (compared and equal, but some plugins of
+the load order were not found, so fewer were compared than the order has; never a green gate). Exit codes 0, 1, 3, 4
+respectively; 2 is a usage or config error. libloot loads plugins in full, in memory, to sort them; only the order it
+produces is printed or kept. This is the phase 0 of ADR 0002's private oracle testing: no CI, no workflow, no issue is
+opened by it.
