@@ -25,11 +25,13 @@ pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
 pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--json]
+       loot-rs contracts --json
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
 sort: prints the load order sorted with LOOT's algorithm (a port of libloot's plugin graph)
 with the messages, tags and findings that apply to it.
-Neither writes anything.
+contracts --json: prints the JSON contracts this build emits and their schema versions.
+Neither check nor sort writes anything.
 
 exit codes: 0 no hard violation, 1 a hard violation (unmet req, present inc, load-after
 violated; group violations too with --strict-groups), 2 bad arguments or unreadable input";
@@ -198,9 +200,30 @@ fn execute_sort(
     Ok(if hard { EXIT_VIOLATION } else { EXIT_OK })
 }
 
+/// `contracts --json`: print the contracts this build emits and their schema versions (ADR-0006).
+fn contracts(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    if args != ["--json"] {
+        let _ = writeln!(
+            err,
+            "loot-rs: contracts takes exactly one option: --json\n\n{USAGE}"
+        );
+        return EXIT_ERROR;
+    }
+    match out.write_all(render::contracts_json().as_bytes()) {
+        Ok(()) => EXIT_OK,
+        Err(error) => {
+            let _ = writeln!(err, "loot-rs: cannot write the contracts: {error}");
+            EXIT_ERROR
+        }
+    }
+}
+
 /// Run the program on `args` (without the program name): the report goes to `out`, problems to `err`.
 /// Returns the exit code.
 pub fn main_with(args: &[String], out: &mut dyn Write, err: &mut dyn Write) -> u8 {
+    if args.first().map(String::as_str) == Some("contracts") {
+        return contracts(&args[1..], out, err);
+    }
     let parsed = match parse_args(args) {
         Ok(parsed) => parsed,
         Err(error) => {

@@ -56,7 +56,7 @@ use crate::overlap::PluginOverlaps;
 use crate::plugin;
 pub use crate::plugin::{PluginError, PluginHeader};
 use crate::records::{self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordsError};
-pub use crate::render::SCHEMA_VERSION;
+pub use crate::render::{CHECK_CONTRACT, CONTRACTS, SCHEMA_VERSION, SORT_CONTRACT, contracts_json};
 use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, PluginInput};
 use crate::validate;
 use std::collections::{HashMap, HashSet};

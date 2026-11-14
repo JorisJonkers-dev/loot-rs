@@ -220,7 +220,9 @@ fn json_output_is_one_line_and_keeps_the_exit_code() {
     assert_eq!((code, err.as_str()), (EXIT_VIOLATION, ""));
     assert_eq!(out.lines().count(), 1, "{out}");
     assert!(
-        out.starts_with("{\"schema_version\":1,\"general_messages\":[]"),
+        out.starts_with(
+            "{\"schema_version\":1,\"contract\":\"loot-check\",\"general_messages\":[]"
+        ),
         "{out}"
     );
     assert!(out.contains("\"hard_violations\":1}"), "{out}");
@@ -260,4 +262,30 @@ fn game_dir_and_repeated_extra_data_are_parsed() {
         parsed.extra_data,
         [PathBuf::from("e1"), PathBuf::from("e2")]
     );
+}
+
+#[test]
+fn contracts_json_lists_each_contract_with_its_versions() {
+    let (code, out, err) = run_main(&["contracts".into(), "--json".into()]);
+    assert_eq!((code, err.as_str()), (EXIT_OK, ""));
+    assert_eq!(
+        out,
+        "{\"contracts\":[{\"name\":\"loot-check\",\"versions\":[1]},{\"name\":\"loot-sort\",\"versions\":[1]}]}\n"
+    );
+}
+
+#[test]
+fn contracts_without_json_is_an_argument_error() {
+    let (code, _, err) = run_main(&["contracts".into()]);
+    assert_eq!(code, EXIT_ERROR);
+    assert!(err.contains("contracts takes exactly one option"), "{err}");
+}
+
+#[test]
+fn the_documents_name_contracts_the_handshake_lists() {
+    use crate::render::{CHECK_CONTRACT, CONTRACTS, SCHEMA_VERSION, SORT_CONTRACT};
+    for name in [CHECK_CONTRACT, SORT_CONTRACT] {
+        let (_, versions) = CONTRACTS.iter().find(|(n, _)| *n == name).expect("listed");
+        assert!(versions.contains(&SCHEMA_VERSION), "{name}");
+    }
 }

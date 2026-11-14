@@ -212,7 +212,7 @@ fn unsupported_functions_are_summarised_by_name_in_sorted_order() {
 fn json_of_an_empty_report() {
     assert_eq!(
         render_json(&Report::default()),
-        "{\"schema_version\":1,\"general_messages\":[],\"plugins\":[],\"general_findings\":[],\"not_installed\":[],\"warnings\":[],\"hard_violations\":0}\n"
+        "{\"schema_version\":1,\"contract\":\"loot-check\",\"general_messages\":[],\"plugins\":[],\"general_findings\":[],\"not_installed\":[],\"warnings\":[],\"hard_violations\":0}\n"
     );
 }
 
@@ -254,7 +254,7 @@ fn json_of_a_full_report_lists_everything_in_load_order() {
     assert_eq!(
         render_json(&report),
         concat!(
-            "{\"schema_version\":1,\"general_messages\":[{\"type\":\"say\",\"text\":\"hello\"}],",
+            "{\"schema_version\":1,\"contract\":\"loot-check\",\"general_messages\":[{\"type\":\"say\",\"text\":\"hello\"}],",
             "\"plugins\":[{\"name\":\"A.esp\",\"position\":2,\"active\":false,\"group\":\"Late\",",
             "\"messages\":[{\"type\":\"warn\",\"text\":\"careful \\\"now\\\"\"}],",
             "\"tags_add\":[\"Relev\"],\"tags_remove\":[\"Delev\"],",
