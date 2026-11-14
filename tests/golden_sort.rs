@@ -2,8 +2,9 @@
 //! case with `masterlist.yaml`, `plugins.txt`, `data.txt`, optional `args`, `expected.stdout`, `expected.code` and
 //! `expected.json` (what `--json` prints). `UPDATE_GOLDEN=1` rewrites the expected files; read the diff.
 //!
-//! The expected order is what the rules in `docs/API.md` give, not LOOT's order: it is a claim about this tool.
-//! `scripts/oracle/` compares these cases with libloot when libloot is available.
+//! The expected order is what the port of libloot's algorithm gives (`docs/COMPATIBILITY.md`); the graph code
+//! itself is tested against libloot's own unit tests in `src/sort/plugins_tests.rs`. `scripts/oracle/` compares
+//! these cases with libloot when libloot is available.
 
 mod common;
 

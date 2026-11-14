@@ -28,3 +28,17 @@ NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FO
 DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT
 OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
+
+## `src/sort.rs`, `src/sort/` (GPL-3.0-or-later, ported from libloot)
+
+The sorter is a port to Rust of the plugin graph of [libloot](https://github.com/loot/libloot) (version 0.29.7,
+`src/sorting/`: `plugins.rs`, `groups.rs`, `search.rs`, `validate.rs`; GPL-3.0-or-later, Copyright (C) the libloot
+authors), following its documentation of the algorithm
+(<https://loot-api.readthedocs.io/en/latest/api/sorting.html>). The graph stages, the order in which edges are
+added, the bidirectional search, the tie-break pinning and the group depth-first searches are libloot's; the
+unit tests in `src/sort/plugins_tests.rs` are libloot's own tests of the same functions, translated. What differs:
+vertices are indices instead of petgraph nodes (petgraph's iteration orders, on which libloot's results depend, are
+reproduced in `src/sort/search.rs`); userlist (user metadata) edges and Starfield's blueprint masters are not
+ported; a group that nobody defined is left without edges instead of being an error. Every ported file says so in
+its header. libloot is licensed GPL-3.0-or-later and this crate GPL-3.0-only: the combination is distributed under
+GPL-3.0, which the licence allows.

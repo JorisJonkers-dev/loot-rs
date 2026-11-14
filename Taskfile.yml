@@ -44,7 +44,7 @@ tasks:
   limits:
     desc: The resource-limit tests under a 512 MiB address-space limit (a regression fails instead of swapping)
     cmds:
-      - cargo test --locked --features executable-versions --test limits --test limits_exe --no-run --message-format=json | jq -r 'select(.executable != null and (.target.name == "limits" or .target.name == "limits_exe")).executable' > target/limits-binary.txt
+      - cargo test --locked --features executable-versions --test limits --test limits_exe --test limits_sort --no-run --message-format=json | jq -r 'select(.executable != null and (.target.name == "limits" or .target.name == "limits_exe" or .target.name == "limits_sort")).executable' > target/limits-binary.txt
       - |
         while read -r binary; do
           prlimit --as=536870912 -- "$binary" --test-threads=1

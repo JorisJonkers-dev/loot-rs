@@ -38,37 +38,38 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | Field | Content |
 | --- | --- |
 | `order` | The installed plugins in sorted order, named as given |
-| `ordering_rules` | The rules the order honours: `before`, `after` and `source` (`header-master`, `after`, `req`, `group`); to explain a move, or to check the order against another tool's |
+| `ordering_rules` | The rules the order honours: `before`, `after` and `source` (`header-master`, `after`, `req`, `group`); to explain a move, or to check the order against another tool's. Group rules are listed when the final order satisfies them |
 | `plugins` | One `PluginResult` per plugin of `order`, in that order: `position`, `active`, `group`, `messages` (kind and text), `tags_added`, `tags_removed`, `findings` (kind, text, `hard`) |
 | `general_messages` | Masterlist messages that belong to no plugin |
 | `dirty` | `DirtyInfo` (plugin, CRC-32, dirty or clean, utility, ITM, UDR, NAV) where an installed file's CRC-32 is on the masterlist's `dirty` or `clean` list. Only files that have such data are read |
 | `not_installed` | Plugins of the load order that are not in `Data`; they are not in `order`, the caller places them |
-| `dropped_group_rules` | Group rules `(later, earlier)` that a requirement, a master or a stronger group rule contradicted |
+| `dropped_group_rules` | Group rules `(later, earlier)` that the final order does not satisfy: the sorter left the edge out because it would have closed a cycle |
 | `warnings` | Skipped things: unreadable plugin headers, duplicate names, an ordering rule whose condition could not be evaluated |
 | `changed(&load_order)` | Whether the order differs from the one given |
 
 `SortError`: `DataDirectory`, `TooManyPlugins` (more than 1024 installed plugins), `Conflict { first, second }` (two
-rules that cannot both hold), `MasterOrder { plugin, master }` (a plugin without the master flag that has to load
-before one with it), `TooMuchWork`. A masterlist condition that cannot be evaluated is not an error: the item is left
+rules that cannot both hold: the first two plugins of the cycle), `MasterOrder { plugin, master }` (a plugin without
+the master flag that has to load before one with it), `GroupCycle(groups)` (groups that load after each other),
+`TooMuchWork`, `Internal(text)` (a check inside the sorter failed: a bug). A masterlist condition that cannot be evaluated is not an error: the item is left
 out and reported.
 
 ## What the sort does
 
-Rules, strongest first. Everything about the order is decided by these, nothing else:
+The algorithm is libloot's (see [COMPATIBILITY.md](COMPATIBILITY.md) for what is ported and what is not):
 
-1. Plugins with the master flag (ESM) load before all others. A rule that asks otherwise is an error when it comes from
-   `after`, `req` or a header, and is dropped when it comes from a group.
-2. The masters listed in a plugin's header load before it.
-3. The masterlist's `after` and `req` plugins (when their `condition` and `constraint` hold) load before the plugin.
-4. A plugin in a group that loads after another group loads after that group's plugins, unless that contradicts a rule
-   above or a group rule that was already kept; then the group rule is dropped and reported. Groups that are each
-   after the other are ignored, as in `check`.
-5. Among the plugins that may come next, the one that was earlier in the given order comes first. A plugin therefore
-   moves only for a reason, and sorting a sorted order changes nothing.
+1. Plugins are vertices in the byte order of their names; plugins with the master flag and the others are sorted in
+   two separate graphs and joined, masters first. A rule that wants a plugin without the flag before one with it is a
+   `MasterOrder` error.
+2. Edges from the header masters, the masterlist's `after` and `req` plugins (when their `condition` and `constraint`
+   hold) and the game's hard-coded first plugin (`FalloutNV.esm`). A cycle among them is a `Conflict` error.
+3. Edges from groups: a plugin in a group loads before the plugins of groups that load after it, each edge only when it
+   closes no cycle (found with libloot's depth-first search order).
+4. Overlap edges (plugins that change the same records, then the same archive paths): the one that changes more loads
+   first. **Not fed yet**: the record and archive data are not read, so these edges are absent.
+5. Tie-break edges that keep the current load order wherever nothing above forbids it, and a topological sort. A plugin
+   therefore moves only for a reason, and sorting a sorted order changes nothing.
 
-This is **not** LOOT's algorithm: LOOT also sorts by overlap of records, by how many records a plugin changes and by
-other things, and it has a priority system. The result is a valid order under the metadata rules, not LOOT's order. See
-[COMPATIBILITY.md](COMPATIBILITY.md) and [ORACLE.md](ORACLE.md).
+Not supported: the userlist, and the messages LOOT's application generates while sorting.
 
 ## Guarantees
 
@@ -95,3 +96,12 @@ other things, and it has a priority system. The result is a valid order under th
 
 Writing `plugins.txt` or `loadorder.txt`, userlists, metadata for the user's own plugins, localised messages other than
 English, `version()` on plugins, and the other things in [COMPATIBILITY.md](COMPATIBILITY.md).
+
+## Semver
+
+The crate is 0.x. Moving from the metadata-only sorter to libloot's algorithm changes the order `sort` returns for the
+same input (a plugin that is later in the given order stays later wherever the rules allow, where the old sorter pulled
+earlier ones forward), adds the `SortError` variants `GroupCycle` and `Internal` (the enum is `#[non_exhaustive]`, so
+callers already have a wildcard arm), and replaces the `sort` module's functions (`sort::order` is now `sort::sort`
+over `PluginInput`s; that module is public for tests and carries no promise). The `api` module's signatures are
+unchanged. Release as a minor version.
