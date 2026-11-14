@@ -4,7 +4,6 @@
   "packages": {
     ".": {
       "package-name": "loot-rs",
-      "release-as": "0.1.0",
       "changelog-path": "CHANGELOG.md",
       "include-component-in-tag": false,
       "bump-minor-pre-major": true,
