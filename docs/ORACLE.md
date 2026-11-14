@@ -1,8 +1,9 @@
 # Differential testing against LOOT (the oracle)
 
 **Status: the sorted order has been compared with the real libloot (0.29.7, the Rust crate, built from source) on 3,300
-random synthetic load orders with no difference (below). Messages, Bash Tags and cleaning data have not been compared
-with libloot's output, and no real load order has been run.** Nothing here needs the game, and CI never runs libloot: CI
+random synthetic load orders with no difference (below), and messages, Bash Tags, groups and cleaning data, conditions
+evaluated, on random worlds too (below). The real-data run compares the same things; it is run by the owner on the
+private runner, not here.** Nothing here needs the game, and CI never runs libloot: CI
 runs the self-tests of the scripts (`task scripts`) and the golden tests of the Rust side. The LOOT side runs on the
 owner's machine, where libloot and (for a real load order) the game files are. Do not add "expected" LOOT results to the
 repository unless they came from such a run (or can be derived from LOOT's public documentation, which for message text
@@ -29,6 +30,36 @@ up to 9, 12 and 25 plugins), **0 differences**. About nine worlds in ten are re-
 sort differently when their records and archives are removed, so the comparison does exercise the overlap edges, the
 group walk and the tie-break pinning. A world in which libloot refuses (a cycle) is one where `loot-rs` refuses too.
 This is the evidence for `docs/COMPATIBILITY.md`'s claim that the sort is libloot's.
+
+### Messages, Bash Tags, groups and cleaning data
+
+The worlds also carry what a mod manager shows next to the order: conditions (`file`, `active`, `many`, `many_active`,
+`checksum`, `is_master`, combined with `and`, `or`, `not` and parentheses; a `checksum` is sometimes the real CRC-32 of
+an invented plugin's bytes and sometimes one that matches nothing), general messages, messages of the three types with
+`subs`, with Markdown and with content in two languages, Bash Tags added and removed (some with conditions), `dirty`
+and `clean` entries whose CRC is sometimes that of the invented plugin and sometimes not, and entries whose names are
+regular expressions. Every plugin is active. The driver's `--metadata` mode asks libloot for
+`plugin_metadata(name, WithoutUserMetadata, Evaluate)` of each plugin, `general_messages(Evaluate)` and the database's
+merged `groups`, and `compare.py` compares them with `loot-rs sort --json`: messages (type and text), `tags_add` and
+`tags_remove`, group, cleaning data (only entries whose CRC is the loaded file's), and general messages. The merged
+groups are compared with the groups the world declares plus `default`, because loot-rs does not print its group graph.
+A run prints how many messages, tags and cleaning entries libloot reported, so an empty comparison cannot pass unseen:
+
+```sh
+scripts/oracle/random_diff.py --loot-rs target/release/loot-rs \
+  --driver scripts/oracle/libloot-driver/target/release/libloot-driver --count 2000 --seed 11 --max-plugins 12
+```
+
+A run on 2026-11-14 against libloot 0.29.7: 2,000 worlds (seed 11, up to 12 plugins), **0 differences** in order and
+in metadata; libloot reported 18,850 messages, 2,373 general messages, 19,427 tags and 5,879 cleaning entries (2,946
+dirty, 2,933 clean), all matched by loot-rs.
+
+Known differences are in `KNOWN_DIFFERENCES` in `compare.py`, each with a test; nothing else is ignored: Markdown (link
+syntax reduced to its text, whitespace collapsed), localisation (English only), `generated_*` messages (libloot has
+none), duplicate tags (compared as sets), a tag both added and removed (a removal only, as in loot-rs), and the group
+graph (compared against the world, not against loot-rs). One more difference was found and avoided in the generator:
+loot-rs accepts `not not file("X")`, libloot's grammar does not (it refuses the whole masterlist); the generator
+therefore writes `not (...)`.
 
 ## What is compared
 
@@ -138,6 +169,12 @@ docstring. It reads the TES4 header of each plugin for the dataset digest and li
 game files and never writes to the game or to an MO2 instance. Plugins are looked up through the enabled mods of an MO2
 `modlist.txt` (highest priority first) and then the game's `Data`, and are symlinked into a staging directory, so libloot
 never sees the real game directory.
+
+With `libloot_driver` set it also compares messages, tags, groups and cleaning data (see above) on the given order, once
+per dataset. L1 gets `metadata_differences`, counts per kind (`message`, `tag`, `group`, `dirty`); the text of each is
+in `l2/<dataset>/differences.txt`, and a hash of each in `difference_ids`. They count in `n_differences` and make the
+dataset `fail`. Conditions that use functions loot-rs does not implement leave an item out on its side and show up here
+as a message or tag difference; read them next to the unsupported list in [TESTING.md](TESTING.md).
 
 Three levels of output, under `~/.local/share/nvmod-oracle/<run-id>/` (mode 0700):
 

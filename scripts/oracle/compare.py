@@ -29,10 +29,34 @@ import re
 import sys
 
 
+# What is deliberately not compared, or compared loosely, with the reason. Nothing else is ignored: a message, tag, group
+# or cleaning entry that differs is a difference. random_diff.py and oracle_run.py use the same comparison.
+KNOWN_DIFFERENCES = {
+    "markdown": "message text is compared after the link syntax [text](url) is reduced to text and whitespace is "
+                "collapsed (libloot keeps the Markdown, LOOT's application renders it)",
+    "localisation": "only the English content of a message is compared (loot-rs keeps English; libloot picks the "
+                    "content for the language asked for, English here)",
+    "generated-messages": "`generated_messages` and `generated_general_messages` (what LOOT's application adds: missing "
+                          "masters, inactive requirements, dirty plugins) have no libloot counterpart and are not compared",
+    "duplicate-tags": "libloot lists a tag twice when the masterlist names it twice (an entry and a matching regex entry); "
+                      "loot-rs lists it once, so tags are compared as sets",
+    "tag-conflict": "a tag the masterlist both adds and removes is only a removal in loot-rs (removal beats addition, "
+                    "docs/COMPATIBILITY.md); libloot lists it in both, so LOOT's additions are compared without the removals",
+    "group-graph": "loot-rs does not print its group graph, so the merged `groups` of libloot's database are compared "
+                   "only when the other side has a `groups` list; the per-plugin group is always compared",
+}
+
+
 def normalise(text: str) -> str:
     """Whitespace and the markdown link syntax LOOT messages may carry are not significant here."""
     text = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", text)
     return re.sub(r"\s+", " ", text).strip()
+
+
+def resolved_tags(plugin: dict, key: str) -> list[str]:
+    """LOOT's tags of one plugin as a set, with removal beating addition (see KNOWN_DIFFERENCES)."""
+    tags = set(plugin[key])
+    return sorted(tags - set(plugin.get("tags_remove", [])) if key == "tags_add" else tags)
 
 
 def message_set(messages):
@@ -74,7 +98,9 @@ def compare(ours: dict, loot: dict) -> list[str]:
                 f"only LOOT {sorted(message_set(theirs['messages']) - message_set(mine['messages']))}"
             )
         for key in ("tags_add", "tags_remove"):
-            if key in theirs and sorted(mine[key]) != sorted(theirs[key]):
+            # KNOWN_DIFFERENCES["duplicate-tags"]: tags are compared as sets
+            # KNOWN_DIFFERENCES["tag-conflict"]: a tag in both lists is only a removal on loot-rs's side
+            if key in theirs and sorted(set(mine[key])) != sorted(resolved_tags(theirs, key)):
                 differences.append(f"{name}: {key} differ: loot-rs {sorted(mine[key])}, LOOT {sorted(theirs[key])}")
         if "bash_tags" in theirs and sorted(mine.get("bash_tags", [])) != sorted(theirs["bash_tags"]):
             differences.append(f"{name}: bash_tags differ: loot-rs {sorted(mine.get('bash_tags', []))}, LOOT {sorted(theirs['bash_tags'])}")
@@ -176,6 +202,25 @@ def selftest() -> None:
     assert any(line.startswith("note: group rule: C.esp before A.esp") for line in flipped), flipped
     assert "cleaning data differs" in compare(sorted_ours, {"dirty": []})[0]
     assert compare(sorted_ours, {"sorted": ["X.esp"]}) == ["info: 0 of 0 plugin pairs are in a different order"]
+    # the known differences are listed in KNOWN_DIFFERENCES and nothing else is ignored
+    assert set(KNOWN_DIFFERENCES) == {"markdown", "localisation", "generated-messages", "duplicate-tags", "tag-conflict", "group-graph"}
+    tagged = {"plugins": [{"name": "A.esp", "group": "default", "messages": [], "tags_add": ["Relev"], "tags_remove": ["Delev"]}]}
+
+    def theirs(add, remove, group="default", messages=()):
+        return {"plugins": {"A.esp": {"tags_add": add, "tags_remove": remove, "group": group, "messages": list(messages)}}}
+
+    assert compare(tagged, theirs(["Relev", "Relev"], ["Delev", "Delev"])) == []  # duplicate-tags
+    assert compare(tagged, theirs(["Relev", "Delev"], ["Delev"])) == []  # tag-conflict: removal beats addition
+    assert compare(tagged, theirs(["Relev"], ["Delev"], messages=[{"type": "say", "text": "x"}]))[0].endswith("only LOOT [('say', 'x')]")
+    # each kind of data, altered on one side, is a difference
+    assert "tags_add differ" in compare(tagged, theirs([], ["Delev"]))[0]
+    assert "tags_remove differ" in compare(tagged, theirs(["Relev"], []))[0]
+    assert "group differs" in compare(tagged, theirs(["Relev"], ["Delev"], group="g1"))[0]
+    clean = {"plugin": "A.esp", "crc": 5, "status": "clean", "utility": "u", "itm": 0, "udr": 0, "nav": 0}
+    for field, value in (("crc", 6), ("status", "dirty"), ("utility", "v"), ("itm", 1), ("udr", 1), ("nav", 1)):
+        assert "cleaning data differs" in compare({"dirty": [clean]}, {"dirty": [{**clean, field: value}]})[0], field
+    assert "general messages differ" in compare({"general_messages": [{"type": "say", "text": "a"}]},
+                                                {"general_messages": [{"type": "say", "text": "b"}]})[0]
     print("compare.py: selftest ok")
 
 

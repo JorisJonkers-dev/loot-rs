@@ -175,6 +175,30 @@ def sort_libloot(driver: str, game: Path, local: Path, masterlist: Path, order: 
     return f"error: {result['error']}" if isinstance(result, dict) else result
 
 
+def libloot_metadata(driver: str, game: Path, local: Path, masterlist: Path, order: list[str]) -> dict:
+    """The driver's `--metadata` mode: messages, tags, groups and cleaning data as libloot evaluates them. L2 only."""
+    local.mkdir(exist_ok=True)
+    done = subprocess.run([*shlex.split(driver), "--metadata", str(game), str(local), str(masterlist), *order],
+                          capture_output=True, text=True, check=False)
+    try:
+        return json.loads(done.stdout)
+    except ValueError as error:
+        raise RuntimeError(f"the libloot driver failed ({done.returncode}): {done.stderr.strip()[-300:]}") from error
+
+
+def metadata_category(line: str) -> str:
+    """message, tag, group or dirty (cleaning data): what a comparison line of compare.compare is about."""
+    if "messages differ" in line:
+        return "message"
+    if "tags_" in line or "bash_tags" in line:
+        return "tag"
+    if "group differs" in line:
+        return "group"
+    if line.startswith("cleaning data"):
+        return "dirty"
+    return "other"
+
+
 def compare_sorted(ours: object, theirs: object) -> list[str]:
     """Equal orders, or both refusing, agree; anything else is one difference (the detail is for L2 only)."""
     if isinstance(ours, str) or isinstance(theirs, str):
@@ -228,7 +252,8 @@ def variant_names(dataset: dict, names: list[str]) -> list[str]:
     return [name for name in names if name.lower() not in drop]
 
 
-def compare_order(tools: dict, stage_root: Path, order: list[str], found: list[str], plugins: Path, work: Path) -> dict:
+def compare_order(tools: dict, stage_root: Path, order: list[str], found: list[str], plugins: Path, work: Path,
+                  metadata: bool = False) -> dict:
     """Run both tools on one load order. Returns {status, lines, sorted, digest}; the details go under `work` (L2)."""
     work.mkdir(parents=True, exist_ok=True)
     masterlist = Path(tools["masterlist"])
@@ -251,6 +276,12 @@ def compare_order(tools: dict, stage_root: Path, order: list[str], found: list[s
             theirs = sort_libloot(tools["libloot_driver"], stage_root, work / "local", masterlist, order)
             (work / "libloot-sorted.json").write_text(json.dumps(theirs, indent=1))
             lines = compare_sorted(ours["sorted"] if isinstance(ours, dict) else ours, theirs)
+            if metadata and isinstance(ours, dict):
+                # messages, tags, groups and cleaning data do not depend on the order: compared once, on the given one
+                info = libloot_metadata(tools["libloot_driver"], stage_root, work / "local", masterlist, order)
+                (work / "libloot-metadata.json").write_text(json.dumps(info, indent=1))
+                outcome["metadata"] = [line for line in compare.compare(ours, info) if not line.startswith(("note:", "info:"))]
+                lines += outcome["metadata"]
         elif tools.get("driver") and isinstance(ours, dict):
             loot = run.run_driver(tools["driver"], stage_root, masterlist, plugins)
             if loot is not None:
@@ -281,9 +312,9 @@ def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path, perturbat
               "missing": len(facts["missing"]), "archives": len(facts["archives"]), "dataset_digest": dataset_digest,
               "status": "error", "differences": 0, "notes": 0, "sorted": 0, "categories": {}, "difference_ids": [],
               "seed": seed, "n_perturbations": 0, "n_differences": 0, "perturbation_status": {},
-              "perturbation_kinds": {}, "perturbation_digests": []}
+              "perturbation_kinds": {}, "perturbation_digests": [], "metadata_differences": {}}
     stage_root = l2 / "stage"
-    base = compare_order(tools, stage_root, facts["found"], facts["found"], stage_root / "plugins.txt", l2)
+    base = compare_order(tools, stage_root, facts["found"], facts["found"], stage_root / "plugins.txt", l2, metadata=True)
     result["sorted"] = base["sorted"]
     if base["digest"]:
         result["ours_digest"] = base["digest"]
@@ -298,6 +329,9 @@ def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path, perturbat
     result["difference_ids"] = [short(line) for line in counted]
     result["status"] = base["status"]
     result["n_differences"] = len(counted)
+    for line in base.get("metadata", []):  # counts per kind; the text stays in L2
+        kind = metadata_category(line)
+        result["metadata_differences"][kind] = result["metadata_differences"].get(kind, 0) + 1
     masters = {name for name in facts["found"] if is_master_name(name)}
     for index, (kind, order) in enumerate(perturbed_orders(facts["found"], masters, perturbations, seed, label)):
         work = l2 / "perturbed" / f"{index:03d}-{kind}"  # the perturbed orders are written under L2 only
@@ -326,7 +360,8 @@ def public_status(results: list[dict], version: str) -> dict:
     if status == "pass" and any(r["missing"] for r in results):
         status = "partial"  # compared and equal, but on fewer plugins than the load order has: never a green gate
     digest = hashlib.sha256(json.dumps([[r["dataset_digest"], r.get("ours_digest", ""), r["differences"], r["status"], r["seed"],
-                                         r["n_perturbations"], r["n_differences"], r["perturbation_digests"]]
+                                         r["n_perturbations"], r["n_differences"], r["perturbation_digests"],
+                                         r["metadata_differences"]]
                                         for r in results], sort_keys=True).encode()).hexdigest()
     return {"suite": "load-order-vs-libloot", "status": status, "n_datasets": len(results),
             "n_plugins": sum(r["present"] for r in results), "n_missing": sum(r["missing"] for r in results),
@@ -449,7 +484,8 @@ def selftest() -> None:
         (game / "Data" / "x.bsa").write_bytes(b"")
         (tmp / "modlist.txt").write_text("# header\n+ModB\n-Off\n")
         (tmp / "order.txt").write_text("*FalloutNV.esm\nA.esp\nB.esp\nGone.esp\n")
-        ours = {"sorted": ["FalloutNV.esm", "A.esp", "B.esp"], "plugins": [], "rules": [{"before": "A.esp", "after": "B.esp", "source": "after"}]}
+        ours = {"sorted": ["FalloutNV.esm", "A.esp", "B.esp"], "rules": [{"before": "A.esp", "after": "B.esp", "source": "after"}],
+                "plugins": [{"name": "A.esp", "group": "default", "messages": [], "tags_add": [], "tags_remove": []}]}
         stub = tmp / "loot-rs"
         stub.write_text(f"#!/bin/sh\necho '{json.dumps(ours)}'\n")
         stub.chmod(0o755)
@@ -460,10 +496,13 @@ def selftest() -> None:
         absent = tmp / "absent.py"
         absent.write_text("import sys\nsys.exit(3)\n")
         native = tmp / "native.sh"
-        native.write_text("#!/bin/sh\necho '[\"FalloutNV.esm\",\"A.esp\",\"B.esp\"]'\n")
+        meta = '{"general_messages":[],"groups":[],"plugins":{},"dirty":[]}'
+        native.write_text(f"#!/bin/sh\n[ \"$1\" = --metadata ] && echo '{meta}' && exit 0\n"
+                          "echo '[\"FalloutNV.esm\",\"A.esp\",\"B.esp\"]'\n")
         native.chmod(0o755)
         native_differs = tmp / "native-differs.sh"
-        native_differs.write_text("#!/bin/sh\necho '[\"FalloutNV.esm\",\"B.esp\",\"A.esp\"]'\n")
+        native_differs.write_text(f"#!/bin/sh\n[ \"$1\" = --metadata ] && echo '{meta}' && exit 0\n"
+                                  "echo '[\"FalloutNV.esm\",\"B.esp\",\"A.esp\"]'\n")
         native_differs.chmod(0o755)
         (tmp / "m.yaml").write_text("plugins: []\n")
         root = tmp / "out"
@@ -545,6 +584,19 @@ def selftest() -> None:
             finally:
                 del os.environ["ORACLE_PERTURBATIONS"]
             assert json.loads(differing.getvalue())["n_differences"] == 5
+            # messages, tags, groups and cleaning data: counted by kind, never named
+            talking = tmp / "native-meta.sh"
+            talking.write_text(native.read_text().replace(meta, '{"general_messages":[{"type":"say","text":"SECRETTEXT"}],'
+                                                          '"plugins":{"A.esp":{"tags_add":["Relev"],"tags_remove":[],"group":"G"}},"dirty":[]}'))
+            talking.chmod(0o755)
+            (tmp / "m.toml").write_text(base_text.replace("native.sh", "native-meta.sh"))
+            with contextlib.redirect_stdout(io.StringIO()) as meta_out:
+                assert main(["--config", str(tmp / "m.toml")]) == 1
+            l1 = json.loads((last_run() / "l1.json").read_text())["datasets"][0]
+            assert l1["metadata_differences"] == {"message": 1, "tag": 1, "group": 1} and l1["status"] == "fail", l1
+            blob = meta_out.getvalue() + (last_run() / "l0.json").read_text() + (last_run() / "l1.json").read_text()
+            assert "SECRETTEXT" not in blob and "Relev" not in blob
+            assert "SECRETTEXT" in (last_run() / "l2" / "t" / "differences.txt").read_text()
             # a variant: the same plugin set without B.esp
             (tmp / "v.toml").write_text(base_text + '\n[dataset.lite]\nvariant_of = "t"\ndisable = ["b.ESP"]\n')
             with contextlib.redirect_stdout(io.StringIO()):
