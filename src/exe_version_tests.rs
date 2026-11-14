@@ -442,11 +442,21 @@ fn evaluating_leaves_no_scratch_directory_behind() {
             Ok(true)
         );
     }
-    assert!(
+    // Other tests of this process create and remove scratch directories at the same time. One of theirs is there for
+    // a moment (empty, or with its file), a leak of this test stays: wait for the others to finish.
+    let leaked = || {
         scratch_dirs()
-            .iter()
-            .all(|path| before.contains(path) || path_is_in_use(path))
-    );
+            .into_iter()
+            .filter(|path| !before.contains(path))
+            .collect::<Vec<_>>()
+    };
+    for _ in 0..500 {
+        if leaked().is_empty() {
+            return;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert_eq!(leaked(), Vec::<std::path::PathBuf>::new());
 }
 
 fn scratch_dirs() -> Vec<std::path::PathBuf> {
@@ -460,11 +470,6 @@ fn scratch_dirs() -> Vec<std::path::PathBuf> {
                 .is_some_and(|n| n.to_string_lossy().starts_with(&me))
         })
         .collect()
-}
-
-/// Other tests of this process may be evaluating right now; a directory they own is not a leak.
-fn path_is_in_use(path: &Path) -> bool {
-    std::fs::read_dir(path).is_ok_and(|mut entries| entries.next().is_some())
 }
 
 /// A resource tree in a `Vec`, read the way `version_block` reads the file.
