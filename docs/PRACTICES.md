@@ -31,9 +31,9 @@ baseline, adapted to a Linux-first Rust library and CLI (no Windows build, no up
 
 The package has `publish = false` and nothing is published, so the only artefact of a release is the tag and the
 GitHub Release. `release-type: rust` bumps `version` in `Cargo.toml` and the matching entry in `Cargo.lock` with the
-tag, so `loot-rs --version` and the tag always agree; `simple` would leave them at 0.1.0 forever. The cost is that
+tag, so `loot-rs --version` and the tag always agree; `simple` would leave them at one version forever. The cost is that
 the release pull request touches `Cargo.lock`, which is harmless here (there is no checksum over the lockfile, as
-there is in `nv-rs`). The manifest starts at 0.1.0 and `bump-minor-pre-major` keeps breaking changes at 0.x.
+there is in `nv-rs`). The manifest starts at 0.0.0 and `release-as` pins the first release to 0.1.0; remove `release-as` from `release-please-config.json` once 0.1.0 is tagged, or every later release stays 0.1.0. `bump-minor-pre-major` keeps breaking changes at 0.x.
 
 ## Dependencies and licences
 
