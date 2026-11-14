@@ -115,6 +115,12 @@ def add_metadata(rng: random.Random, w: dict) -> None:
         w["entries"].append(regex)
 
 
+# What a plugin's description field says: formats `extract_version` reads (and one that has no version).
+VERSION_DESCRIPTIONS = ["Version: 1.2", "v2.0", "3.1.4 beta", "Updated: 10/09/2016 13:15:18", "Adds things.", "1.10.0-rc.1"]
+VERSION_OPERATORS = ["==", "!=", "<", ">", "<=", ">="]
+VERSION_VALUES = ["1.2", "1.10", "2", "2.0.0", "3.1.4", "0.9"]
+
+
 def world(rng: random.Random, most: int = 12) -> dict:
     """Plugins P0.. (the first few masters), what each lists as masters, its records and archive files, a group
     graph and masterlist entries. Masters and rules only point at earlier plugins, so cycles are rare (and agreed
@@ -141,7 +147,8 @@ def world(rng: random.Random, most: int = 12) -> dict:
             folder = rng.choice(["meshes", "textures"])
             archive = [(folder, [f"f{rng.randint(0, 5)}.nif" for _ in range(rng.randint(1, 5))])]
         plugins.append({"name": name, "esm": name.endswith(".esm"), "masters": listed, "records": records, "archive": archive,
-                        "extra": rng.random() < 0.3})
+                        "extra": rng.random() < 0.3,
+                        "description": rng.choice(VERSION_DESCRIPTIONS)})
     group_after = {"g1": [], "g2": ["g1"], "g3": ["g1"] if rng.random() < 0.5 else ["g2"]}
     if rng.random() < 0.5:
         group_after["default"] = [rng.choice(["g1", "g2"])]
@@ -154,6 +161,11 @@ def world(rng: random.Random, most: int = 12) -> dict:
             earlier = [other for other in names[:i] if other.endswith(".esm") or not plugin["esm"]]
             if earlier and rng.random() < 0.15:
                 entry[key] = [rng.choice(earlier)]
+        # An `after` rule that only holds while another plugin's version (from its description) satisfies a test.
+        if i > 0 and rng.random() < 0.25:
+            guard, target = rng.choice(names), rng.choice(names[:i])
+            condition = f'version("{guard}", "{rng.choice(VERSION_VALUES)}", {rng.choice(VERSION_OPERATORS)})'
+            entry["version_after"] = [{"name": target, "condition": condition}]
         entries.append(entry)
     order = names[:]
     rng.shuffle(order)
@@ -189,9 +201,9 @@ def write(w: dict, root: Path) -> list[str]:
     for plugin in w["plugins"]:
         flags = m.FLAG_ESM if plugin["esm"] else 0
         if plugin["records"]:
-            blob = m.synthetic_records(flags, plugin["masters"], plugin["records"])
+            blob = m.synthetic_records(flags, plugin["masters"], plugin["records"], plugin["description"])
         else:
-            blob = m.synthetic_plugin(flags, plugin["masters"])
+            blob = m.synthetic_plugin(flags, plugin["masters"], plugin["description"])
         home = extra if plugin.get("extra") else data
         (home / plugin["name"]).write_bytes(blob)
         if plugin["archive"]:
@@ -224,9 +236,14 @@ def write(w: dict, root: Path) -> list[str]:
         own = entry["name"] if entry["name"] in crcs else None
         lines.append(f"  - name: {json.dumps(entry['name'])}")
         for key in ("group", "after", "req"):
-            if key in entry:
-                value = entry[key] if key == "group" else f"[{', '.join(entry[key])}]"
-                lines.append(f"    {key}: {value}")
+            if key in entry or (key == "after" and "version_after" in entry):
+                if key == "group":
+                    lines.append(f"    group: {entry['group']}")
+                    continue
+                items = list(entry.get(key, []))
+                if key == "after":
+                    items += [f"{{name: {c['name']}, condition: '{c['condition']}'}}" for c in entry.get("version_after", [])]
+                lines.append(f"    {key}: [{', '.join(items)}]")
         if entry.get("msg"):
             lines.append("    msg:")
             lines.extend("      - " + message_yaml(item, own, scalar).replace("\n", "\n        ") for item in entry["msg"])

@@ -182,16 +182,16 @@ plugins:
 #[test]
 fn unsupported_functions_are_reported_and_the_item_is_not_applied() {
     let fixture = game();
-    let masterlist = "plugins:\n  - name: 'A.esp'\n    msg:\n      - type: error\n        content: 'version gated'\n        condition: 'version(\"A.esp\", >=, \"1.0\")'\n";
+    let masterlist = "plugins:\n  - name: 'A.esp'\n    msg:\n      - type: error\n        content: 'version gated'\n        condition: 'product_version(\"A.esp\", >=, \"1.0\")'\n";
     let (code, out, _) = check(&fixture, masterlist, ORDER, &[]);
     assert_eq!(code, 0, "{out}");
     assert!(!out.contains("version gated"), "{out}");
     assert!(
-        out.contains("unsupported condition function version()"),
+        out.contains("unsupported condition function product_version()"),
         "{out}"
     );
     assert!(
-        out.contains("1 item(s) use the unsupported condition function version()"),
+        out.contains("1 item(s) use the unsupported condition function product_version()"),
         "{out}"
     );
 }

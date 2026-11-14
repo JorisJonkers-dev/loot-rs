@@ -341,3 +341,128 @@ fn names_that_differ_only_in_case_are_a_warning() {
     assert!(warnings[0].contains("differ only in case"));
     assert_eq!(env.count_files("THING.dll"), Ok(1));
 }
+
+fn described(dir: &TempDir, name: &str, description: &str) {
+    dir.file(
+        name,
+        &crate::plugin::synthetic_plugin(0, &[], Some(description)),
+    );
+}
+
+fn version_env(dir: &TempDir, names: &[&str]) -> FsEnv {
+    FsEnv::new(
+        dir.path(),
+        names.iter().map(|name| slot(name, true)).collect(),
+    )
+}
+
+fn holds(env: &FsEnv, text: &str) -> Result<bool, ConditionError> {
+    crate::condition::eval_str(text, env)
+}
+
+#[test]
+fn the_version_of_a_plugin_comes_from_its_description() {
+    let dir = TempDir::new();
+    described(
+        &dir,
+        "TaleOfTwoWastelands.esm",
+        "Tale of Two Wastelands\r\nVersion: 3.2.0",
+    );
+    let env = version_env(&dir, &["TaleOfTwoWastelands.esm"]);
+    for (text, expected) in [
+        (r#"version("TaleOfTwoWastelands.esm", "3.2.0", >=)"#, true),
+        (r#"version("TaleOfTwoWastelands.esm", "3.2.1", >=)"#, false),
+        (r#"version("TaleOfTwoWastelands.esm", "3.2", ==)"#, true),
+        (r#"version("taleoftwowastelands.esm", "3.1", >)"#, true),
+        (r#"version("TaleOfTwoWastelands.esm", >=, "3.2.0")"#, true),
+        (r#"version("TaleOfTwoWastelands.esm", "3.2.0", !=)"#, false),
+    ] {
+        assert_eq!(holds(&env, text), Ok(expected), "{text}");
+    }
+}
+
+#[test]
+fn a_plugin_without_a_version_in_its_description_is_false() {
+    let dir = TempDir::new();
+    described(&dir, "A.esp", "Adds a thing.");
+    dir.plugin("B.esp", &[]);
+    let env = version_env(&dir, &["A.esp", "B.esp"]);
+    for name in ["A.esp", "B.esp"] {
+        for operator in ["==", "!=", "<", ">=", ">"] {
+            let text = format!(r#"version("{name}", "1.0", {operator})"#);
+            assert_eq!(holds(&env, &text), Ok(false), "{text}");
+        }
+    }
+}
+
+#[test]
+fn a_plugin_that_is_missing_or_not_in_the_load_order_is_false() {
+    let dir = TempDir::new();
+    described(&dir, "A.esp", "Version 1.0");
+    described(&dir, "Unlisted.esp", "Version 1.0");
+    let env = version_env(&dir, &["A.esp", "Gone.esp"]);
+    assert_eq!(holds(&env, r#"version("Gone.esp", "1.0", ==)"#), Ok(false));
+    assert_eq!(
+        holds(&env, r#"version("Unlisted.esp", "1.0", ==)"#),
+        Ok(false)
+    );
+    assert_eq!(holds(&env, r#"version("A.esp", "1.0", ==)"#), Ok(true));
+}
+
+#[test]
+fn a_plugin_that_cannot_be_read_is_a_condition_error() {
+    let dir = TempDir::new();
+    dir.file("Broken.esp", b"not a plugin");
+    let env = version_env(&dir, &["Broken.esp"]);
+    assert!(matches!(
+        holds(&env, r#"version("Broken.esp", "1.0", ==)"#),
+        Err(ConditionError::Environment(_))
+    ));
+}
+
+#[test]
+fn the_version_of_a_plugin_is_read_from_the_first_directory_that_has_it() {
+    let (game, staging) = layout();
+    described(&game, "Data/A.esp", "Version 1.0");
+    described(&staging, "extra/A.esp", "Version 2.0");
+    let env = FsEnv::new(&game.path().join("Data"), vec![slot("A.esp", true)])
+        .with_additional_data_dirs(&[staging.path().join("extra")]);
+    assert_eq!(holds(&env, r#"version("A.esp", "2.0", ==)"#), Ok(true));
+}
+
+#[test]
+fn a_ghosted_plugin_has_a_version() {
+    let dir = TempDir::new();
+    described(&dir, "A.esp.ghost", "Version 1.5");
+    let env = version_env(&dir, &["A.esp"]);
+    assert_eq!(holds(&env, r#"version("A.esp", "1.5", ==)"#), Ok(true));
+}
+
+#[test]
+fn a_malformed_plugin_version_call_is_a_syntax_error() {
+    let dir = TempDir::new();
+    described(&dir, "A.esp", "Version 1.0");
+    let env = version_env(&dir, &["A.esp"]);
+    for text in [
+        r#"version("A.esp", "1.0")"#,
+        r#"version("A.esp", "1.0", "1.0")"#,
+        r#"version("A.esp", "1.0", =~)"#,
+    ] {
+        assert!(
+            matches!(holds(&env, text), Err(ConditionError::Syntax(_))),
+            "{text}"
+        );
+    }
+}
+
+#[cfg(not(feature = "executable-versions"))]
+#[test]
+fn product_version_of_a_plugin_stays_unsupported() {
+    let dir = TempDir::new();
+    described(&dir, "A.esp", "Version 1.0");
+    let env = version_env(&dir, &["A.esp"]);
+    assert_eq!(
+        holds(&env, r#"product_version("A.esp", "1.0", ==)"#),
+        Err(ConditionError::Unsupported("product_version".into()))
+    );
+}

@@ -1,7 +1,7 @@
 globals:
   - type: say
     content: 'hidden by an unsupported function'
-    condition: 'version("A.esp", ==, "1.0")'
+    condition: 'product_version("A.esp", ==, "1.0")'
 plugins:
   - name: 'A.esp'
     msg:
@@ -19,4 +19,4 @@ plugins:
         condition: 'filename_version("A (.+).esp", ==, "1")'
     req:
       - name: 'Missing.esp'
-        condition: 'version("Missing.esp", >=, "2")'
+        condition: 'product_version("Missing.esp", >=, "2")'

@@ -70,3 +70,12 @@ The messages are those that LOOT's application generates when it checks an insta
 `src/gui/sourced_message.cpp` and `readBashTagsFile` and `getTagConflicts` in `src/gui/state/game/helpers.cpp` of
 [LOOT](https://github.com/loot/loot) (GPL-3.0-or-later, Copyright (C) Oliver Hamlet), with their English texts, for
 Fallout: New Vegas. The checks of other games are left out. The file says so in its header.
+
+## `src/version.rs` (GPL-3.0-or-later, ported from libloot and loot-condition-interpreter)
+
+`extract_version` is a port of the function of that name in libloot (version 0.29.7, `src/plugin/mod.rs`,
+GPL-3.0-or-later, Copyright (C) the libloot authors): the expressions and their order are libloot's, `\d` is written
+`[0-9]` because libloot's ECMAScript expressions match ASCII digits only. The comparison of versions is a port of
+`Version` in `loot-condition-interpreter` (version 6.0.0, `src/function/version.rs`, MIT, Copyright (C) the LOOT
+authors), whose type is private to that crate. The tests in `src/version_tests.rs` are libloot's own tests of
+`extract_version` and cases of the interpreter's, translated. Neither crate is a dependency of the default build.

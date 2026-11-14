@@ -21,4 +21,4 @@ plugins:
     msg:
       - type: say
         content: 'version unknown'
-        condition: 'version("B.esp", ==, "1")'
+        condition: 'product_version("B.esp", ==, "1")'

@@ -15,7 +15,7 @@
 //! A plugin stored as `Name.esp.ghost` (or `.esm.ghost`) counts as `Name.esp`, as in libloot. Two names in one
 //! directory that differ only in case are matched in sorted order and reported by [`FsEnv::case_warnings`].
 
-use crate::condition::{ConditionError, Env};
+use crate::condition::{Arg, ConditionError, Env};
 use crate::metadata::{compile_whole_name, looks_like_regex};
 use crate::plugin;
 use std::cell::RefCell;
@@ -392,19 +392,61 @@ impl Env for FsEnv {
         path.is_file().then(|| crc32_file(&path).ok()).flatten()
     }
 
-    #[cfg(feature = "executable-versions")]
-    fn version_call(
-        &self,
-        name: &str,
-        args: &[crate::condition::Arg],
-    ) -> Result<bool, ConditionError> {
-        use crate::condition::Arg;
+    fn version_call(&self, name: &str, args: &[Arg]) -> Result<bool, ConditionError> {
         let Some(Arg::Str(path)) = args.first() else {
             return Err(ConditionError::Syntax(format!(
                 "{name}() expects a quoted string as argument 1"
             )));
         };
-        crate::exe_version::evaluate(name, args, self.resolve(path).as_deref())
+        if name == "version" && has_plugin_extension(unghosted(path)) {
+            return self.plugin_version(path, args);
+        }
+        #[cfg(feature = "executable-versions")]
+        {
+            crate::exe_version::evaluate(name, args, self.resolve(path).as_deref())
+        }
+        #[cfg(not(feature = "executable-versions"))]
+        {
+            Err(ConditionError::Unsupported(name.to_string()))
+        }
+    }
+}
+
+impl FsEnv {
+    /// `version(plugin, version, operator)` (or with the operator second): the plugin's version is the one its
+    /// description gives ([`crate::version::extract_version`]), compared as LOOT compares versions. As in libloot,
+    /// a plugin that is not in the load order or not installed, one whose description gives no version, is false;
+    /// a plugin that cannot be read is an error.
+    fn plugin_version(&self, path: &str, args: &[Arg]) -> Result<bool, ConditionError> {
+        let syntax = |text: &str| ConditionError::Syntax(format!("version() {text}"));
+        if args.len() != 3 {
+            return Err(syntax("takes 3 arguments"));
+        }
+        let ((Arg::Str(given), Arg::Word(operator)) | (Arg::Word(operator), Arg::Str(given))) =
+            (&args[1], &args[2])
+        else {
+            return Err(syntax("needs a quoted version and a comparison operator"));
+        };
+        if crate::version::compare("0", operator, "0").is_none() {
+            return Err(syntax("has an unknown comparison operator"));
+        }
+        let file = path.rsplit('/').next().unwrap_or(path);
+        let name = unghosted(file);
+        let Some(resolved) = self
+            .resolve(path)
+            .filter(|resolved| resolved.is_file() && self.position(name).is_some())
+        else {
+            return Ok(false);
+        };
+        let header = plugin::read_header(&resolved).map_err(|error| {
+            ConditionError::Environment(format!("{}: {error}", resolved.display()))
+        })?;
+        Ok(header
+            .description
+            .as_deref()
+            .and_then(crate::version::extract_version)
+            .and_then(|actual| crate::version::compare(&actual, operator, given))
+            .unwrap_or(false))
     }
 }
 

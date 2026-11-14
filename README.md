@@ -65,8 +65,8 @@ the game directory) read the file's PE version resource and compare it with LOOT
 default build does not contain it. The interpreter depends on `esplugin` (GPL-3.0), which is why the feature is
 off by default; this project is GPL-3.0 as well. A file that does not exist makes the condition false, as in
 LOOT; a file that is not a PE image, or whose headers are out of bounds, is a condition error (the item is not
-applied). The file is read once with every size checked and the interpreter is given only the validated version block, in a minimal image in a private temporary directory. Plugins (`.esp`, `.esm`) are still unsupported for `version()`: their version is in the description
-field. Every size read from the file is checked before the interpreter sees it, see
+applied). The file is read once with every size checked and the interpreter is given only the validated version block, in a minimal image in a private temporary directory. `version()` on a plugin (`.esp`, `.esm`) needs no feature: it is read from the description field by this crate's own
+port of libloot's rules (`src/version.rs`). Every size read from the file is checked before the interpreter sees it, see
 [docs/RESOURCE-LIMITS.md](docs/RESOURCE-LIMITS.md).
 
 ## What it does NOT do
@@ -79,7 +79,7 @@ field. Every size read from the file is checked before the interpreter sees it, 
   and `version` and `product_version` are implemented only for executables and DLLs and only when built with the
   cargo feature `executable-versions` (below). An item guarded by an unimplemented one is not applied and is
   reported as unsupported (with a count at the end); it is never guessed. They are common: on a synthetic list of
-  400 plugin names taken from the current New Vegas masterlist, 53 items were skipped for `version()`.
+  400 plugin names taken from the current New Vegas masterlist, 53 items were skipped for `version()` (before `version()` on plugins was evaluated; not re-measured).
 * `dirty` / `clean` are read as data; CRCs are not compared and no cleaning messages are produced.
 * No userlist, no prelude replacement, no `url`, no localised message selection (English is used), no Markdown
   rendering, no metadata merging across masterlist and userlist.
@@ -127,9 +127,9 @@ skipped with a warning instead of matching wrongly.
 
 ## Open questions
 
-* `loot-condition-interpreter` is used only for executable and DLL versions, behind a cargo feature, and our own
-  evaluator stays the default so the limits stay visible. Should it also serve `version()` on plugins (the
-  version in the description field, which the interpreter takes from a map the caller fills)?
+* `loot-condition-interpreter` is used only for executable and DLL versions, behind a cargo feature. `version()` on
+  plugins is evaluated by this crate (a port of libloot's `extract_version` and of the interpreter's version
+  comparison, MIT and GPL-3.0 notices in `NOTICE.md`), so the default build gains no dependency.
 * Group violations are soft by default and hard with `--strict-groups`; see [docs/GROUPS.md](docs/GROUPS.md).
   Open: applying LOOT's dropping of group edges before reporting.
 * A golden comparison against LOOT's real report for one profile (run under MO2 or Wine) is the way to find

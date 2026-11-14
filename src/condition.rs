@@ -3,10 +3,10 @@
 //! Syntax reference: <https://loot-api.readthedocs.io/en/latest/metadata/conditions.html>.
 //!
 //! Supported functions: `file`, `active`, `many`, `many_active`, `file_size`, `readable`,
-//! `is_master` and `checksum`, combined with `and`, `or`, `not` and parentheses (`not` binds
-//! tightest, then `and`, then `or`). Functions that need version parsing, executable resources
-//! or plugin descriptions (`version`, `product_version`, `filename_version`,
-//! `description_contains`, `is_executable`) parse, but evaluate to
+//! `is_master`, `checksum` and (on plugins) `version`, combined with `and`, `or`, `not` and parentheses (`not` binds
+//! tightest, then `and`, then `or`). Functions that need executable resources, file name versions
+//! or plugin descriptions (`version` on a file that is not a plugin without the `executable-versions` feature,
+//! `product_version`, `filename_version`, `description_contains`, `is_executable`) parse, but evaluate to
 //! [`ConditionError::Unsupported`]: they are never guessed.
 //!
 //! A condition may be at most [`MAX_CONDITION_BYTES`] long, nest at most [`MAX_NESTING`] parentheses or `not`s and hold at most [`MAX_NODES`]
@@ -388,8 +388,9 @@ pub fn parse(text: &str) -> Result<Expr, ConditionError> {
 }
 
 /// Functions that exist in LOOT but are not implemented here. `version` and `product_version` are the
-/// exception that the `executable-versions` feature makes for executables and DLLs; on plugins they stay
-/// unsupported either way.
+/// exception that the `executable-versions` feature makes for executables and DLLs. `version` on a plugin is
+/// evaluated from its description in every build ([`crate::version`]); `product_version` on a plugin stays
+/// unsupported.
 pub const UNSUPPORTED_FUNCTIONS: [&str; 5] = [
     "version",
     "product_version",

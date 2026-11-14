@@ -19,10 +19,12 @@ def subrecord(kind: bytes, payload: bytes) -> bytes:
     return kind + struct.pack("<H", len(payload)) + payload
 
 
-def synthetic_plugin(flags: int, masters: list[str]) -> bytes:
-    """The bytes of loot_rs::plugin::synthetic_plugin(flags, masters, None)."""
+def synthetic_plugin(flags: int, masters: list[str], description: str | None = None) -> bytes:
+    """The bytes of loot_rs::plugin::synthetic_plugin(flags, masters, description)."""
     data = subrecord(b"HEDR", struct.pack("<fII", 1.34, 0, 0x800))
     data += subrecord(b"CNAM", b"tester\0")
+    if description is not None:
+        data += subrecord(b"SNAM", description.encode("latin-1") + b"\0")
     for master in masters:
         data += subrecord(b"MAST", master.encode("latin-1") + b"\0")
         data += subrecord(b"DATA", struct.pack("<Q", 0))
@@ -30,11 +32,11 @@ def synthetic_plugin(flags: int, masters: list[str]) -> bytes:
     return header + data
 
 
-def synthetic_records(flags: int, masters: list[str], form_ids: list[int]) -> bytes:
+def synthetic_records(flags: int, masters: list[str], form_ids: list[int], description: str | None = None) -> bytes:
     """The bytes of loot_rs::records::synthetic_records(flags, masters, &[(*b"NPC_", records of size 0)])."""
     body = b"".join(b"NPC_" + struct.pack("<IIIQ", 0, 0, form_id, 0)[:12] + b"\0" * 8 for form_id in form_ids)
     group = b"GRUP" + struct.pack("<I", 24 + len(body)) + b"NPC_" + b"\0" * 12 + body
-    return synthetic_plugin(flags, masters) + group
+    return synthetic_plugin(flags, masters, description) + group
 
 
 def synthetic_bsa(folders: list[tuple[str, list[str]]]) -> bytes:
