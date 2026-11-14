@@ -75,3 +75,10 @@ path = "fuzz_targets/plugin_records.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "archive_tables"
+path = "fuzz_targets/archive_tables.rs"
+test = false
+doc = false
+bench = false

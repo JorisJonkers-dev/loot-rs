@@ -65,8 +65,8 @@ The algorithm is libloot's (see [COMPATIBILITY.md](COMPATIBILITY.md) for what is
 3. Edges from groups: a plugin in a group loads before the plugins of groups that load after it, each edge only when it
    closes no cycle (found with libloot's depth-first search order).
 4. Overlap edges: of two plugins that have a record in common, the one that overrides more records loads first (the
-   record ids are read from the plugin files); then of two that load the same archive paths, the one that loads more.
-   **Archive data is not read yet**, so only the record overlap applies.
+   record ids are read from the plugin files); failing that, of two that load a file with the same path from their
+   BSA archives, the one that loads more files. The plugin files are read for this, and the archives' tables.
 5. Tie-break edges that keep the current load order wherever nothing above forbids it, and a topological sort. A plugin
    therefore moves only for a reason, and sorting a sorted order changes nothing.
 

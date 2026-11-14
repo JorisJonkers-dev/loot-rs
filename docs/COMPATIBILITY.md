@@ -65,13 +65,14 @@ cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACL
 | Group edges: depth-first searches of the group graph, roots first by longest path, skipped when they would close a cycle, the `default` group last | supported | Same code path as libloot, including which edges are skipped. A group `after` a group nobody defined has that edge ignored, a plugin in an undefined group gets no group edges (libloot refuses both with an error; the finding is in `check`) |
 | Cycle among groups | supported | `SortError::GroupCycle` (LOOT refuses it too) |
 | Record overlap edges | supported | The record ids of every installed plugin are read (`src/records.rs`, FormIDs resolved against the plugin's masters as esplugin does): the plugin that overrides more records loads first when two plugins have a record in common. A plugin whose records cannot be read is noted and counts as having none |
-| Asset (archive) overlap edges | partial | The graph code is ported and tested; the archive (BSA) contents are not read yet, so these edges are absent. A load order where two plugins load the same archive paths can come out in another order than LOOT's |
+| Asset (archive) overlap edges | supported | A plugin loads the BSA files of `Data` whose names begin with its name (case ignored, as libloot does for New Vegas); their folder and file names are read from the tables (version 103, 104 and 105; never the data). Of two plugins that load a file with the same path, the one that loads more files goes first, unless records decide. An archive that cannot be read is noted and skipped. Archives in additional data paths and `.ba2` archives are not looked at |
 | Tie-break edges and pinning | supported | |
 | Topological sort | supported | petgraph's depth-first topological sort, reproduced |
 | Messages LOOT's application generates while sorting (missing masters, inactive requirements, dirty plugins) | unsupported | |
 
 Everything here is Fallout: New Vegas only. Differences that follow from what is not supported are listed above;
-there are no others known.
+there are no others known. One thing is not verified: no run against a real libloot has been made, see
+[ORACLE.md](ORACLE.md); the port is checked against libloot's own unit tests and its documentation.
 
 ## Condition language
 

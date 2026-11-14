@@ -107,9 +107,8 @@ def compare(ours: dict, loot: dict) -> list[str]:
                 1 for i, a in enumerate(names) for b in names[i + 1:] if position[a.lower()] > position[b.lower()]
             )
             differences.append(f"info: {apart} of {len(names) * (len(names) - 1) // 2} plugin pairs are in a different order")
-            # loot-rs sort ports LOOT's algorithm, so the same plugins in the same order should come out. (Until the
-            # record and archive overlap data is read, a real load order whose plugins change the same records can
-            # differ: see docs/COMPATIBILITY.md.)
+            # loot-rs sort ports LOOT's algorithm and reads the same record and archive data, so the same plugins
+            # in the same order should come out (docs/COMPATIBILITY.md).
             ours_order = [name.lower() for name in ours["sorted"]]
             loot_order = [name.lower() for name in loot["sorted"]]
             if sorted(ours_order) == sorted(loot_order) and ours_order != loot_order:

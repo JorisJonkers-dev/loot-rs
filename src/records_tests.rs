@@ -1,6 +1,7 @@
 //! Unit tests of `records`: the record ids of synthetic plugins and the overlap between them.
 
 use super::*;
+use crate::overlap::KeySets;
 use std::io::Cursor;
 
 fn read(
@@ -69,14 +70,10 @@ fn the_same_record_has_the_same_key_in_the_plugin_that_adds_it_and_the_one_that_
     .expect("reads");
     assert_eq!(budget, 100 - 3);
     assert_eq!((base.overridden, patch.overridden), (0, 1));
-    let overlaps = RecordOverlaps::new(vec![base.keys, patch.keys, Vec::new()]);
-    assert!(overlaps.records(0, 1) && overlaps.records(1, 0));
-    assert!(!overlaps.records(0, 2) && !overlaps.records(2, 1));
-    assert!(
-        !overlaps.records(0, 9),
-        "an unknown plugin overlaps nothing"
-    );
-    assert!(!overlaps.assets(0, 1));
+    let overlaps = KeySets::new(vec![base.keys, patch.keys, Vec::new()]);
+    assert!(overlaps.share(0, 1) && overlaps.share(1, 0));
+    assert!(!overlaps.share(0, 2) && !overlaps.share(2, 1));
+    assert!(!overlaps.share(0, 9), "an unknown plugin overlaps nothing");
     assert!(overlaps.work() > 0);
 }
 
@@ -88,13 +85,13 @@ fn plugins_that_add_records_with_the_same_object_do_not_overlap() {
     let mut budget = 100;
     let a = read(one, "a.esp", &[], &mut names, &mut budget).expect("reads");
     let b = read(two, "b.esp", &[], &mut names, &mut budget).expect("reads");
-    assert!(!RecordOverlaps::new(vec![a.keys, b.keys]).records(0, 1));
+    assert!(!KeySets::new(vec![a.keys, b.keys]).share(0, 1));
 }
 
 #[test]
 fn overlap_is_found_by_search_when_one_plugin_is_much_smaller_and_by_merging_otherwise() {
     let large: Vec<u64> = (0..1000).map(|object| object << 32).collect();
-    let overlaps = RecordOverlaps::new(vec![
+    let overlaps = KeySets::new(vec![
         large.clone(),
         vec![500 << 32],
         vec![5000 << 32],
@@ -102,23 +99,23 @@ fn overlap_is_found_by_search_when_one_plugin_is_much_smaller_and_by_merging_oth
         vec![999 << 32, 2000 << 32],
         large,
     ]);
-    assert!(overlaps.records(0, 1));
+    assert!(overlaps.share(0, 1));
     assert!(
-        !overlaps.records(0, 2),
+        !overlaps.share(0, 2),
         "past the end of the other plugin's range"
     );
-    assert!(!overlaps.records(0, 3), "same objects, different owners");
-    assert!(overlaps.records(0, 4));
-    assert!(overlaps.records(0, 5), "merged: equal sizes");
-    assert!(!overlaps.records(5, 3));
-    assert!(!RecordOverlaps::new(vec![vec![1, 2, 3], vec![5 << 32]]).records(0, 1));
-    assert!(!RecordOverlaps::default().records(0, 0));
+    assert!(!overlaps.share(0, 3), "same objects, different owners");
+    assert!(overlaps.share(0, 4));
+    assert!(overlaps.share(0, 5), "merged: equal sizes");
+    assert!(!overlaps.share(5, 3));
+    assert!(!KeySets::new(vec![vec![1, 2, 3], vec![5 << 32]]).share(0, 1));
+    assert!(!KeySets::default().share(0, 0));
     // A gap in the middle that a range check does not catch.
-    let gap = RecordOverlaps::new(vec![
+    let gap = KeySets::new(vec![
         vec![1 << 32, 9 << 32],
         vec![2 << 32, 3 << 32, 4 << 32],
     ]);
-    assert!(!gap.records(0, 1));
+    assert!(!gap.share(0, 1));
 }
 
 #[test]

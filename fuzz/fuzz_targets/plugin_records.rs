@@ -2,8 +2,8 @@
 
 use libfuzzer_sys::arbitrary::Unstructured;
 use libfuzzer_sys::fuzz_target;
-use loot_rs::records::{read_records_from, NameIds, RecordOverlaps, MAX_RECORDS_TOTAL};
-use loot_rs::sort::Overlaps;
+use loot_rs::overlap::KeySets;
+use loot_rs::records::{read_records_from, NameIds, MAX_RECORDS_TOTAL};
 use std::io::Cursor;
 
 // Any bytes as a plugin: an error, or sorted keys, a count of overridden records that fits, and a budget that went
@@ -31,6 +31,6 @@ fuzz_target!(|data: &[u8]| {
     assert!(records.keys.windows(2).all(|pair| pair[0] <= pair[1]));
     assert!(records.overridden <= records.keys.len());
     assert_eq!(budget, MAX_RECORDS_TOTAL - records.keys.len());
-    let overlaps = RecordOverlaps::new(vec![records.keys.clone(), records.keys]);
-    assert_eq!(overlaps.records(0, 1), overlaps.records(1, 0));
+    let overlaps = KeySets::new(vec![records.keys.clone(), records.keys]);
+    assert_eq!(overlaps.share(0, 1), overlaps.share(1, 0));
 });

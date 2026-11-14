@@ -1,6 +1,7 @@
 //! The bounds of the sorter on the largest input it accepts: each case below has 1024 plugins and must finish
 //! quickly, in little memory, either with an order or with an error. See `docs/RESOURCE-LIMITS.md`.
 
+use loot_rs::archives::{ArchiveError, PathIds, read_archive_from, synthetic_bsa};
 use loot_rs::records::{MAX_RECORDS_PER_PLUGIN, NameIds, RecordsError, read_records_from};
 use loot_rs::sort::{GraphError, GroupInput, MAX_PLUGINS, Overlaps, PluginInput, sort};
 use std::io::{self, Read, Seek, SeekFrom};
@@ -104,6 +105,7 @@ fn the_largest_load_order_is_sorted_or_refused_quickly_and_in_little_memory() {
         );
     }
     a_plugin_with_endless_records_is_refused_at_the_limit_in_little_memory();
+    an_archive_that_announces_millions_of_folders_is_refused_without_reading_them();
 }
 
 /// A plugin that never ends: a header, one group, then records of 24 bytes without data, for ever.
@@ -173,4 +175,28 @@ fn a_plugin_with_endless_records_is_refused_at_the_limit_in_little_memory() {
     // The keys of the records that were kept: eight bytes each, plus what the vector grew by.
     assert!(peak < MAX_RECORDS_PER_PLUGIN * 8 * 3, "peak {peak} bytes");
     assert!(elapsed < Duration::from_secs(120), "took {elapsed:?}");
+}
+
+/// Called from the test above, for the same reason.
+fn an_archive_that_announces_millions_of_folders_is_refused_without_reading_them() {
+    let mut bytes = synthetic_bsa(104, &[("a", &["x"])]);
+    bytes[16..20].copy_from_slice(&4_000_000u32.to_le_bytes());
+    bytes[20..24].copy_from_slice(&4_000_000u32.to_le_bytes());
+    let (result, peak, elapsed) = measure(|| {
+        let mut keys = Vec::new();
+        read_archive_from(
+            io::Cursor::new(&bytes),
+            u64::MAX / 4,
+            &mut PathIds::default(),
+            &mut keys,
+            &mut usize::MAX.clone(),
+        )
+    });
+    println!(
+        "archive announcing folders: peak {} KiB in {elapsed:?}",
+        peak / 1024
+    );
+    assert!(matches!(result, Err(ArchiveError::TooMuch)), "{result:?}");
+    assert!(peak < 8 * 1024 * 1024, "peak {peak} bytes");
+    assert!(elapsed < Duration::from_secs(10), "took {elapsed:?}");
 }
