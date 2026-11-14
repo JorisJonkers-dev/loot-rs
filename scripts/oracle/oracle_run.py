@@ -2,10 +2,12 @@
 """oracle-run: run loot-rs on the owner's real load orders and compare it with libloot, keeping the output private.
 
     scripts/oracle/oracle_run.py --config ~/.config/nvmod/oracle.toml [--dataset NAME ...]
+    scripts/oracle/oracle_run.py --esplugin --config ~/.config/nvmod/oracle.toml [--dataset NAME ...]
     scripts/oracle/oracle_run.py --selftest
 
 Local only. It reads plugin HEADERS (the TES4 record) and directory listings; it never reads the body of a plugin or
-of any other game file, never writes to the game or to an MO2 instance, and never writes into a git work tree.
+of any other game file (`--esplugin` also has the esplugin-diff program read the record headers of each plugin, to
+compare record keys, but not the field data), never writes to the game or to an MO2 instance, and never writes into a git work tree.
 
 The config lives outside every repository (default ~/.config/nvmod/oracle.toml) and holds the paths:
 
@@ -14,6 +16,8 @@ The config lives outside every repository (default ~/.config/nvmod/oracle.toml) 
     masterlist = "/path/to/masterlist.yaml"
     libloot_driver = "/path/to/libloot-driver"          # the Rust driver of this repository (task oracle:random builds it)
     driver     = "python3 /path/to/loot_driver.py"      # alternative: libloot's Python bindings must be installed
+
+    esplugin_diff = "/path/to/esplugin-diff"            # for --esplugin: scripts/oracle/esplugin-diff, built with cargo build --release
 
     [oracle]                                            # optional
     perturbations = 20                                  # per dataset: also compare N seeded perturbations of the order
@@ -397,12 +401,52 @@ def expand_variants(datasets: dict) -> dict:
     return expanded
 
 
-def execute(config_path: Path, only: list[str]) -> int:
+def esplugin_dataset(label: str, dataset: dict, tools: dict, run_dir: Path) -> dict:
+    """Headers and record keys of one dataset, loot-rs's readers against esplugin's (the `esplugin-diff` program).
+    The program prints counts only; its detail (with names) goes to a file under L2."""
+    l2 = run_dir / "l2" / label
+    l2.mkdir(parents=True)
+    names = variant_names(dataset, read_names(Path(dataset["plugins"])))
+    facts = stage(dataset, names, l2 / "stage")
+    (l2 / "missing.txt").write_text("\n".join(facts["missing"]) + "\n")
+    digest = hashlib.sha256(
+        "\n".join(f"{n.lower()} {facts['digests'][n]}" for n in sorted(facts["found"], key=str.lower)).encode()).hexdigest()
+    result = {"id": f"ds-{short(label)}", "present": len(facts["found"]), "missing": len(facts["missing"]),
+              "dataset_digest": digest, "status": "error", "n_plugins": 0, "n_header_differences": 0,
+              "n_record_differences": 0}
+    env = {**os.environ, "ESPLUGIN_DIFF_DETAIL": str(l2 / "esplugin-differences.txt")}
+    try:
+        done = subprocess.run([*shlex.split(tools["esplugin_diff"]), str(l2 / "stage" / "Data")], input="\n".join(facts["found"]),
+                              capture_output=True, text=True, check=False, env=env)
+        counts = json.loads(done.stdout)
+        for key in ("n_plugins", "n_header_differences", "n_record_differences"):
+            if not isinstance(counts[key], int) or isinstance(counts[key], bool) or counts[key] < 0:
+                raise ValueError(key)
+            result[key] = counts[key]
+    except (OSError, ValueError, KeyError) as error:
+        (l2 / "error.txt").write_text(f"{error}\n")
+        return result
+    result["status"] = "fail" if result["n_header_differences"] or result["n_record_differences"] else "pass"
+    return result
+
+
+def esplugin_status(results: list[dict]) -> dict:
+    """L0 of the esplugin comparison: the status and three counts, nothing else."""
+    statuses = {r["status"] for r in results}
+    status = "fail" if statuses & {"fail", "error"} else "pass"
+    if status == "pass" and any(r["missing"] for r in results):
+        status = "partial"
+    return {"suite": "headers-vs-esplugin", "status": status, "n_plugins": sum(r["n_plugins"] for r in results),
+            "n_header_differences": sum(r["n_header_differences"] for r in results),
+            "n_record_differences": sum(r["n_record_differences"] for r in results)}
+
+
+def execute(config_path: Path, only: list[str], esplugin: bool = False) -> int:
     import tomllib
     guard_write_location(config_path, "the config file")  # paths never belong in a repository
     config = tomllib.loads(config_path.read_text())
     tools = config.get("tools", {})
-    for key in ("loot_rs", "masterlist"):
+    for key in ("esplugin_diff",) if esplugin else ("loot_rs", "masterlist"):
         if not tools.get(key):
             raise Refused(f"[tools] {key} is missing from the config")
     datasets = expand_variants(config.get("dataset", {}))
@@ -417,6 +461,14 @@ def execute(config_path: Path, only: list[str]) -> int:
     run_dir = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(3))
     run_dir.mkdir(parents=True, mode=0o700)
     root.chmod(0o700)
+    if esplugin:
+        results = [esplugin_dataset(label, dataset, tools, run_dir) for label, dataset in chosen.items()]
+        public = esplugin_status(results)
+        write_private(run_dir / "l1.json", {"run": run_dir.name, "datasets": results})
+        write_private(run_dir / "l0.json", public)
+        print(json.dumps(public, sort_keys=True))
+        print(f"full detail: {run_dir}/l2 (local only)", file=sys.stderr)
+        return {"pass": 0, "fail": 1, "partial": 4}[public["status"]]
     seed = setting("ORACLE_SEED", config.get("oracle", {}).get("seed"), DEFAULT_SEED)
     default_count = config.get("oracle", {}).get("perturbations", 0)
     results = [one_dataset(label, dataset, tools, run_dir, setting("ORACLE_PERTURBATIONS", dataset.get("perturbations"),
@@ -435,9 +487,11 @@ def main(argv: list[str]) -> int:
     if argv == ["--selftest"]:
         selftest()
         return 0
-    config, only, args = DEFAULT_CONFIG, [], iter(argv)
+    config, only, args, esplugin = DEFAULT_CONFIG, [], iter(argv), False
     for arg in args:
-        if arg == "--config":
+        if arg == "--esplugin":
+            esplugin = True
+        elif arg == "--config":
             config = next(args, "")
         elif arg == "--dataset":
             only.append(next(args, ""))
@@ -445,7 +499,7 @@ def main(argv: list[str]) -> int:
             print(__doc__, file=sys.stderr)
             return 2
     try:
-        return execute(Path(os.path.expanduser(config)), only)
+        return execute(Path(os.path.expanduser(config)), only, esplugin)
     except (Refused, OSError, KeyError, ValueError) as error:
         print(f"oracle-run: {error}", file=sys.stderr)
         return 2
@@ -606,6 +660,31 @@ def selftest() -> None:
             with contextlib.redirect_stdout(io.StringIO()):
                 (tmp / "v2.toml").write_text(base_text + '\n[dataset.x]\nvariant_of = "nope"\n')
                 assert main(["--config", str(tmp / "v2.toml")]) == 2
+            # --esplugin: counts only on stdout and in L0/L1; the detail with names stays under L2
+            (tmp / "order.txt").write_text("FalloutNV.esm\nA.esp\nB.esp\n")
+            for counts, code in (('"n_plugins":3,"n_header_differences":0,"n_record_differences":0', 0),
+                                 ('"n_plugins":3,"n_header_differences":1,"n_record_differences":2', 1)):
+                tool = tmp / "esplugin-diff.sh"
+                tool.write_text(f"#!/bin/sh\ncat >/dev/null\necho 'A.esp: masters differ' >\"$ESPLUGIN_DIFF_DETAIL\"\necho '{{{counts}}}'\n")
+                tool.chmod(0o755)
+                (tmp / "e.toml").write_text(f'[tools]\nesplugin_diff = "{tool}"\n[output]\nroot = "{root}"\n[dataset.t]\n'
+                                            f'plugins = "{tmp / "order.txt"}"\ngame_path = "{game}"\nmods_dir = "{tmp / "mods"}"\n'
+                                            f'modlist = "{tmp / "modlist.txt"}"\n')
+                with contextlib.redirect_stdout(io.StringIO()) as esp:
+                    assert main(["--esplugin", "--config", str(tmp / "e.toml")]) == code
+                line = json.loads(esp.getvalue())
+                assert set(line) == {"suite", "status", "n_plugins", "n_header_differences", "n_record_differences"}, line
+                assert line["n_plugins"] == 3 and line["status"] == ("pass" if code == 0 else "fail")
+                blob = esp.getvalue() + (last_run() / "l0.json").read_text() + (last_run() / "l1.json").read_text()
+                for secret in ("A.esp", "B.esp", "FalloutNV", str(tmp)):
+                    assert secret not in blob, secret
+                assert "A.esp" in (last_run() / "l2" / "t" / "esplugin-differences.txt").read_text()
+            (tmp / "broken.sh").write_text("#!/bin/sh\necho nonsense\n")
+            (tmp / "broken.sh").chmod(0o755)
+            (tmp / "e2.toml").write_text((tmp / "e.toml").read_text().replace(str(tool), str(tmp / "broken.sh")))
+            with contextlib.redirect_stdout(io.StringIO()):
+                assert main(["--esplugin", "--config", str(tmp / "e2.toml")]) == 1  # an unreadable answer is never a pass
+                assert main(["--esplugin", "--config", str(config(agree))]) == 2  # [tools] esplugin_diff is missing
             assert compare_sorted(["a"], "error: x") != [] and compare_sorted("error: x", "error: y") == []
     print("oracle_run.py: selftest ok")
 

@@ -1,0 +1,19 @@
+# The esplugin side of the plugin comparison (docs/ORACLE.md): reads plugins with loot-rs's own readers and with
+# esplugin (the parser libloot uses) and reports where they disagree. Its own workspace: not part of loot-rs's
+# dependency tree (`cargo tree` of loot-rs is unchanged), not built by `cargo build` or by CI's default jobs, only by
+# `task oracle:esplugin` and by whoever runs the real-data comparison. esplugin is GPL-3.0, like this repository.
+[package]
+name = "esplugin-diff"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-only"
+
+[dependencies]
+esplugin = "=6.1.4"
+loot-rs = { path = "../../.." }
+
+[workspace]
+
+[profile.release]
+opt-level = 1

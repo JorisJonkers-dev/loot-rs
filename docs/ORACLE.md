@@ -61,6 +61,43 @@ graph (compared against the world, not against loot-rs). One more difference was
 loot-rs accepts `not not file("X")`, libloot's grammar does not (it refuses the whole masterlist); the generator
 therefore writes `not (...)`.
 
+### Plugin headers and record keys against esplugin
+
+libloot reads plugins with esplugin; `src/plugin.rs` (header) and `src/records.rs` (record keys and the overridden count
+that decide the overlap edges) are loot-rs's own. `scripts/oracle/esplugin-diff/` is a small crate with its own
+workspace (esplugin `=6.1.4`, GPL-3.0, and loot-rs by path; loot-rs's own dependency tree is unchanged, and CI's default
+jobs do not build it) that reads the same plugin with both and compares the master flag, the masters, the description,
+the header version, the record count, the number of override records (esplugin's `count_override_records`, libloot's
+`override_record_count`), and for every pair of plugins whether they share a record (`overlaps_with`, libloot's
+`do_records_overlap`) and how many of the records of one are in the other (`overlap_size`). The synthetic plugins are built
+with the repository's builders (`plugin::synthetic_plugin`) and the pieces the tests add for the corner cases: localised
+flag, compressed records, groups nested four deep, deleted records, a record whose master index is the plugin's own
+(and one past the list), more masters than the highest index used, repeated form ids, a record with form id 0, files
+that are not plugins, and 40 random sets of plugins.
+
+```sh
+task oracle:esplugin      # cargo test --release --manifest-path scripts/oracle/esplugin-diff/Cargo.toml
+```
+
+No difference was found in the meaning of the header or of the record keys (all of the above agree). Two known
+differences are pinned by tests, so that a change on either side is noticed: loot-rs refuses a plugin whose last record is cut off
+(esplugin seeks past the end of the file and reads what is there), and loot-rs reads description bytes as Latin-1 where
+esplugin decodes Windows-1252 (the bytes 0x80 to 0x9f differ; only the ASCII `{{BASH:..}}` tags are read from a
+description, so no result depends on it).
+
+On the real plugin files, `oracle_run.py --esplugin` (config key `[tools] esplugin_diff`, the built `esplugin-diff`
+program) stages each dataset as the sort mode does, runs the comparison on every plugin and every pair, and prints
+`{suite, status, n_plugins, n_header_differences, n_record_differences}` and nothing else; the differences with their
+names are in `l2/<dataset>/esplugin-differences.txt`. It reads the record headers of each plugin, not the field data.
+Invocation on the runner:
+
+```sh
+cargo build --release --manifest-path scripts/oracle/esplugin-diff/Cargo.toml
+python3 -I scripts/oracle/oracle_run.py --esplugin --config "$ORACLE_CONFIG"
+```
+
+It is not wired to the commit status; the private workflow runs the order comparison only.
+
 ## What is compared
 
 `loot-rs` reads a masterlist and reports what applies to a load order. LOOT's library, libloot
@@ -101,6 +138,7 @@ The pieces, all under `scripts/oracle/` (Python 3, standard library only):
 | `loot_driver.py` | the libloot side: opens the game directory with libloot's Python bindings (`loot_api`), loads the masterlist, loads the plugins (in full, because the sort uses their records), asks the database for the evaluated general messages and per-plugin metadata, runs LOOT's sort, and writes `loot.json` |
 | `compare.py` | compares `ours.json` (`loot-rs sort --json`) with `loot.json`; its header documents both shapes |
 | `run.py` | does all of it for one case, all cases, or a real load order, and keeps the JSON files under `--work` |
+| `esplugin-diff/` | loot-rs's header and record readers against esplugin (above) |
 | `random_diff.py`, `libloot-driver/` | the differential test on random load orders against the libloot crate (above) |
 
 ### On the synthetic cases (no game)

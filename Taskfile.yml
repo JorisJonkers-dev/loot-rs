@@ -88,6 +88,11 @@ tasks:
       - cargo build --release --manifest-path scripts/oracle/libloot-driver/Cargo.toml
       - python3 -I scripts/oracle/random_diff.py --loot-rs target/release/loot-rs --driver scripts/oracle/libloot-driver/target/release/libloot-driver --count {{.COUNT | default "300"}}
 
+  oracle:esplugin:
+    desc: Compare loot-rs's plugin header and record readers with esplugin on synthetic plugins (own workspace; needs network for the crates). Not part of check
+    cmds:
+      - cargo test --release --manifest-path scripts/oracle/esplugin-diff/Cargo.toml
+
   oracle:real:
     desc: Local only. Run loot-rs and libloot on the owner's real load order from ~/.config/nvmod/oracle.toml; prints the public status only
     cmds:
