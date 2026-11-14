@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.1.0...v0.2.0) (2026-11-14)
+
+
+### Features
+
+* **api:** emit schema_version in JSON and add helpers for a mod manager ([#24](https://github.com/JorisJonkers-dev/loot-rs/issues/24)) ([069b40a](https://github.com/JorisJonkers-dev/loot-rs/commit/069b40a3965918e025b79a81c28d49b58e970f21))
+* **oracle:** trigger the private real-data oracle after a merge and post digest/real-data ([#22](https://github.com/JorisJonkers-dev/loot-rs/issues/22)) ([2e9ac74](https://github.com/JorisJonkers-dev/loot-rs/commit/2e9ac740b144445bfe23ebcc286235396a98adac))
+
 ## 0.1.0 (2026-11-14)
 
 
