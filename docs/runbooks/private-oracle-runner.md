@@ -38,7 +38,9 @@ workflow can name its label. Do not register it anywhere else.
    at a masterlist you keep there, and each `[dataset.<name>]` at a pinned copy of the load order and files. Use a
    copy or a read-only mount of the data, not the live MO2 instance: the script never writes to it, but a runner has
    no reason to see it. Add `[oracle] perturbations = 20` and a `seed`, and variants (`variant_of`, `disable`) for the
-   subsets worth testing; the workflow's optional `perturbations` and `seed` inputs override them for one dispatch. Keep `[output] root` on the runner's disk; the L2 detail stays there and is never uploaded.
+   subsets worth testing; the workflow's optional `perturbations` and `seed` inputs override them for one dispatch. For the plugin comparison (`oracle_run.py --esplugin`) add `esplugin_diff` under `[tools]`, pointing at
+   `tool/scripts/oracle/esplugin-diff/target/release/esplugin-diff` after building it with `cargo build --release
+   --manifest-path scripts/oracle/esplugin-diff/Cargo.toml`. Keep `[output] root` on the runner's disk; the L2 detail stays there and is never uploaded.
 6. **Create two fine-grained tokens** and store them as secrets:
    * In `oracle-ci`: `ORACLE_STATUS_TOKEN`, repository access limited to the public repositories under test (today
      `JorisJonkers-dev/loot-rs`), permissions Commit statuses: write, Issues: write, Contents: read, Metadata: read.
