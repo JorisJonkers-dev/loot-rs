@@ -160,14 +160,54 @@ fn display_prints_the_canonical_text_and_parses_back() {
     let expr = parse(text).expect("parses");
     assert_eq!(
         expr.to_string(),
-        r#"file("a.esp") and ((not active("b.esp")) or checksum("c.esp", DEADBEEF))"#
+        r#"file("a.esp") and (not active("b.esp") or checksum("c.esp", DEADBEEF))"#
     );
     assert_eq!(parse(&expr.to_string()), Ok(expr));
     let loose = parse(r#"file("a") or file("b") and not file("c")"#).expect("parses");
     assert_eq!(
         loose.to_string(),
-        r#"file("a") or (file("b") and (not file("c")))"#
+        r#"file("a") or file("b") and not file("c")"#
     );
+}
+
+#[test]
+fn display_keeps_the_parentheses_that_the_grammar_needs_and_no_others() {
+    for (text, printed) in [
+        ("(a() or b()) and c()", "(a() or b()) and c()"),
+        ("a() and (b() and c())", "a() and (b() and c())"),
+        ("(a() and b()) and c()", "a() and b() and c()"),
+        ("a() or (b() or c())", "a() or (b() or c())"),
+        ("(a() or b()) or c()", "a() or b() or c()"),
+        ("not (a() or b())", "not (a() or b())"),
+        ("not (not a())", "not not a()"),
+        ("not (a() and b()) or c()", "not (a() and b()) or c()"),
+        (
+            "(a() and b()) or (c() and d())",
+            "a() and b() or c() and d()",
+        ),
+        ("a() and not b() and c()", "a() and not b() and c()"),
+    ] {
+        let expr = parse(text).expect("parses");
+        assert_eq!(expr.to_string(), printed, "{text}");
+        assert_eq!(parse(printed), Ok(expr), "{printed}");
+    }
+}
+
+#[test]
+fn a_long_chain_of_operators_prints_as_one_level_and_parses_back() {
+    // The fuzzer found that every operator of a chain printed as one more level of parentheses, so a condition
+    // that parsed (a chain is not nested) printed as text over the nesting limit.
+    let chain = (0..MAX_NESTING * 2)
+        .map(|index| format!("file(\"{index}.esp\")"))
+        .collect::<Vec<_>>()
+        .join(" or ");
+    let expr = parse(&chain).expect("a chain is not nested");
+    let printed = expr.to_string();
+    assert_eq!(printed, chain);
+    assert_eq!(parse(&printed), Ok(expr));
+    let nots = format!("{}file(\"a\")", "not ".repeat(MAX_NESTING - 1));
+    let expr = parse(&nots).expect("parses");
+    assert_eq!(parse(&expr.to_string()), Ok(expr));
 }
 
 #[test]
