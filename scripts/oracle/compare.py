@@ -76,6 +76,8 @@ def compare(ours: dict, loot: dict) -> list[str]:
         for key in ("tags_add", "tags_remove"):
             if key in theirs and sorted(mine[key]) != sorted(theirs[key]):
                 differences.append(f"{name}: {key} differ: loot-rs {sorted(mine[key])}, LOOT {sorted(theirs[key])}")
+        if "bash_tags" in theirs and sorted(mine.get("bash_tags", [])) != sorted(theirs["bash_tags"]):
+            differences.append(f"{name}: bash_tags differ: loot-rs {sorted(mine.get('bash_tags', []))}, LOOT {sorted(theirs['bash_tags'])}")
         if "group" in theirs and mine["group"] != theirs["group"]:
             differences.append(f"{name}: group differs: loot-rs {mine['group']!r}, LOOT {theirs['group']!r}")
     if "dirty" in loot:

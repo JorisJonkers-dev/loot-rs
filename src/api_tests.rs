@@ -547,3 +547,99 @@ fn records_win_over_archive_files_and_an_unreadable_archive_is_noted() {
     assert_eq!(output.warnings.len(), 1);
     assert!(output.warnings[0].starts_with("B.esp: archive B - Broken.bsa not read"));
 }
+
+#[test]
+fn messages_that_loot_generates_come_apart_from_the_masterlist_ones() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    dir.plugin("Off.esm", &[]);
+    dir.plugin("Patch.esp", &["Off.esm", "Gone.esm"]);
+    dir.file(
+        "Tagged.esp",
+        &synthetic_plugin(0, &[], Some("A mod.\n{{BASH:Delev, Relev}}")),
+    );
+    let yaml = "plugins:\n  - name: Patch.esp\n    msg:\n      - {type: say, content: 'From the masterlist'}\n";
+    let masterlist = Masterlist::parse(yaml).expect("masterlist");
+    let load_order = vec![
+        PluginSlot::new("FalloutNV.esm", true),
+        PluginSlot::new("Off.esm", false),
+        PluginSlot::new("Patch.esp", true),
+        PluginSlot::new("Tagged.esp", true),
+    ];
+    let output = sort(
+        &load_order,
+        &masterlist,
+        dir.path(),
+        &SortOptions::default(),
+    )
+    .expect("sorts");
+    let patch = output
+        .plugins
+        .iter()
+        .find(|p| p.name == "Patch.esp")
+        .expect("present");
+    assert_eq!(patch.messages.len(), 1);
+    assert_eq!(patch.messages[0].text, "From the masterlist");
+    let generated: Vec<(MessageKind, &str)> = patch
+        .generated_messages
+        .iter()
+        .map(|message| (message.kind, message.text.as_str()))
+        .collect();
+    assert_eq!(
+        generated,
+        [
+            (
+                MessageKind::Error,
+                "This plugin requires \\\"Off\\.esm\\\" to be active\\, but it is inactive\\."
+            ),
+            (
+                MessageKind::Error,
+                "This plugin requires \\\"Gone\\.esm\\\" to be installed\\, but it is missing\\."
+            ),
+        ]
+    );
+    let tagged = output
+        .plugins
+        .iter()
+        .find(|p| p.name == "Tagged.esp")
+        .expect("present");
+    assert_eq!(tagged.bash_tags, ["Delev", "Relev"]);
+    assert_eq!(tagged.generated_messages, []);
+    assert_eq!(output.generated_general_messages, []);
+}
+
+#[test]
+fn more_than_255_active_plugins_are_a_warning_about_the_load_order() {
+    let dir = TempDir::new();
+    let mut load_order = Vec::new();
+    for index in 0..256 {
+        let name = format!("P{index:03}.esp");
+        dir.plugin(&name, &[]);
+        load_order.push(PluginSlot::new(name, true));
+    }
+    let masterlist = Masterlist::parse("").expect("masterlist");
+    let output = sort(
+        &load_order,
+        &masterlist,
+        dir.path(),
+        &SortOptions::default(),
+    )
+    .expect("sorts");
+    assert_eq!(output.generated_general_messages.len(), 1);
+    assert_eq!(output.generated_general_messages[0].kind, MessageKind::Warn);
+    assert!(
+        output.generated_general_messages[0]
+            .text
+            .starts_with("You have 256 active plugins")
+    );
+    // The same plugins, one of them inactive: no warning.
+    load_order[0] = PluginSlot::new("P000.esp", false);
+    let output = sort(
+        &load_order,
+        &masterlist,
+        dir.path(),
+        &SortOptions::default(),
+    )
+    .expect("sorts");
+    assert_eq!(output.generated_general_messages, []);
+}

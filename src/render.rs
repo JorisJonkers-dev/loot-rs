@@ -221,7 +221,11 @@ pub fn render_sort(result: &SortOutput) -> String {
             if plugin.active { "" } else { " (inactive)" }
         );
     }
-    for message in &result.general_messages {
+    for message in result
+        .general_messages
+        .iter()
+        .chain(&result.generated_general_messages)
+    {
         let _ = writeln!(
             out,
             "\n{}: {}",
@@ -231,6 +235,7 @@ pub fn render_sort(result: &SortOutput) -> String {
     }
     for plugin in &result.plugins {
         let quiet = plugin.messages.is_empty()
+            && plugin.generated_messages.is_empty()
             && plugin.tags_added.is_empty()
             && plugin.tags_removed.is_empty()
             && plugin.findings.is_empty();
@@ -238,7 +243,7 @@ pub fn render_sort(result: &SortOutput) -> String {
             continue;
         }
         let _ = writeln!(out, "\n{} (group \"{}\")", plugin.name, plugin.group);
-        for message in &plugin.messages {
+        for message in plugin.messages.iter().chain(&plugin.generated_messages) {
             let _ = writeln!(
                 out,
                 "  {}: {}",
@@ -301,14 +306,21 @@ fn finding_label(kind: crate::api::FindingKind) -> &'static str {
 /// The result of a sort as one line of JSON, in the shape of [`render_json`] plus the sort.
 ///
 /// Keys: `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
-/// `messages`, `tags_add`, `tags_remove`, `findings`), `dirty`, `rules` (`before`, `after`, `source`),
-/// `dropped_group_rules` (`later`, `earlier`), `not_installed`, `warnings`, `hard_violations`.
+/// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `findings`), `generated_general_messages`,
+/// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
+/// `warnings`, `hard_violations`.
 #[must_use]
 pub fn render_sort_json(result: &SortOutput) -> String {
     let mut out = String::from("{\"sorted\":");
     json_strings(&mut out, &result.order);
     out.push_str(",\"general_messages\":");
     json_list(&mut out, &result.general_messages, json_api_message);
+    out.push_str(",\"generated_general_messages\":");
+    json_list(
+        &mut out,
+        &result.generated_general_messages,
+        json_api_message,
+    );
     out.push_str(",\"plugins\":");
     json_list(&mut out, &result.plugins, |out, plugin| {
         out.push_str("{\"name\":");
@@ -321,6 +333,10 @@ pub fn render_sort_json(result: &SortOutput) -> String {
         json_string(out, &plugin.group);
         out.push_str(",\"messages\":");
         json_list(out, &plugin.messages, json_api_message);
+        out.push_str(",\"generated_messages\":");
+        json_list(out, &plugin.generated_messages, json_api_message);
+        out.push_str(",\"bash_tags\":");
+        json_strings(out, &plugin.bash_tags);
         out.push_str(",\"tags_add\":");
         json_strings(out, &plugin.tags_added);
         out.push_str(",\"tags_remove\":");

@@ -16,8 +16,9 @@ two should agree on:
 | What | loot-rs | libloot (names as in the public API documentation; check them against the release used) |
 | --- | --- | --- |
 | General messages | `general_messages` | the database's general messages, with conditions evaluated |
-| Messages per plugin | `plugins[].messages` | the plugin's metadata from the database, conditions evaluated, including the messages LOOT generates itself from `req`, `inc` and the like |
+| Messages per plugin | `plugins[].messages` | the plugin's metadata from the database, conditions evaluated |
 | Bash Tags | `tags_add`, `tags_remove` | the plugin's metadata tags, conditions evaluated |
+| Bash Tags in the description | `bash_tags` | the plugin's `bash_tags()` |
 | Group | `plugins[].group` | the plugin's group as resolved by the database |
 | Ordering constraints | `rules` of `loot-rs sort`, load-after findings of `check` | the order a LOOT sort produces |
 | Cleaning data | `dirty` | the plugin metadata's dirty and clean info whose CRC is the installed file's |
@@ -32,8 +33,8 @@ Known, expected differences (not bugs): `loot-rs` does not implement `filename_v
 executables and DLLs with the cargo feature `executable-versions` (build with `--features executable-versions` for the
 comparison), so other items that use them are reported as unsupported and left out (see
 [TESTING.md](TESTING.md)); LOOT localises and renders Markdown in messages, `loot-rs` keeps the English text with
-substitutions applied; LOOT adds messages of its own (for example about missing masters or inactive requirements)
-that `loot-rs` does not generate.
+substitutions applied; LOOT's application adds messages of its own (missing masters, inactive requirements, dirty plugins); libloot does
+not, so they are in `generated_messages` and are not compared with libloot's output.
 
 ## How to run it
 
