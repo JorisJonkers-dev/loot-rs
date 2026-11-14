@@ -21,16 +21,21 @@
 //! 5. Tie-break edges that join the plugins in the current load order wherever that closes no cycle, which leaves
 //!    one possible order, and the topological sort that returns it.
 //!
+//! [`sort_minimal`] is the other mode: it keeps the given order wherever no hard constraint is violated and moves
+//! the fewest plugins that fix the violations (see the `minimal` module for the algorithm and its proof).
+//!
 //! The graph keeps a matrix of the paths it knows of and searches from both ends, as libloot does, because the
 //! edges it ends up with (and so the order) depend on which paths are found. The work is counted and bounded
 //! ([`MAX_PLUGINS`], [`WORK_BUDGET`]).
 
 mod groups;
+mod minimal;
 mod plugins;
 mod search;
 
 use std::fmt;
 
+pub use minimal::{COMPONENT_BUDGET, Move as MinimalMove, Repaired};
 use plugins::{PluginGraph, Vertex};
 
 /// Name of the group every plugin is in unless the masterlist says otherwise.
@@ -296,6 +301,102 @@ pub fn sort(
         skipped,
         unique,
     })
+}
+
+/// Keep the given order and move as few plugins as possible so that every hard constraint holds.
+///
+/// The hard constraints are: plugins with the master flag before the others, the header masters, the masterlist's
+/// `req` and `after` files, and the early loaders first. With `with_groups` the group edges that libloot's sort
+/// adds (the group rules it can satisfy without a cycle) are hard too. The full sort is run first, so the same
+/// errors are returned, and so that the constraints are known to be consistent.
+///
+/// The result satisfies every one of those constraints, which libloot's order satisfies too, and a given order that
+/// violates none is returned unchanged. `moves` says which constraint class forced each move.
+///
+/// # Errors
+/// The errors of [`sort`].
+pub fn sort_minimal(
+    plugins: &[PluginInput],
+    groups: &[GroupInput],
+    early_loading: &[String],
+    overlaps: &dyn Overlaps,
+    with_groups: bool,
+) -> Result<Repaired, GraphError> {
+    let full = sort(plugins, groups, early_loading, overlaps)?;
+    let mut constraints = direct_constraints(plugins, early_loading);
+    if with_groups {
+        constraints.extend(
+            full.edges
+                .iter()
+                .filter(|edge| edge.kind == EdgeType::MasterlistGroup)
+                .copied(),
+        );
+    }
+    let is_master: Vec<bool> = plugins.iter().map(|plugin| plugin.is_master).collect();
+    minimal::repair(&is_master, &constraints)
+}
+
+/// The constraints the metadata states directly: header masters, `req`, `after` and the early loaders (each before
+/// everything else of its kind).
+fn direct_constraints(plugins: &[PluginInput], early_loading: &[String]) -> Vec<SortedEdge> {
+    let mut by_name: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
+    for (index, plugin) in plugins.iter().enumerate() {
+        by_name.entry(lower(&plugin.name)).or_insert(index);
+    }
+    let mut edges = Vec::new();
+    for (index, plugin) in plugins.iter().enumerate() {
+        let lists = [
+            (&plugin.masters, EdgeType::Master),
+            (&plugin.requirements, EdgeType::MasterlistRequirement),
+            (&plugin.load_after, EdgeType::MasterlistLoadAfter),
+        ];
+        for (names, kind) in lists {
+            for name in names {
+                let other = by_name.get(&lower(name)).copied().filter(|&o| o != index);
+                if let Some(other) = other {
+                    edges.push(SortedEdge {
+                        from: other,
+                        to: index,
+                        kind,
+                    });
+                }
+            }
+        }
+    }
+    for is_master in [true, false] {
+        let mut early: Vec<(usize, usize)> = Vec::new();
+        let mut others = Vec::new();
+        for (index, plugin) in plugins.iter().enumerate() {
+            if plugin.is_master != is_master {
+                continue;
+            }
+            let position = early_loading
+                .iter()
+                .position(|name| lower(name) == lower(&plugin.name));
+            match position {
+                Some(position) => early.push((position, index)),
+                None => others.push(index),
+            }
+        }
+        early.sort_unstable();
+        for pair in early.windows(2) {
+            edges.push(SortedEdge {
+                from: pair[0].1,
+                to: pair[1].1,
+                kind: EdgeType::Hardcoded,
+            });
+        }
+        if let Some(&(_, last)) = early.last() {
+            for other in others {
+                edges.push(SortedEdge {
+                    from: last,
+                    to: other,
+                    kind: EdgeType::Hardcoded,
+                });
+            }
+        }
+    }
+    edges
 }
 
 /// The metadata that asks for a plugin without the master flag to load before one with it.

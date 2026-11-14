@@ -4,7 +4,8 @@ mod common;
 
 use common::Fixture;
 use loot_rs::api::{
-    CleaningStatus, FindingKind, Masterlist, MessageKind, PluginSlot, SortError, SortOptions, sort,
+    CleaningStatus, FindingKind, Masterlist, MessageKind, MoveReason, PluginSlot, SortError,
+    SortMode, SortOptions, sort,
 };
 use loot_rs::env::crc32;
 use loot_rs::plugin::synthetic_plugin;
@@ -224,4 +225,55 @@ fn a_mod_manager_reads_a_plugin_header_and_places_what_is_not_installed() {
     assert_eq!(header.masters, ["Base.esp"]);
     assert_eq!(MessageKind::Warn.label(), "warn");
     assert_eq!(FindingKind::LoadAfter.label(), "load after");
+}
+
+#[test]
+fn the_default_mode_is_the_full_sort_and_reports_no_moves() {
+    let fixture = world();
+    let masterlist = Masterlist::parse(MASTERLIST).expect("masterlist");
+    let options = SortOptions::default();
+    assert_eq!(options.mode, SortMode::Full);
+    let result = sort(&load_order(), &masterlist, &fixture.data(), &options).expect("sort");
+    assert_eq!(result.mode, SortMode::Full);
+    assert_eq!(result.moves.len(), 0);
+}
+
+#[test]
+fn minimal_change_moves_only_the_plugins_a_hard_constraint_forces_and_says_why() {
+    let fixture = world();
+    let masterlist = Masterlist::parse(MASTERLIST).expect("masterlist");
+    let options = SortOptions::default().with_mode(SortMode::MinimalChange);
+    let result = sort(&load_order(), &masterlist, &fixture.data(), &options).expect("sort");
+    assert_eq!(result.mode, SortMode::MinimalChange);
+    // FalloutNV.esm has to come first and Base.esp before Patch.esp: two moves, Other.esp stays where it was.
+    assert_eq!(result.moves.len(), 2, "{:?}", result.moves);
+    let at = |name: &str| {
+        result
+            .order
+            .iter()
+            .position(|n| n == name)
+            .expect("present")
+    };
+    assert_eq!(at("FalloutNV.esm"), 0);
+    assert!(at("Base.esp") < at("Patch.esp"));
+    let first = result
+        .moves
+        .iter()
+        .find(|m| m.plugin == "FalloutNV.esm")
+        .expect("moved");
+    assert_eq!(
+        (first.from, first.to, first.reason),
+        (3, 0, MoveReason::MasterFlag)
+    );
+    assert!(result.moves.iter().all(|m| m.from != m.to));
+    let sorted = result.order.clone();
+    // The result is a valid order, so sorting it again moves nothing.
+    let again: Vec<PluginSlot> = sorted
+        .iter()
+        .map(|name| PluginSlot::new(name.clone(), true))
+        .collect();
+    let second = sort(&again, &masterlist, &fixture.data(), &options).expect("sort");
+    assert_eq!(second.order, sorted);
+    assert_eq!(second.moves.len(), 0);
+    assert!(!second.changed(&again));
 }

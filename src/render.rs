@@ -305,6 +305,25 @@ pub fn render_sort(result: &SortOutput) -> String {
             );
         }
     }
+    if result.mode == crate::api::SortMode::MinimalChange {
+        let _ = writeln!(
+            out,
+            "\nMinimal-change sort: {} plugin(s) moved",
+            result.moves.len()
+        );
+        for moved in &result.moves {
+            let _ = writeln!(
+                out,
+                "  {} moved from {} to {}: {} constraint with {}{}",
+                moved.plugin,
+                moved.from + 1,
+                moved.to + 1,
+                moved.reason.label(),
+                moved.other,
+                if moved.indirect { " (indirect)" } else { "" }
+            );
+        }
+    }
     for (later, earlier) in &result.dropped_group_rules {
         let _ = writeln!(
             out,
@@ -333,7 +352,8 @@ fn finding_label(kind: crate::api::FindingKind) -> &'static str {
 /// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `contract` (`loot-sort`), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
 /// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `findings`), `generated_general_messages`,
 /// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
-/// `warnings`, `hard_violations`.
+/// `warnings`, `hard_violations`. A minimal-change sort adds `mode` (`minimal`) and `moves` (`plugin`, `from`, `to`,
+/// `reason`, `other`, `indirect`) before `hard_violations`; a full sort writes neither.
 #[must_use]
 pub fn render_sort_json(result: &SortOutput) -> String {
     let mut out = format!(
@@ -424,6 +444,7 @@ pub fn render_sort_json(result: &SortOutput) -> String {
     json_strings(&mut out, &result.not_installed);
     out.push_str(",\"warnings\":");
     json_strings(&mut out, &result.warnings);
+    json_moves(&mut out, result);
     let hard = result
         .plugins
         .iter()
@@ -432,6 +453,27 @@ pub fn render_sort_json(result: &SortOutput) -> String {
         .count();
     let _ = writeln!(out, ",\"hard_violations\":{hard}}}");
     out
+}
+
+/// The optional keys `mode` and `moves`, written for a minimal-change sort only.
+fn json_moves(out: &mut String, result: &SortOutput) {
+    if result.mode != crate::api::SortMode::MinimalChange {
+        return;
+    }
+    let _ = write!(out, ",\"mode\":\"{}\",\"moves\":", result.mode.label());
+    json_list(out, &result.moves, |out, moved| {
+        out.push_str("{\"plugin\":");
+        json_string(out, &moved.plugin);
+        let _ = write!(
+            out,
+            ",\"from\":{},\"to\":{},\"reason\":\"{}\",\"other\":",
+            moved.from,
+            moved.to,
+            moved.reason.label()
+        );
+        json_string(out, &moved.other);
+        let _ = write!(out, ",\"indirect\":{}}}", moved.indirect);
+    });
 }
 
 fn json_api_message(out: &mut String, message: &crate::api::Message) {

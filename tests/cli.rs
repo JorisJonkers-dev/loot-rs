@@ -308,3 +308,60 @@ fn bad_arguments_and_unreadable_input_exit_2() {
     assert_eq!(code, 2);
     assert!(err.contains("masterlist: YAML"), "{err}");
 }
+
+fn sort_with(fixture: &Fixture, extra: &[&str]) -> (i32, String, String) {
+    let masterlist = fixture.masterlist("plugins:\n  - name: 'A.esp'\n    after: ['B.esp']\n");
+    let plugins = fixture.plugins_txt("FalloutNV.esm\nD.esp\nA.esp\nB.esp\nEarly.esp\n");
+    let data = fixture.data();
+    let mut args = vec![
+        "sort",
+        "--masterlist",
+        masterlist.to_str().expect("utf8"),
+        "--plugins",
+        plugins.to_str().expect("utf8"),
+        "--data",
+        data.to_str().expect("utf8"),
+    ];
+    args.extend_from_slice(extra);
+    let output = run(&args);
+    (
+        output.status.code().expect("exit code"),
+        String::from_utf8_lossy(&output.stdout).into_owned(),
+        String::from_utf8_lossy(&output.stderr).into_owned(),
+    )
+}
+
+#[test]
+fn sort_mode_minimal_moves_one_plugin_and_names_the_constraint_in_text_and_json() {
+    let fixture = game();
+    let (code, text, _) = sort_with(&fixture, &["--mode", "minimal"]);
+    assert_eq!(code, 0, "{text}");
+    assert!(
+        text.contains("Minimal-change sort: 1 plugin(s) moved"),
+        "{text}"
+    );
+    assert!(text.contains("after constraint with"), "{text}");
+    let (_, json, _) = sort_with(&fixture, &["--mode", "minimal", "--json"]);
+    assert!(
+        json.contains("\"mode\":\"minimal\",\"moves\":[{\"plugin\":"),
+        "{json}"
+    );
+    assert!(json.contains("\"reason\":\"after\""), "{json}");
+    let sorted = json.find("\"sorted\":").expect("sorted");
+    let (a, b) = (
+        json.find("\"A.esp\"").expect("A"),
+        json.find("\"B.esp\"").expect("B"),
+    );
+    assert!(sorted < b && b < a, "B.esp is listed before A.esp: {json}");
+}
+
+#[test]
+fn sort_json_without_a_mode_has_neither_mode_nor_moves_and_a_bad_mode_is_refused() {
+    let fixture = game();
+    let (_, json, _) = sort_with(&fixture, &["--json"]);
+    assert!(!json.contains("\"moves\""), "{json}");
+    assert!(!json.contains("\"mode\""), "{json}");
+    let (code, _, error) = sort_with(&fixture, &["--mode", "quick"]);
+    assert_eq!(code, 2);
+    assert!(error.contains("--mode needs full or minimal"), "{error}");
+}

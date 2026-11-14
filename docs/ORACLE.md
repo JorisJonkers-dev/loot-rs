@@ -31,6 +31,14 @@ sort differently when their records and archives are removed, so the comparison 
 group walk and the tie-break pinning. A world in which libloot refuses (a cycle) is one where `loot-rs` refuses too.
 This is the evidence for `docs/COMPATIBILITY.md`'s claim that the sort is libloot's.
 
+The same run checks the minimal-change mode (`loot-rs sort --mode minimal`), which libloot does not have, with libloot as
+the oracle for constraint satisfaction: on every world the result must satisfy every hard constraint (master flag,
+header masters, `req`, `after`, `FalloutNV.esm` first) that libloot's order satisfies, report a reason for each move, move
+no more plugins than libloot's order displaces (the given order minus its longest common subsequence with libloot's), and
+return libloot's own order unchanged with no moves. A violation is counted as a "minimal-change difference" and fails the
+run. On 2026-11-14, 600 worlds (seed 7, up to 12 plugins): 0 differences; across 150 other worlds the minimal mode made 320
+moves where libloot's order displaces 479 plugins. Real-data numbers come only from the oracle on the owner's runner.
+
 ### Messages, Bash Tags, groups and cleaning data
 
 The worlds also carry what a mod manager shows next to the order: conditions (`file`, `active`, `many`, `many_active`,
