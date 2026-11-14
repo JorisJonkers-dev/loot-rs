@@ -23,6 +23,16 @@ on:
         description: Commit on that repository's default branch
         required: true
         type: string
+      perturbations:
+        description: Seeded perturbations of each load order to compare as well (empty uses the runner's config)
+        required: false
+        default: ""
+        type: string
+      seed:
+        description: Seed of the perturbations (empty uses the runner's config)
+        required: false
+        default: ""
+        type: string
 
 # One job at a time on the one runner; a second dispatch waits instead of failing.
 concurrency:
@@ -70,6 +80,9 @@ jobs:
         working-directory: tool
         env:
           ORACLE_TOOL_SHA: ${{ inputs.sha }}
+          # Digits only (oracle_run.py refuses anything else); empty falls back to [oracle] in the runner's config.
+          ORACLE_PERTURBATIONS: ${{ inputs.perturbations }}
+          ORACLE_SEED: ${{ inputs.seed }}
         run: |
           set -uo pipefail
           l0="$RUNNER_TEMP/l0.json"

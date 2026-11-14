@@ -15,6 +15,10 @@ The config lives outside every repository (default ~/.config/nvmod/oracle.toml) 
     libloot_driver = "/path/to/libloot-driver"          # the Rust driver of this repository (task oracle:random builds it)
     driver     = "python3 /path/to/loot_driver.py"      # alternative: libloot's Python bindings must be installed
 
+    [oracle]                                            # optional
+    perturbations = 20                                  # per dataset: also compare N seeded perturbations of the order
+    seed          = 1                                   # (ORACLE_PERTURBATIONS and ORACLE_SEED override both)
+
     [output]
     root = "~/.local/share/nvmod-oracle"                # optional; this is the default
 
@@ -23,6 +27,11 @@ The config lives outside every repository (default ~/.config/nvmod/oracle.toml) 
     game_path = "/path/to/Fallout New Vegas"            # its Data/ is searched last
     mods_dir  = "/path/to/mods"                         # optional (MO2): <mods_dir>/<mod>/ searched by priority ...
     modlist   = "/path/to/profiles/Name/modlist.txt"    # ... as ordered and enabled ("+") in this file
+    perturbations = 5                                   # optional: this dataset only
+
+    [dataset.ttw-lite]                                  # a variant: the same plugin set with a subset enabled
+    variant_of = "ttw"                                  # takes every key of [dataset.ttw]
+    disable    = ["Some Plugin.esp"]                    # and/or: enabled_only = "/path/to/names.txt"
 
 Plugins that are in the load order but found nowhere are listed as missing and left out of both runs, so a partial
 install is compared on what is there (the counts say how partial). Nothing is compared when there is no driver.
@@ -43,6 +52,7 @@ loot-rs reads headers and file lists only.
 import hashlib
 import json
 import os
+import random
 import secrets
 import shlex
 import subprocess
@@ -179,10 +189,89 @@ def compare_sorted(ours: object, theirs: object) -> list[str]:
             f"(loot-rs {ours[first:first + 3]}, libloot {theirs[first:first + 3]})"]
 
 
-def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path) -> dict:
+PERTURBATION_KINDS = ("permutation", "reversed", "rotation")
+DEFAULT_SEED = 1
+
+
+def is_master_name(name: str) -> bool:
+    return name.lower().endswith((".esm", ".esl"))
+
+
+def perturbed_orders(order: list[str], masters: set[str], count: int, seed: int, label: str) -> list[tuple[str, list[str]]]:
+    """`count` reproducible perturbations of `order`, kinds in turn: a random permutation, the reversed order, and a
+    rotation of the non-master block (the masters stay where they are). Each is a permutation of the same plugins."""
+    result = []
+    for index in range(count):
+        kind = PERTURBATION_KINDS[index % len(PERTURBATION_KINDS)]
+        rng = random.Random(f"{seed}:{label}:{index}")
+        if kind == "permutation":
+            changed = list(order)
+            rng.shuffle(changed)
+        elif kind == "reversed":
+            changed = order[::-1]
+        else:
+            firsts = [name for name in order if name in masters]
+            rest = [name for name in order if name not in masters]
+            turn = rng.randrange(1, len(rest)) if len(rest) > 1 else 0
+            changed = firsts + rest[turn:] + rest[:turn]
+        result.append((kind, changed))
+    return result
+
+
+def variant_names(dataset: dict, names: list[str]) -> list[str]:
+    """The plugins of a variant: `disable` (a list of names) removes plugins, `enabled_only` (a file of names) keeps
+    only those. The same plugin set with a subset enabled, in the order of the base file."""
+    if dataset.get("enabled_only"):
+        keep = {name.lower() for name in read_names(Path(dataset["enabled_only"]))}
+        names = [name for name in names if name.lower() in keep]
+    drop = {str(name).lower() for name in dataset.get("disable", [])}
+    return [name for name in names if name.lower() not in drop]
+
+
+def compare_order(tools: dict, stage_root: Path, order: list[str], found: list[str], plugins: Path, work: Path) -> dict:
+    """Run both tools on one load order. Returns {status, lines, sorted, digest}; the details go under `work` (L2)."""
+    work.mkdir(parents=True, exist_ok=True)
+    masterlist = Path(tools["masterlist"])
+    outcome: dict = {"status": "error", "lines": [], "sorted": 0, "digest": ""}
+    try:
+        ours: object = run.run_ours(tools["loot_rs"], stage_root / "Data", masterlist, plugins, [])
+    except RuntimeError as error:
+        (work / "ours-error.txt").write_text(f"{error}\n")  # may contain names: L2 only
+        ours = f"error: {error}"
+    except (OSError, ValueError) as error:
+        (work / "error.txt").write_text(f"{error}\n")
+        return outcome
+    if isinstance(ours, dict):
+        (work / "ours.json").write_text(json.dumps(ours, indent=1))
+        outcome["sorted"] = len(ours.get("sorted", []))
+        outcome["digest"] = hashlib.sha256(json.dumps(ours.get("sorted", [])).encode()).hexdigest()
+    lines: list[str] | None = None
+    try:
+        if tools.get("libloot_driver"):
+            theirs = sort_libloot(tools["libloot_driver"], stage_root, work / "local", masterlist, order)
+            (work / "libloot-sorted.json").write_text(json.dumps(theirs, indent=1))
+            lines = compare_sorted(ours["sorted"] if isinstance(ours, dict) else ours, theirs)
+        elif tools.get("driver") and isinstance(ours, dict):
+            loot = run.run_driver(tools["driver"], stage_root, masterlist, plugins)
+            if loot is not None:
+                (work / "loot.json").write_text(json.dumps(loot, indent=1))
+                lines = compare.compare(ours, loot)
+    except (RuntimeError, OSError, ValueError) as error:
+        (work / "error.txt").write_text(f"{error}\n")
+        return outcome
+    if lines is None:
+        outcome["status"] = "skipped"
+        return outcome
+    (work / "differences.txt").write_text("\n".join(lines) + "\n")
+    outcome["lines"] = lines
+    outcome["status"] = "fail" if [line for line in lines if not line.startswith(("note:", "info:"))] else "pass"
+    return outcome
+
+
+def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path, perturbations: int = 0, seed: int = DEFAULT_SEED) -> dict:
     l2 = run_dir / "l2" / label
     l2.mkdir(parents=True)
-    names = read_names(Path(dataset["plugins"]))
+    names = variant_names(dataset, read_names(Path(dataset["plugins"])))
     facts = stage(dataset, names, l2 / "stage")
     (l2 / "missing.txt").write_text("\n".join(facts["missing"]) + "\n")
     (l2 / "found.txt").write_text("\n".join(facts["found"]) + "\n")
@@ -190,46 +279,44 @@ def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path) -> dict:
         "\n".join(f"{n.lower()} {facts['digests'][n]}" for n in sorted(facts["found"], key=str.lower)).encode()).hexdigest()
     result = {"id": f"ds-{short(label)}", "in_order": len(names), "present": len(facts["found"]),
               "missing": len(facts["missing"]), "archives": len(facts["archives"]), "dataset_digest": dataset_digest,
-              "status": "error", "differences": 0, "notes": 0, "sorted": 0, "categories": {}, "difference_ids": []}
+              "status": "error", "differences": 0, "notes": 0, "sorted": 0, "categories": {}, "difference_ids": [],
+              "seed": seed, "n_perturbations": 0, "n_differences": 0, "perturbation_status": {},
+              "perturbation_kinds": {}, "perturbation_digests": []}
     stage_root = l2 / "stage"
-    masterlist, plugins = Path(tools["masterlist"]), stage_root / "plugins.txt"
-    try:
-        ours: object = run.run_ours(tools["loot_rs"], stage_root / "Data", masterlist, plugins, [])
-    except RuntimeError as error:
-        (l2 / "ours-error.txt").write_text(f"{error}\n")  # may contain names: L2 only
-        ours = f"error: {error}"
-    except (OSError, ValueError) as error:
-        (l2 / "error.txt").write_text(f"{error}\n")
+    base = compare_order(tools, stage_root, facts["found"], facts["found"], stage_root / "plugins.txt", l2)
+    result["sorted"] = base["sorted"]
+    if base["digest"]:
+        result["ours_digest"] = base["digest"]
+    if base["status"] in ("error", "skipped"):
+        result["status"] = base["status"]
         return result
-    if isinstance(ours, dict):
-        (l2 / "ours.json").write_text(json.dumps(ours, indent=1))
-        result["sorted"] = len(ours.get("sorted", []))
-        result["ours_digest"] = hashlib.sha256(json.dumps(ours.get("sorted", [])).encode()).hexdigest()
-    lines: list[str] | None = None
-    try:
-        if tools.get("libloot_driver"):
-            theirs = sort_libloot(tools["libloot_driver"], stage_root, l2 / "local", masterlist, facts["found"])
-            (l2 / "libloot-sorted.json").write_text(json.dumps(theirs, indent=1))
-            lines = compare_sorted(ours["sorted"] if isinstance(ours, dict) else ours, theirs)
-        elif tools.get("driver") and isinstance(ours, dict):
-            loot = run.run_driver(tools["driver"], stage_root, masterlist, plugins)
-            if loot is not None:
-                (l2 / "loot.json").write_text(json.dumps(loot, indent=1))
-                lines = compare.compare(ours, loot)
-    except (RuntimeError, OSError, ValueError) as error:
-        (l2 / "error.txt").write_text(f"{error}\n")
-        return result
-    if lines is None:
-        result["status"] = "skipped"
-        return result
-    (l2 / "differences.txt").write_text("\n".join(lines) + "\n")
-    counted = [line for line in lines if not line.startswith(("note:", "info:"))]
+    counted = [line for line in base["lines"] if not line.startswith(("note:", "info:"))]
     result["differences"] = len(counted)
-    result["notes"] = len(lines) - len(counted)
+    result["notes"] = len(base["lines"]) - len(counted)
     for line in counted:
         result["categories"][category(line)] = result["categories"].get(category(line), 0) + 1
     result["difference_ids"] = [short(line) for line in counted]
-    result["status"] = "fail" if counted else "pass"
+    result["status"] = base["status"]
+    result["n_differences"] = len(counted)
+    masters = {name for name in facts["found"] if is_master_name(name)}
+    for index, (kind, order) in enumerate(perturbed_orders(facts["found"], masters, perturbations, seed, label)):
+        work = l2 / "perturbed" / f"{index:03d}-{kind}"  # the perturbed orders are written under L2 only
+        work.mkdir(parents=True)
+        plugins = work / "plugins.txt"
+        plugins.write_text("\n".join(order) + "\n")
+        outcome = compare_order(tools, stage_root, order, order, plugins, work)
+        diffs = [line for line in outcome["lines"] if not line.startswith(("note:", "info:"))]
+        result["n_perturbations"] += 1
+        result["n_differences"] += len(diffs)
+        result["perturbation_status"][outcome["status"]] = result["perturbation_status"].get(outcome["status"], 0) + 1
+        kinds = result["perturbation_kinds"].setdefault(kind, {})
+        kinds[outcome["status"]] = kinds.get(outcome["status"], 0) + 1
+        result["perturbation_digests"].append(outcome["digest"])
+        if outcome["status"] != "pass":
+            if outcome["status"] == "fail" and result["status"] != "error":
+                result["status"] = "fail"
+            elif outcome["status"] != "fail":
+                result["status"] = "error"
     return result
 
 
@@ -238,16 +325,41 @@ def public_status(results: list[dict], version: str) -> dict:
     status = "fail" if statuses & {"fail", "error"} else "skipped" if "skipped" in statuses or not results else "pass"
     if status == "pass" and any(r["missing"] for r in results):
         status = "partial"  # compared and equal, but on fewer plugins than the load order has: never a green gate
-    digest = hashlib.sha256(json.dumps([[r["dataset_digest"], r.get("ours_digest", ""), r["differences"], r["status"]]
+    digest = hashlib.sha256(json.dumps([[r["dataset_digest"], r.get("ours_digest", ""), r["differences"], r["status"], r["seed"],
+                                         r["n_perturbations"], r["n_differences"], r["perturbation_digests"]]
                                         for r in results], sort_keys=True).encode()).hexdigest()
     return {"suite": "load-order-vs-libloot", "status": status, "n_datasets": len(results),
             "n_plugins": sum(r["present"] for r in results), "n_missing": sum(r["missing"] for r in results),
-            "n_differences": sum(r["differences"] for r in results), "digest": digest, "tool": version}
+            "n_differences": sum(r["n_differences"] for r in results), "digest": digest, "tool": version}
 
 
 def write_private(path: Path, data) -> None:
     path.write_text(json.dumps(data, indent=1, sort_keys=True) + "\n")
     path.chmod(0o600)
+
+
+def setting(env: str, configured: object, default: int) -> int:
+    """A non-negative integer: the environment variable (the private workflow's dispatch input) over the config."""
+    value = os.environ.get(env) or configured
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool) or not str(value).isdigit() or int(value) > 10**6:
+        raise Refused(f"{env} (or its config key) is not a small non-negative integer")
+    return int(value)
+
+
+def expand_variants(datasets: dict) -> dict:
+    """A dataset with `variant_of = "<other>"` takes every key of that dataset (same plugin set, paths) and overrides
+    what it sets itself, usually `disable = [...]` or `enabled_only = "<file>"`."""
+    expanded = {}
+    for label, dataset in datasets.items():
+        base = dataset.get("variant_of")
+        if base is not None:
+            if base not in datasets or datasets[base].get("variant_of") is not None:
+                raise Refused(f"dataset {short(label)}: variant_of must name a dataset that is not itself a variant")
+            dataset = {**datasets[base], **{k: v for k, v in dataset.items() if k != "variant_of"}}
+        expanded[label] = dataset
+    return expanded
 
 
 def execute(config_path: Path, only: list[str]) -> int:
@@ -258,7 +370,7 @@ def execute(config_path: Path, only: list[str]) -> int:
     for key in ("loot_rs", "masterlist"):
         if not tools.get(key):
             raise Refused(f"[tools] {key} is missing from the config")
-    datasets = config.get("dataset", {})
+    datasets = expand_variants(config.get("dataset", {}))
     chosen = {k: v for k, v in datasets.items() if not only or k in only}
     if not chosen or (only and set(only) - set(datasets)):
         raise Refused("no such dataset in the config")
@@ -270,7 +382,11 @@ def execute(config_path: Path, only: list[str]) -> int:
     run_dir = root / (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + secrets.token_hex(3))
     run_dir.mkdir(parents=True, mode=0o700)
     root.chmod(0o700)
-    results = [one_dataset(label, dataset, tools, run_dir) for label, dataset in chosen.items()]
+    seed = setting("ORACLE_SEED", config.get("oracle", {}).get("seed"), DEFAULT_SEED)
+    default_count = config.get("oracle", {}).get("perturbations", 0)
+    results = [one_dataset(label, dataset, tools, run_dir, setting("ORACLE_PERTURBATIONS", dataset.get("perturbations"),
+                                                                 default_count), seed)
+               for label, dataset in chosen.items()]
     version = os.environ.get("ORACLE_TOOL_SHA", "unknown")
     public = public_status(results, version)
     write_private(run_dir / "l1.json", {"run": run_dir.name, "datasets": results, "tool": version})
@@ -307,6 +423,19 @@ def selftest() -> None:
         git = tmp / "repo"
         (git / ".git").mkdir(parents=True)
         assert inside_git_worktree(git / "sub" / "deeper") and not inside_git_worktree(tmp / "outside")
+        names = ["Base.esm", "Two.esm", *[f"P{i}.esp" for i in range(8)]]
+        masters = {"Base.esm", "Two.esm"}
+        first = perturbed_orders(names, masters, 9, 3, "x")
+        assert first == perturbed_orders(names, masters, 9, 3, "x") != perturbed_orders(names, masters, 9, 4, "x")
+        assert [kind for kind, _ in first[:3]] == list(PERTURBATION_KINDS)
+        for kind, order in first:
+            assert sorted(order) == sorted(names), kind  # a permutation of the same plugin set
+        assert first[1][1] == names[::-1]
+        for kind, order in first:
+            if kind == "rotation":
+                assert order[:2] == ["Base.esm", "Two.esm"] and order != names  # masters stay, the rest rotates
+        assert perturbed_orders(names, masters, 0, 3, "x") == []
+        assert variant_names({"disable": ["p1.ESP"]}, ["P0.esp", "P1.esp"]) == ["P0.esp"]
 
         def plugin(path: Path, extra: bytes = b"") -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -352,7 +481,7 @@ def selftest() -> None:
             return path
 
         def last_run() -> Path:
-            return sorted(root.iterdir())[-1]
+            return max(root.iterdir(), key=lambda d: d.stat().st_mtime_ns)
 
         import contextlib
         import io
@@ -385,6 +514,46 @@ def selftest() -> None:
             with contextlib.redirect_stdout(io.StringIO()) as full:
                 assert main(["--config", str(config(agree))]) == 0
             assert json.loads(full.getvalue())["status"] == "pass"
+            # perturbations: complete order, 20 seeded perturbations fed to both tools
+            base_text = config(None, native=native).read_text()
+            (tmp / "p.toml").write_text(base_text.replace("[output]", "[oracle]\nperturbations = 20\nseed = 7\n\n[output]"))
+            with contextlib.redirect_stdout(io.StringIO()) as perturbed:
+                assert main(["--config", str(tmp / "p.toml")]) == 0
+            l1 = json.loads((last_run() / "l1.json").read_text())["datasets"][0]
+            assert (l1["n_perturbations"], l1["n_differences"], l1["status"], l1["seed"]) == (20, 0, "pass", 7)
+            assert l1["perturbation_status"] == {"pass": 20} and set(l1["perturbation_kinds"]) == set(PERTURBATION_KINDS)
+            blob = perturbed.getvalue() + (last_run() / "l0.json").read_text() + (last_run() / "l1.json").read_text()
+            for secret in ("A.esp", "B.esp", "FalloutNV", str(tmp)):
+                assert secret not in blob, secret
+            assert len(list((last_run() / "l2" / "t" / "perturbed").iterdir())) == 20
+            digest = json.loads(perturbed.getvalue())["digest"]
+            with contextlib.redirect_stdout(io.StringIO()) as again:
+                assert main(["--config", str(tmp / "p.toml")]) == 0
+            assert json.loads(again.getvalue())["digest"] == digest  # reproducible
+            (tmp / "p2.toml").write_text((tmp / "p.toml").read_text().replace("seed = 7", "seed = 8"))
+            with contextlib.redirect_stdout(io.StringIO()) as reseeded:
+                assert main(["--config", str(tmp / "p2.toml")]) == 0
+            assert json.loads(reseeded.getvalue())["digest"] != digest  # the seed is part of the digest
+            (tmp / "p3.toml").write_text(base_text.replace("native.sh", "native-differs.sh"))
+            os.environ["ORACLE_PERTURBATIONS"] = "4"
+            try:
+                with contextlib.redirect_stdout(io.StringIO()) as differing:
+                    assert main(["--config", str(tmp / "p3.toml")]) == 1
+                os.environ["ORACLE_PERTURBATIONS"] = "many"
+                with contextlib.redirect_stdout(io.StringIO()):
+                    assert main(["--config", str(tmp / "p3.toml")]) == 2
+            finally:
+                del os.environ["ORACLE_PERTURBATIONS"]
+            assert json.loads(differing.getvalue())["n_differences"] == 5
+            # a variant: the same plugin set without B.esp
+            (tmp / "v.toml").write_text(base_text + '\n[dataset.lite]\nvariant_of = "t"\ndisable = ["b.ESP"]\n')
+            with contextlib.redirect_stdout(io.StringIO()):
+                main(["--config", str(tmp / "v.toml")])
+            sizes = sorted(d["present"] for d in json.loads((last_run() / "l1.json").read_text())["datasets"])
+            assert sizes == [2, 3]
+            with contextlib.redirect_stdout(io.StringIO()):
+                (tmp / "v2.toml").write_text(base_text + '\n[dataset.x]\nvariant_of = "nope"\n')
+                assert main(["--config", str(tmp / "v2.toml")]) == 2
             assert compare_sorted(["a"], "error: x") != [] and compare_sorted("error: x", "error: y") == []
     print("oracle_run.py: selftest ok")
 

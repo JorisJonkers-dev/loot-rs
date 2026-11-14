@@ -152,6 +152,25 @@ the load order were not found, so fewer were compared than the order has; never 
 respectively; 2 is a usage or config error. libloot loads plugins in full, in memory, to sort them; only the order it
 produces is printed or kept. Run by hand this is phase 0 of ADR 0002's private oracle testing: it opens no issue and posts no status.
 
+### Perturbed orders and dataset variants
+
+An order that is already a LOOT result is reproduced by any sorter that keeps the current order wherever nothing forbids
+it, so equality on the owner's own order says little about the graph edges. With `perturbations = N` (in `[oracle]` or
+in a dataset; `ORACLE_PERTURBATIONS` and `ORACLE_SEED` override the config, which is how the private workflow passes
+them) each dataset is compared on the given order and on N seeded perturbations of the same plugin set, fed to both
+tools: a random permutation, the reversed order and a rotation of the non-master block, in turn. The seed is part of the
+digest; the perturbed orders exist only under `l2/<dataset>/perturbed/`. L1 gets `seed`, `n_perturbations`,
+`n_differences` (given order plus perturbations), `perturbation_status` and `perturbation_kinds` as counts; L0 keeps its
+fields (its `n_differences` includes the perturbations). A dataset passes only when every perturbation is equal.
+A dataset with `variant_of = "<name>"` takes the keys of that dataset and overrides some, usually `disable = [...]` or
+`enabled_only = "<file of names>"`: the same plugin set with a subset enabled (for example without the survival-guide
+plugins, or vanilla New Vegas only).
+
+What the real-data evidence now covers: the sorted order, on the given order, N perturbations and the variants the owner
+configures. What it does not: messages, tags, groups and cleaning data (see the other oracle tickets), plugin contents
+beyond the order, and any dataset the owner has not configured. The invocation on the runner is
+`ORACLE_PERTURBATIONS=20 python3 -I scripts/oracle/oracle_run.py --config "$ORACLE_CONFIG"`.
+
 ### After a merge: the private trigger
 
 The script itself is unchanged; a private runner calls it after every push to `main` and on owner dispatch, and the
