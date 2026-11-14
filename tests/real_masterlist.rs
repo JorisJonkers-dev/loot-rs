@@ -79,6 +79,30 @@ fn plugin_version_calls(expr: &Expr, found: &mut Vec<Expr>) {
     }
 }
 
+/// `version()` on a plugin is evaluated from the description, never reported as unsupported.
+fn assert_plugin_versions_are_evaluated(texts: &[&str]) {
+    let mut plugin_calls = Vec::new();
+    for text in texts {
+        if let Ok(expr) = parse(text) {
+            plugin_version_calls(&expr, &mut plugin_calls);
+        }
+    }
+    let empty = std::env::temp_dir().join(format!("loot-rs-real-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).expect("a scratch directory");
+    let env = FsEnv::new(&empty, Vec::new());
+    for call in &plugin_calls {
+        assert!(
+            !matches!(evaluate(call, &env), Err(ConditionError::Unsupported(_))),
+            "{call} is unsupported"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&empty);
+    println!(
+        "version() on a plugin: {} calls, all evaluated",
+        plugin_calls.len()
+    );
+}
+
 #[test]
 #[ignore = "needs the real masterlist: set LOOT_RS_MASTERLIST"]
 fn the_real_masterlist_parses_and_every_condition_in_it_is_valid_syntax() {
@@ -139,27 +163,7 @@ fn the_real_masterlist_parses_and_every_condition_in_it_is_valid_syntax() {
             Err(error) => syntax_errors.push(format!("{text:?}: {error}")),
         }
     }
-    // `version()` on a plugin is evaluated from the description, never reported as unsupported.
-    let mut plugin_calls = Vec::new();
-    for text in &texts {
-        if let Ok(expr) = parse(text) {
-            plugin_version_calls(&expr, &mut plugin_calls);
-        }
-    }
-    let empty = std::env::temp_dir().join(format!("loot-rs-real-{}", std::process::id()));
-    std::fs::create_dir_all(&empty).expect("a scratch directory");
-    let env = FsEnv::new(&empty, Vec::new());
-    for call in &plugin_calls {
-        assert!(
-            !matches!(evaluate(call, &env), Err(ConditionError::Unsupported(_))),
-            "{call} is unsupported"
-        );
-    }
-    let _ = std::fs::remove_dir_all(&empty);
-    println!(
-        "version() on a plugin: {} calls, all evaluated",
-        plugin_calls.len()
-    );
+    assert_plugin_versions_are_evaluated(&texts);
     println!("conditions: {} in total", texts.len());
     println!(
         "unsupported: {unsupported_conditions} conditions use a function this evaluator does not implement"
