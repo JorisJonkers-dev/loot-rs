@@ -78,6 +78,9 @@ fn hostile_executables_are_refused_quickly_and_with_little_memory() {
     }
     let (result, peak, time) =
         measure(|| eval_str(r#"product_version("endless.dll", "1", ==)"#, &env));
-    assert_eq!(result, Ok(false));
+    assert!(
+        matches!(result, Err(ConditionError::Environment(_))),
+        "{result:?}"
+    );
     assert!(peak < 24 * 1024 * 1024 && time < Duration::from_secs(3));
 }
