@@ -12,6 +12,37 @@ const GROUP_LINES_PER_PLUGIN: usize = 5;
 /// raise it.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// The `contract` name of the JSON of `check --json` ([`render_json`]).
+pub const CHECK_CONTRACT: &str = "loot-check";
+
+/// The `contract` name of the JSON of `sort --json` ([`render_sort_json`]).
+pub const SORT_CONTRACT: &str = "loot-sort";
+
+/// Every contract this build emits, with the schema versions it can emit. `loot-rs contracts --json` prints it.
+pub const CONTRACTS: &[(&str, &[u32])] = &[
+    (CHECK_CONTRACT, &[SCHEMA_VERSION]),
+    (SORT_CONTRACT, &[SCHEMA_VERSION]),
+];
+
+/// The answer to `loot-rs contracts --json`: `{"contracts":[{"name":..,"versions":[..]}]}`, one line.
+#[must_use]
+pub fn contracts_json() -> String {
+    let mut out = String::from("{\"contracts\":[");
+    for (index, (name, versions)) in CONTRACTS.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        out.push_str("{\"name\":");
+        json_string(&mut out, name);
+        out.push_str(",\"versions\":[");
+        let versions: Vec<String> = versions.iter().map(u32::to_string).collect();
+        out.push_str(&versions.join(","));
+        out.push_str("]}");
+    }
+    out.push_str("]}\n");
+    out
+}
+
 fn message_lines(out: &mut String, indent: &str, message: &AppliedMessage) {
     let mut lines = message.content.trim().lines();
     let _ = writeln!(
@@ -175,12 +206,14 @@ fn json_strings(out: &mut String, items: &[String]) {
 
 /// Render the report as one line of JSON, for tools that compare it with another implementation.
 ///
-/// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`, `messages`,
+/// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `contract` (`loot-check`), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`, `messages`,
 /// `tags_add`, `tags_remove`, `findings`), `general_findings`, `not_installed`, `warnings` and
 /// `hard_violations`. Everything is in load order and the text is the same as in [`render`].
 #[must_use]
 pub fn render_json(report: &Report) -> String {
-    let mut out = format!("{{\"schema_version\":{SCHEMA_VERSION},\"general_messages\":");
+    let mut out = format!(
+        "{{\"schema_version\":{SCHEMA_VERSION},\"contract\":\"{CHECK_CONTRACT}\",\"general_messages\":"
+    );
     json_list(&mut out, &report.globals, json_message);
     out.push_str(",\"plugins\":");
     json_list(&mut out, &report.plugins, |out, plugin| {
@@ -297,13 +330,15 @@ fn finding_label(kind: crate::api::FindingKind) -> &'static str {
 
 /// The result of a sort as one line of JSON, in the shape of [`render_json`] plus the sort.
 ///
-/// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
+/// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `contract` (`loot-sort`), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
 /// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `findings`), `generated_general_messages`,
 /// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
 /// `warnings`, `hard_violations`.
 #[must_use]
 pub fn render_sort_json(result: &SortOutput) -> String {
-    let mut out = format!("{{\"schema_version\":{SCHEMA_VERSION},\"sorted\":");
+    let mut out = format!(
+        "{{\"schema_version\":{SCHEMA_VERSION},\"contract\":\"{SORT_CONTRACT}\",\"sorted\":"
+    );
     json_strings(&mut out, &result.order);
     out.push_str(",\"general_messages\":");
     json_list(&mut out, &result.general_messages, json_api_message);

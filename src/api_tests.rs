@@ -713,7 +713,7 @@ fn the_sort_json_starts_with_the_integer_schema_version() {
     let json = crate::render::render_sort_json(&SortOutput::default());
     assert!(
         json.starts_with(&format!(
-            "{{\"schema_version\":{SCHEMA_VERSION},\"sorted\":"
+            "{{\"schema_version\":{SCHEMA_VERSION},\"contract\":\"loot-sort\",\"sorted\":"
         )),
         "{json}"
     );

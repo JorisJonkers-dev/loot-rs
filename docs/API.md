@@ -133,9 +133,13 @@ callers already have a wildcard arm), and replaces the `sort` module's functions
 over `PluginInput`s; that module is public for tests and carries no promise). The `api` module's signatures are
 unchanged, but `PluginResult` and `SortOutput` (both `#[non_exhaustive]`) gain fields (`generated_messages`, `bash_tags`, `generated_general_messages`), and the JSON of `loot-rs sort --json` gains the same keys. Release as a minor version.
 
-## JSON schema version
+## JSON contracts
 
-`loot-rs check --json` and `loot-rs sort --json` write an integer `schema_version` as the first key (`api::SCHEMA_VERSION`, now 1). It rises when a key is removed, renamed or changes meaning; a new key does not raise it, so a consumer ignores keys it does not know.
+`loot-rs check --json` and `loot-rs sort --json` write an integer `schema_version` as the first key (`api::SCHEMA_VERSION`, now 1) and a `contract` name as the second: `loot-check` for `check`, `loot-sort` for `sort` (`api::CHECK_CONTRACT`, `api::SORT_CONTRACT`). A reader refuses a document whose name is not the one it asked for. `schema_version` rises when a key is removed, renamed or retyped, or when a value is added to an enum that is not open; a new optional key does not raise it, so a consumer ignores keys it does not know.
+
+`loot-rs contracts --json` prints `{"contracts":[{"name":"loot-check","versions":[1]},{"name":"loot-sort","versions":[1]}]}` (`api::CONTRACTS`, `api::contracts_json`) and exits 0. A consumer picks the highest version both sides list that is not above the version it was tested with, and refuses a tool whose list lacks it. This build emits only the newest version of each contract.
+
+An enum in a published schema that may grow carries `"x-open-enum": true`, and a reader treats an unknown value as "other"; an enum without the mark is closed, and adding a value to it is a version change.
 
 ## Helpers for a mod manager
 
