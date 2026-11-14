@@ -372,7 +372,7 @@ fn an_undefined_group_is_noted_and_hard_only_when_strict() {
 fn an_unsupported_condition_is_recorded_and_the_item_is_not_applied() {
     let yaml = r#"
 globals:
-  - {type: say, content: 'g', condition: 'version("a.esp", ==, "1")'}
+  - {type: say, content: 'g', condition: 'product_version("a.esp", ==, "1")'}
 plugins:
   - name: A.esp
     msg:
@@ -382,7 +382,7 @@ plugins:
     req:
       - {name: Gone.esp, condition: 'product_version("a.exe", >, "1")'}
     after:
-      - {name: B.esp, condition: 'version("b.esp", <, "2")'}
+      - {name: B.esp, condition: 'product_version("b.esp", <, "2")'}
 "#;
     let (report, _dir) = check(yaml, &["A.esp", "B.esp"], "A.esp\nB.esp\n", false);
     assert_eq!(report.globals, []);
@@ -402,8 +402,7 @@ plugins:
         [
             ("description_contains".to_string(), 1),
             ("is_executable".to_string(), 1),
-            ("product_version".to_string(), 1),
-            ("version".to_string(), 2),
+            ("product_version".to_string(), 3),
         ]
     );
 }

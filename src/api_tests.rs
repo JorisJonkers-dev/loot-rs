@@ -800,3 +800,23 @@ fn a_missing_additional_directory_is_a_warning() {
             .any(|w| w.contains("not a directory"))
     );
 }
+
+#[test]
+fn a_message_guarded_by_a_plugin_version_is_applied_from_the_description() {
+    let dir = TempDir::new();
+    dir.file(
+        "TaleOfTwoWastelands.esm",
+        &synthetic_plugin(FLAG_ESM, &[], Some("Version: 3.2.0")),
+    );
+    dir.plugin("A.esp", &[]);
+    let yaml = "plugins:\n  - name: A.esp\n    msg:\n      - type: say\n        content: new enough\n        condition: 'version(\"TaleOfTwoWastelands.esm\", \"3.2.0\", >=)'\n      - type: say\n        content: too new\n        condition: 'version(\"TaleOfTwoWastelands.esm\", \"4.0\", >=)'\n";
+    let output = run(yaml, &dir, &["TaleOfTwoWastelands.esm", "A.esp"]).expect("sorts");
+    let a = output
+        .plugins
+        .iter()
+        .find(|plugin| plugin.name == "A.esp")
+        .expect("A.esp");
+    let texts: Vec<&str> = a.messages.iter().map(|m| m.text.as_str()).collect();
+    assert_eq!(texts, ["new enough"]);
+    assert!(a.findings.is_empty(), "{:?}", a.findings);
+}

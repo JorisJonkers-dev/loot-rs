@@ -15,7 +15,7 @@ mod common;
 
 use common::Fixture;
 use loot_rs::check::{Options, run};
-use loot_rs::condition::{Expr, UNSUPPORTED_FUNCTIONS, parse};
+use loot_rs::condition::{Arg, ConditionError, Expr, UNSUPPORTED_FUNCTIONS, evaluate, parse};
 use loot_rs::env::{FsEnv, parse_plugins_txt};
 use loot_rs::metadata::{Metadata, NamePattern, parse as parse_masterlist};
 use std::collections::BTreeMap;
@@ -57,6 +57,24 @@ fn functions(expr: &Expr, found: &mut Vec<String>) {
         Expr::And(left, right) | Expr::Or(left, right) => {
             functions(left, found);
             functions(right, found);
+        }
+    }
+}
+
+/// The calls of `version()` whose first argument names a plugin.
+fn plugin_version_calls(expr: &Expr, found: &mut Vec<Expr>) {
+    match expr {
+        Expr::Call(name, args) => {
+            let on_plugin = matches!(args.first(), Some(Arg::Str(path))
+                if path.to_ascii_lowercase().ends_with(".esp") || path.to_ascii_lowercase().ends_with(".esm"));
+            if name == "version" && on_plugin {
+                found.push(expr.clone());
+            }
+        }
+        Expr::Not(inner) => plugin_version_calls(inner, found),
+        Expr::And(left, right) | Expr::Or(left, right) => {
+            plugin_version_calls(left, found);
+            plugin_version_calls(right, found);
         }
     }
 }
@@ -121,6 +139,27 @@ fn the_real_masterlist_parses_and_every_condition_in_it_is_valid_syntax() {
             Err(error) => syntax_errors.push(format!("{text:?}: {error}")),
         }
     }
+    // `version()` on a plugin is evaluated from the description, never reported as unsupported.
+    let mut plugin_calls = Vec::new();
+    for text in &texts {
+        if let Ok(expr) = parse(text) {
+            plugin_version_calls(&expr, &mut plugin_calls);
+        }
+    }
+    let empty = std::env::temp_dir().join(format!("loot-rs-real-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).expect("a scratch directory");
+    let env = FsEnv::new(&empty, Vec::new());
+    for call in &plugin_calls {
+        assert!(
+            !matches!(evaluate(call, &env), Err(ConditionError::Unsupported(_))),
+            "{call} is unsupported"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&empty);
+    println!(
+        "version() on a plugin: {} calls, all evaluated",
+        plugin_calls.len()
+    );
     println!("conditions: {} in total", texts.len());
     println!(
         "unsupported: {unsupported_conditions} conditions use a function this evaluator does not implement"

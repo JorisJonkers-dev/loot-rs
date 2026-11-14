@@ -25,7 +25,8 @@ On NixOS run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld nixpkgs#cargo-llvm-
 | Binary, end to end | `tests/cli.rs` | 15 | Whole runs on generated plugins, including that nothing is written |
 | Golden, sort | `tests/golden_sort.rs`, `tests/golden_sort/<case>/` | 10 cases (text and JSON) | `loot-rs sort`: masters first, header masters (LOOT keeps the load order of the plugins that need not move), `after` and `req`, groups, a dropped group rule, messages with cleaning data, record overlap (the plugin that changes more of the same records goes first, unless a rule says otherwise), archive overlap (the plugin that loads more of the same files) |
 | Binary, errors | `tests/cli_errors.rs` | 25 | Exit code 2 and its messages: arguments, bad or unreadable masterlist, plugin list, Data directory, unreadable plugins |
-| Executable versions (feature) | `src/exe_version_tests.rs`, `tests/limits_exe.rs` | 25 + 1 (+1 ignored) | `version()` and `product_version()` on synthetic PE images built in the test (no game files): both argument orders, LOOT's comparison, case-insensitive paths, missing and non-PE files, plugins still unsupported, hostile sizes, lengths that do not fit, a directory that does not start its section, a PE offset beyond 16 bits, file names with quotes and control characters, the resource walk's bounds, every truncation and byte flip. The ignored test demonstrates the interpreter's own hang. `task test:features` runs them; CI does too |
+| Plugin versions | `src/version_tests.rs`, `src/env_tests.rs`, `src/api_tests.rs` | 24 + 7 + 1 | libloot's `extract_version` tests (every description format it lists), the interpreter's comparison rules, `version()` on synthetic plugins in both argument orders, a missing, unlisted, unreadable, ghosted and multi-directory plugin, a guarded message applied through `sort` |
+| Executable versions (feature) | `src/exe_version_tests.rs`, `tests/limits_exe.rs` | 25 + 1 (+1 ignored) | `version()` and `product_version()` on synthetic PE images built in the test (no game files): both argument orders, LOOT's comparison, case-insensitive paths, missing and non-PE files, a plugin has no product version, hostile sizes, lengths that do not fit, a directory that does not start its section, a PE offset beyond 16 bits, file names with quotes and control characters, the resource walk's bounds, every truncation and byte flip. The ignored test demonstrates the interpreter's own hang. `task test:features` runs them; CI does too |
 | Resource limits | `tests/limits.rs` | 1 (11 hostile inputs) | Every size that comes from the input is bounded; see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md). CI runs it under a 512 MiB address-space limit |
 | Real data (ignored) | `tests/real_masterlist.rs` | 2 | The real falloutnv masterlist; run weekly, see below |
 | Fuzz | `fuzz/` | 6 targets | Every parser and two round trips, with libFuzzer: 15 seconds each on every pull request (`Fuzz smoke` job of the pipeline), ten minutes each weekly |
@@ -122,7 +123,10 @@ runs them every week against the current file. Result on `v0.29` (release build,
 | 400 plugins checked | about 40 ms (budget 10 s) |
 
 Textually the masterlist calls `version()` 17 times (9 on executables or DLLs, 8 on plugins) and
-`product_version()` 3 times; aliases multiply those into the 117 expanded conditions.
+`product_version()` 3 times; aliases multiply those into the 117 expanded conditions. The 8 plugin calls (and their
+alias expansions) are evaluated since `version()` on plugins landed, so the 117 and 29 percent above are the figures
+before that change; the weekly job prints the new count and fails when a `version()` on a plugin is unsupported.
+The copy of the masterlist was not available when this was written, so the new count is not stated here.
 
 ## Differential testing against LOOT
 

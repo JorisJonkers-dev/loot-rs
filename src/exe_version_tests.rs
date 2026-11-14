@@ -92,13 +92,9 @@ fn a_file_that_is_not_an_executable_is_an_error_not_a_guess() {
 }
 
 #[test]
-fn a_plugin_is_still_unsupported() {
+fn a_plugin_has_no_product_version() {
     let dir = TempDir::new();
     dir.plugin("A.esp", &[]);
-    assert_eq!(
-        eval(&dir, r#"version("A.esp", "1", ==)"#),
-        Err(ConditionError::Unsupported("version".into()))
-    );
     assert_eq!(
         eval(&dir, r#"product_version("Missing.esm", "1", ==)"#),
         Err(ConditionError::Unsupported("product_version".into())),

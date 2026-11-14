@@ -6,6 +6,7 @@
 //! * [`condition`]: parser and evaluator for LOOT condition strings.
 //! * [`env`]: the file system and load order a condition is evaluated against.
 //! * `exe_version` (cargo feature `executable-versions`): `version()` and `product_version()` on executables.
+//! * [`version`]: a plugin's version from its description, and LOOT's comparison of versions.
 //! * [`check`]: applies the metadata to a load order and produces a [`check::Report`].
 //! * [`cli`]: argument parsing and the `check` command.
 //! * [`archives`]: the BSA archives a plugin loads and the files they hold, for the overlap between plugins.
@@ -28,6 +29,7 @@ pub mod records;
 pub mod render;
 pub mod sort;
 pub mod validate;
+pub mod version;
 
 #[cfg(test)]
 mod support_tests;

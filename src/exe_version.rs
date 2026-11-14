@@ -12,8 +12,9 @@
 //!
 //! The call is resolved against the `Data` directory by [`crate::env::FsEnv`] (case-insensitively, as for every
 //! other function). Anything the checks do not like is a [`ConditionError::Environment`], never a hang or a large
-//! allocation. Plugin files (`.esp`, `.esm`) are not handled: their version lives in the description field and
-//! stays unsupported, so an item that asks for it is still reported and not applied.
+//! allocation. `version()` on a plugin (`.esp`, `.esm`) is not handled here: its version lives in the description field and
+//! [`crate::env::FsEnv`] answers it in every build ([`crate::version`]). `product_version()` on a plugin stays
+//! unsupported.
 //!
 //! [`PeSpec`] builds small PE images with a version resource, for tests (no game files are needed).
 

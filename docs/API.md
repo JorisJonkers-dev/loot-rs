@@ -122,7 +122,7 @@ Not supported: the userlist. The messages LOOT's application generates when it c
 ## Not in the API yet
 
 Writing `plugins.txt` or `loadorder.txt`, userlists, metadata for the user's own plugins, localised messages other than
-English, `version()` on plugins, and the other things in [COMPATIBILITY.md](COMPATIBILITY.md).
+English, and the other things in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Semver
 

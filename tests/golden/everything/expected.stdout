@@ -11,7 +11,7 @@ A.esp (position 1, group "Late")
   note group order: (group "Late") loads before C.esp (group "default"), but "Late" loads after "default"
 
 B.esp (position 2, group "default")
-  note unsupported: unsupported condition function version() (in `version("B.esp", ==, "1")`), item not applied
+  note unsupported: unsupported condition function product_version() (in `product_version("B.esp", ==, "1")`), item not applied
 
-note: 1 item(s) use the unsupported condition function version() and were not applied
+note: 1 item(s) use the unsupported condition function product_version() and were not applied
 Checked 4 plugin(s), 2 with masterlist entries. Hard violations: 3.
