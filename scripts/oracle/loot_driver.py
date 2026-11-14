@@ -64,7 +64,8 @@ def collect(loot_api, game_path: str, masterlist: str, names: list[str]) -> dict
     handle = loot_api.create_game_handle(game_type, game_path)
     database = handle.get_database()
     database.load_masterlist(masterlist)
-    handle.load_plugins(names, True)
+    # Not headers only: the sort needs the records (and archives) of the plugins to know which ones overlap.
+    handle.load_plugins(names, False)
     result = {
         "general_messages": [message_json(m) for m in database.general_messages(True)],
         "plugins": {},

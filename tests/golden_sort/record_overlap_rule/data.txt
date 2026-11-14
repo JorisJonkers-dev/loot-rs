@@ -1,0 +1,4 @@
+plugin FalloutNV.esm esm
+plugin A.esp masters=FalloutNV.esm records=00000001
+plugin B.esp masters=FalloutNV.esm records=00000001,00000002,00000003
+plugin C.esp masters=FalloutNV.esm records=00000009

@@ -22,7 +22,7 @@ On NixOS run cargo inside `nix shell nixpkgs#gcc nixpkgs#lld nixpkgs#cargo-llvm-
 | Sorter (libloot port) | `src/sort/plugins_tests.rs`, `src/sort_tests.rs`, `tests/prop_sort.rs`, `tests/limits_sort.rs` | 50 + 20 + 5 properties + 1 | libloot's own unit tests of its plugin graph, translated (group edges across branches, merges and skipped edges, early loaders, overlap edges, tie-break pinning), then the whole sort (masters, rules, errors, cycles, overlap, limits). Properties: the result is a permutation that holds every edge the sorter added and every rule, errors exist only when an independent model finds a real conflict, sorting is deterministic and a sorted order is a fixed point, a plugin that changes more records loads first, large random inputs finish |
 | Library API | `src/api_tests.rs`, `tests/api.rs`, `tests/prop_sort.rs` | 17 + 5 + 1 property | `api::sort` over synthetic plugins (headers, `after`, `req`, groups, strict groups, case, duplicates, unreadable headers, cleaning data by CRC, errors) and a consumer of the public API from outside the crate; random load orders sort to an order that holds every rule and is stable |
 | Binary, end to end | `tests/cli.rs` | 15 | Whole runs on generated plugins, including that nothing is written |
-| Golden, sort | `tests/golden_sort.rs`, `tests/golden_sort/<case>/` | 6 cases (text and JSON) | `loot-rs sort`: masters first, header masters (LOOT keeps the load order of the plugins that need not move), `after` and `req`, groups, a dropped group rule, messages with cleaning data |
+| Golden, sort | `tests/golden_sort.rs`, `tests/golden_sort/<case>/` | 8 cases (text and JSON) | `loot-rs sort`: masters first, header masters (LOOT keeps the load order of the plugins that need not move), `after` and `req`, groups, a dropped group rule, messages with cleaning data, record overlap (the plugin that changes more of the same records goes first, unless a rule says otherwise) |
 | Binary, errors | `tests/cli_errors.rs` | 25 | Exit code 2 and its messages: arguments, bad or unreadable masterlist, plugin list, Data directory, unreadable plugins |
 | Executable versions (feature) | `src/exe_version_tests.rs`, `tests/limits_exe.rs` | 25 + 1 (+1 ignored) | `version()` and `product_version()` on synthetic PE images built in the test (no game files): both argument orders, LOOT's comparison, case-insensitive paths, missing and non-PE files, plugins still unsupported, hostile sizes, lengths that do not fit, a directory that does not start its section, a PE offset beyond 16 bits, file names with quotes and control characters, the resource walk's bounds, every truncation and byte flip. The ignored test demonstrates the interpreter's own hang. `task test:features` runs them; CI does too |
 | Resource limits | `tests/limits.rs` | 1 (11 hostile inputs) | Every size that comes from the input is bounded; see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md). CI runs it under a 512 MiB address-space limit |
@@ -127,7 +127,7 @@ Textually the masterlist calls `version()` 17 times (9 on executables or DLLs, 8
 
 The harness is done, the LOOT runs are not: see [ORACLE.md](ORACLE.md). `scripts/oracle/` holds the fixture builder, the
 libloot driver, the comparison and the runner, with self-tests on invented data (`task scripts`, in CI), and
-`task oracle` runs `loot-rs sort` on the 28 cases (and compares with LOOT when `ORACLE_DRIVER` names a driver). No LOOT
+`task oracle` runs `loot-rs sort` on the 30 cases (and compares with LOOT when `ORACLE_DRIVER` names a driver). No LOOT
 output is recorded anywhere, and CI never needs libloot or the game.
 
 ## Fuzzing
@@ -143,6 +143,7 @@ allocation":
 | `plugin_roundtrip` | a generated plugin (masters, flags, description) | it reads back what was written; no cut of it reads as a different header |
 | `plugins_txt` | `plugins.txt` bytes | no empty inactive names |
 | `exe_version` | a valid synthetic PE image with bytes overwritten | the bounded walk and the interpreter (feature `executable-versions`) answer and return |
+| `plugin_records` | plugin bytes (the first byte picks how many masters it has) | keys are sorted, the overridden count fits, the record budget fell by what was kept, overlap is symmetric |
 | `sort_graph` | generated plugins (master flags, masters, `req`, `after`, groups), groups and record and asset overlaps | an error names plugins that exist; an order is a permutation that holds every edge the sorter added, leaves one possible order, puts the masters first |
 
 `scripts/fuzz-run.sh` runs them, seeded from `fuzz/seeds/<target>/` (and, for the masterlist, the synthetic masterlists

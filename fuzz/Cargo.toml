@@ -68,3 +68,10 @@ path = "fuzz_targets/sort_graph.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "plugin_records"
+path = "fuzz_targets/plugin_records.rs"
+test = false
+doc = false
+bench = false

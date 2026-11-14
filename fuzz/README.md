@@ -11,6 +11,7 @@ asserts.
 | `plugin_roundtrip` | `plugin::synthetic_plugin` then `parse_header` |
 | `plugins_txt` | `env::parse_plugins_txt` |
 | `exe_version` | `exe_version::preflight` and `evaluate` (feature `executable-versions`) |
+| `plugin_records` | `records::read_records_from` |
 | `sort_graph` | `sort::sort`: a generated set of plugins, groups, rules and overlaps |
 
 ```sh

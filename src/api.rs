@@ -50,7 +50,10 @@ use crate::metadata::{
     self, DEFAULT_GROUP, MessageKind as InnerMessageKind, Metadata, PluginEntry,
 };
 use crate::plugin;
-use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, NoOverlaps, PluginInput};
+use crate::records::{
+    self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordOverlaps, RecordsError,
+};
+use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, PluginInput};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::fs;
@@ -462,6 +465,8 @@ fn messages(applied: &[check::AppliedMessage]) -> Vec<Message> {
 /// What each installed plugin is, from its header and the masterlist, in load order.
 struct Facts<'a> {
     name: &'a str,
+    /// Whether the header could be read (the plugin's records are only read then).
+    readable: bool,
     is_master: bool,
     masters: Vec<String>,
     entries: Vec<&'a PluginEntry>,
@@ -520,11 +525,17 @@ pub fn sort(
     let rules = rules(&env, metadata, &facts, &mut output.warnings);
 
     let name_of = |index: usize| facts[index].name.to_string();
+    let records = read_all_records(&env, &facts, &mut output.warnings)?;
     let inputs: Vec<PluginInput> = facts
         .iter()
         .enumerate()
-        .map(|(index, fact)| plugin_input(fact, &rules, index))
+        .map(|(index, fact)| {
+            let mut input = plugin_input(fact, &rules, index);
+            input.override_records = records[index].overridden;
+            input
+        })
         .collect();
+    let overlaps = RecordOverlaps::new(records.into_iter().map(|plugin| plugin.keys).collect());
     let groups: Vec<GroupInput> = metadata
         .groups
         .iter()
@@ -533,7 +544,7 @@ pub fn sort(
             after: group.after.clone(),
         })
         .collect();
-    let sorted = sort::sort(&inputs, &groups, &[EARLY_LOADER.to_string()], &NoOverlaps)
+    let sorted = sort::sort(&inputs, &groups, &[EARLY_LOADER.to_string()], &overlaps)
         .map_err(|error| sort_error(&error, &name_of))?;
     let position: Vec<usize> = {
         let mut position = vec![0; facts.len()];
@@ -575,6 +586,37 @@ pub fn sort(
     output.plugins = report.plugins.iter().map(plugin_result).collect();
     output.dirty = dirty_info(&facts, &sorted.order, &sorted_env);
     Ok(output)
+}
+
+/// The record ids of every installed plugin whose header could be read. A file that cannot be read as records is
+/// noted and counts as one without; a limit is an error.
+fn read_all_records(
+    env: &FsEnv,
+    facts: &[Facts],
+    warnings: &mut Vec<String>,
+) -> Result<Vec<PluginRecords>, SortError> {
+    let mut names = NameIds::default();
+    let mut budget = MAX_RECORDS_TOTAL;
+    let mut all = Vec::with_capacity(facts.len());
+    for fact in facts {
+        let path = env.resolve(fact.name).filter(|_| fact.readable);
+        let Some(path) = path else {
+            all.push(PluginRecords::default());
+            continue;
+        };
+        match records::read_records(&path, fact.name, &fact.masters, &mut names, &mut budget) {
+            Ok(records) => all.push(records),
+            Err(RecordsError::TooMany) => return Err(SortError::TooMuchWork),
+            Err(error) => {
+                warnings.push(format!(
+                    "{}: records not readable ({error}); it is treated as having none",
+                    fact.name
+                ));
+                all.push(PluginRecords::default());
+            }
+        }
+    }
+    Ok(all)
 }
 
 /// The plugin that Fallout: New Vegas always loads first.
@@ -678,6 +720,7 @@ fn facts_of<'a>(
         .resolve(&slot.name)
         .ok_or_else(|| io_error("not found"))
         .and_then(|path| plugin::read_header(&path));
+    let readable = header.is_ok();
     let (is_master, masters) = match header {
         Ok(header) => (header.is_master(), header.masters),
         Err(error) => {
@@ -692,6 +735,7 @@ fn facts_of<'a>(
     let group = group_of(&entries);
     Facts {
         name: &slot.name,
+        readable,
         is_master,
         masters,
         entries,

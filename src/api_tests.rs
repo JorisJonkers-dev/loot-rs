@@ -421,3 +421,72 @@ plugins:
             .all(|r| position(&r.before) < position(&r.after))
     );
 }
+
+fn records_plugin(dir: &TempDir, name: &str, masters: &[&str], form_ids: &[u32]) {
+    let records: Vec<(u32, u32)> = form_ids.iter().map(|&id| (id, 0)).collect();
+    let flags = u32::from(name.to_lowercase().ends_with(".esm")) * FLAG_ESM;
+    dir.file(
+        name,
+        &crate::records::synthetic_records(flags, masters, &[(*b"NPC_", &records)]),
+    );
+}
+
+#[test]
+fn the_plugin_that_changes_more_of_the_same_records_loads_first() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    records_plugin(&dir, "A.esp", &["FalloutNV.esm"], &[0x0000_0001]);
+    records_plugin(
+        &dir,
+        "B.esp",
+        &["FalloutNV.esm"],
+        &[0x0000_0001, 0x0000_0002, 0x0000_0003],
+    );
+    // Both change record 1, B changes three records and A one: B goes first, though A was listed first.
+    let output = run("", &dir, &["FalloutNV.esm", "A.esp", "B.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "B.esp", "A.esp"]);
+    // Sorting that again changes nothing.
+    let again = run("", &dir, &["FalloutNV.esm", "B.esp", "A.esp"]).expect("sorts");
+    assert_eq!(order(&again), order(&output));
+}
+
+#[test]
+fn plugins_that_change_different_records_keep_their_order() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    records_plugin(&dir, "A.esp", &["FalloutNV.esm"], &[0x0000_0001]);
+    records_plugin(
+        &dir,
+        "B.esp",
+        &["FalloutNV.esm"],
+        &[0x0000_0002, 0x0000_0003, 0x0000_0004],
+    );
+    let output = run("", &dir, &["FalloutNV.esm", "A.esp", "B.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "A.esp", "B.esp"]);
+}
+
+#[test]
+fn a_rule_wins_over_the_overlap_and_a_plugin_whose_records_cannot_be_read_is_noted() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    records_plugin(&dir, "A.esp", &["FalloutNV.esm"], &[0x0000_0001]);
+    records_plugin(
+        &dir,
+        "B.esp",
+        &["FalloutNV.esm"],
+        &[0x0000_0001, 0x0000_0002, 0x0000_0003],
+    );
+    let yaml = "plugins:\n  - name: B.esp\n    after: [A.esp]\n";
+    let output = run(yaml, &dir, &["FalloutNV.esm", "A.esp", "B.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "A.esp", "B.esp"]);
+    assert_eq!(output.warnings.len(), 0);
+
+    // A plugin with a good header and records that are cut off counts as one without records.
+    let mut bytes = crate::records::synthetic_records(0, &[], &[(*b"NPC_", &[(0x800, 16)])]);
+    bytes.truncate(bytes.len() - 4);
+    dir.file("Cut.esp", &bytes);
+    let output = run("", &dir, &["FalloutNV.esm", "Cut.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "Cut.esp"]);
+    assert_eq!(output.warnings.len(), 1);
+    assert!(output.warnings[0].starts_with("Cut.esp: records not readable"));
+}

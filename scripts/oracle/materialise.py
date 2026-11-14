@@ -30,6 +30,13 @@ def synthetic_plugin(flags: int, masters: list[str]) -> bytes:
     return header + data
 
 
+def synthetic_records(flags: int, masters: list[str], form_ids: list[int]) -> bytes:
+    """The bytes of loot_rs::records::synthetic_records(flags, masters, &[(*b"NPC_", records of size 0)])."""
+    body = b"".join(b"NPC_" + struct.pack("<IIIQ", 0, 0, form_id, 0)[:12] + b"\0" * 8 for form_id in form_ids)
+    group = b"GRUP" + struct.pack("<I", 24 + len(body)) + b"NPC_" + b"\0" * 12 + body
+    return synthetic_plugin(flags, masters) + group
+
+
 def materialise(case: Path, out: Path) -> None:
     data = out / "Data"
     data.mkdir(parents=True, exist_ok=True)
@@ -38,17 +45,19 @@ def materialise(case: Path, out: Path) -> None:
         if not words:
             continue
         if words[0] == "plugin":
-            flags, masters = 0, []
+            flags, masters, form_ids = 0, [], []
             for word in words[2:]:
                 if word == "esm":
                     flags |= FLAG_ESM
                 elif word.startswith("masters="):
                     masters = word[len("masters="):].split(",")
+                elif word.startswith("records="):
+                    form_ids = [int(text, 16) for text in word[len("records="):].split(",")]
                 else:
                     raise SystemExit(f"unknown plugin option {word!r}")
             target = data / words[1]
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(synthetic_plugin(flags, masters))
+            target.write_bytes(synthetic_records(flags, masters, form_ids) if form_ids else synthetic_plugin(flags, masters))
         elif words[0] == "file":
             target = data / words[1]
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -75,11 +84,18 @@ def selftest() -> None:
     size, flags = struct.unpack_from("<II", plugin, 4)
     assert flags == FLAG_ESM and size == len(plugin) - 24
     assert b"MAST" in plugin and b"FalloutNV.esm\0" in plugin
+    # Same bytes as the Rust side: header, then one group of 24-byte records.
+    records = synthetic_records(0, [], [0x800, 0x01000001])
+    header = synthetic_plugin(0, [])
+    assert records[: len(header)] == header and len(records) == len(header) + 24 + 2 * 24
+    assert records[len(header):][:4] == b"GRUP" and struct.unpack_from("<I", records, len(header) + 4)[0] == 24 + 48
+    first = records[len(header) + 24:]
+    assert first[:4] == b"NPC_" and struct.unpack_from("<I", first, 12)[0] == 0x800
     with tempfile.TemporaryDirectory() as tmp:
         case = Path(tmp) / "case"
         case.mkdir()
         (case / "data.txt").write_text(
-            "plugin A.esm esm\nplugin B.esp masters=A.esm\nfile docs/x.txt text=hello\n"
+            "plugin A.esm esm\nplugin B.esp masters=A.esm records=800,1000001\nfile docs/x.txt text=hello\n"
         )
         (case / "plugins.txt").write_text("A.esm\nB.esp\n")
         (case / "masterlist.yaml").write_text("plugins: []\n")
@@ -87,6 +103,7 @@ def selftest() -> None:
         materialise(case, out)
         assert (out / "Data" / "docs" / "x.txt").read_bytes() == b"hello"
         assert struct.unpack_from("<I", (out / "Data" / "A.esm").read_bytes(), 8)[0] == FLAG_ESM
+        assert (out / "Data" / "B.esp").read_bytes() == synthetic_records(0, ["A.esm"], [0x800, 0x1000001])
         assert (out / "plugins.txt").read_text() == "A.esm\nB.esp\n"
         ensure_master(out)
         assert (out / "plugins.txt").read_text() == "FalloutNV.esm\nA.esm\nB.esp\n"
