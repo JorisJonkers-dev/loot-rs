@@ -70,8 +70,8 @@ fn the_largest_load_order_is_sorted_or_refused_quickly_and_in_little_memory() {
         }),
         ("a long chain of load-after rules, listed backwards", {
             let mut list = plugins(MAX_PLUGINS);
-            for index in 1..MAX_PLUGINS {
-                list[index].load_after = vec![format!("{:05}.esp", index - 1)];
+            for (index, plugin) in list.iter_mut().enumerate().skip(1) {
+                plugin.load_after = vec![format!("{:05}.esp", index - 1)];
             }
             list.reverse();
             list
