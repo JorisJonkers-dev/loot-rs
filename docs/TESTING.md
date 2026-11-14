@@ -126,10 +126,11 @@ Textually the masterlist calls `version()` 17 times (9 on executables or DLLs, 8
 
 ## Differential testing against LOOT
 
-The harness is done, the LOOT runs are not: see [ORACLE.md](ORACLE.md). `scripts/oracle/` holds the fixture builder, the
+The sorted order has been compared with the real libloot on random synthetic load orders (3,300 worlds, no difference);
+the messages have not: see [ORACLE.md](ORACLE.md). `scripts/oracle/` holds the fixture builder, the
 libloot driver, the comparison and the runner, with self-tests on invented data (`task scripts`, in CI), and
 `task oracle` runs `loot-rs sort` on the 32 cases (and compares with LOOT when `ORACLE_DRIVER` names a driver). No LOOT
-output is recorded anywhere, and CI never needs libloot or the game.
+output is stored in the repository, and CI never needs libloot or the game.
 
 ## Fuzzing
 

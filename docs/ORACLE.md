@@ -1,10 +1,34 @@
 # Differential testing against LOOT (the oracle)
 
-**Status: the harness is complete and tested on invented data; no real LOOT run has been made, and nothing in this
-repository records LOOT output.** Nothing here needs the game, and CI never runs libloot: CI runs the self-tests of the
-scripts (`task scripts`) and the golden tests of the Rust side. The LOOT side runs on the owner's machine, where libloot
-and (for a real load order) the game files are. Do not add "expected" LOOT results to the repository unless they came
-from such a run (or can be derived from LOOT's public documentation, which for message text and ordering they cannot).
+**Status: the sorted order has been compared with the real libloot (0.29.7, the Rust crate, built from source) on 3,300
+random synthetic load orders with no difference (below). Messages, Bash Tags and cleaning data have not been compared
+with libloot's output, and no real load order has been run.** Nothing here needs the game, and CI never runs libloot: CI
+runs the self-tests of the scripts (`task scripts`) and the golden tests of the Rust side. The LOOT side runs on the
+owner's machine, where libloot and (for a real load order) the game files are. Do not add "expected" LOOT results to the
+repository unless they came from such a run (or can be derived from LOOT's public documentation, which for message text
+and ordering they cannot).
+
+## The differential test on random load orders
+
+`scripts/oracle/random_diff.py` makes random worlds (2 to 12 or more invented plugins, some masters, header masters,
+records that overlap, BSA archives that overlap, groups with `after` lists, `group`, `after` and `req` entries, a random
+current load order), sorts each with `loot-rs sort` and with libloot, and requires the same order (or both refusing).
+The libloot side is `scripts/oracle/libloot-driver`, a small program on the libloot crate with its own workspace, built
+only by whoever runs the test:
+
+```sh
+cargo build --release --manifest-path scripts/oracle/libloot-driver/Cargo.toml
+cargo build --release
+scripts/oracle/random_diff.py --loot-rs target/release/loot-rs \
+  --driver scripts/oracle/libloot-driver/target/release/libloot-driver --count 500 --seed 1 --max-plugins 12
+```
+
+(`task oracle:random` does the same.) A run on 2026-11-14 against libloot 0.29.7: 3,300 worlds (seeds 101 to 103, 400
+worlds each of up to 12 plugins; seed 7, 300 worlds of up to 30; earlier unrecorded runs of 600, 800 and 400 worlds of
+up to 9, 12 and 25 plugins), **0 differences**. About nine worlds in ten are re-ordered by the sort, and about a third
+sort differently when their records and archives are removed, so the comparison does exercise the overlap edges, the
+group walk and the tie-break pinning. A world in which libloot refuses (a cycle) is one where `loot-rs` refuses too.
+This is the evidence for `docs/COMPATIBILITY.md`'s claim that the sort is libloot's.
 
 ## What is compared
 
@@ -46,6 +70,7 @@ The pieces, all under `scripts/oracle/` (Python 3, standard library only):
 | `loot_driver.py` | the libloot side: opens the game directory with libloot's Python bindings (`loot_api`), loads the masterlist, loads the plugins (in full, because the sort uses their records), asks the database for the evaluated general messages and per-plugin metadata, runs LOOT's sort, and writes `loot.json` |
 | `compare.py` | compares `ours.json` (`loot-rs sort --json`) with `loot.json`; its header documents both shapes |
 | `run.py` | does all of it for one case, all cases, or a real load order, and keeps the JSON files under `--work` |
+| `random_diff.py`, `libloot-driver/` | the differential test on random load orders against the libloot crate (above) |
 
 ### On the synthetic cases (no game)
 
