@@ -71,12 +71,20 @@ tasks:
       - python3 -I scripts/oracle/materialise.py --selftest
       - python3 -I scripts/oracle/loot_driver.py --selftest
       - python3 -I scripts/oracle/run.py --selftest
+      - python3 -I scripts/oracle/random_diff.py --selftest
 
   oracle:
     desc: Run loot-rs on every oracle case; with ORACLE_DRIVER set (libloot installed) compare with LOOT. Not part of check
     cmds:
       - cargo build --locked --release
       - python3 -I scripts/oracle/run.py --loot-rs target/release/loot-rs --all {{if .ORACLE_DRIVER}}--driver "{{.ORACLE_DRIVER}}"{{end}}
+
+  oracle:random:
+    desc: Differential test on random load orders against the libloot crate (builds its driver; needs network). Not part of check
+    cmds:
+      - cargo build --locked --release
+      - cargo build --release --manifest-path scripts/oracle/libloot-driver/Cargo.toml
+      - python3 -I scripts/oracle/random_diff.py --loot-rs target/release/loot-rs --driver scripts/oracle/libloot-driver/target/release/libloot-driver --count {{.COUNT | default "300"}}
 
   real:
     desc: Ignored tests against the real masterlist (set LOOT_RS_MASTERLIST)

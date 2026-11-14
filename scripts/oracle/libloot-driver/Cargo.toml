@@ -1,0 +1,17 @@
+# The libloot side of scripts/oracle/random_diff.py: sorts a load order with the real libloot (the Rust crate) and
+# prints the order. Its own workspace: it is not built by `cargo build` or by CI, only by whoever runs the
+# differential test (`task oracle:random`). libloot is GPL-3.0-or-later, like this repository.
+[package]
+name = "libloot-driver"
+version = "0.0.0"
+edition = "2024"
+publish = false
+license = "GPL-3.0-or-later"
+
+[dependencies]
+libloot = "=0.29.7"
+
+[workspace]
+
+[profile.release]
+opt-level = 1

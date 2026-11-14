@@ -1,7 +1,7 @@
 # Library API
 
 `loot_rs::api` is the part of the crate meant to be consumed by another program, for example a mod manager. The
-other modules (`check`, `condition`, `env`, `metadata`, `plugin`, `render`, `sort`, `cli`) are the implementation
+other modules (`archives`, `check`, `cli`, `condition`, `env`, `metadata`, `overlap`, `plugin`, `records`, `render`, `sort`, `validate`) are the implementation
 behind it and the command line; they are public so that tests and the fuzz targets can reach them, and they carry no
 stability promise.
 
