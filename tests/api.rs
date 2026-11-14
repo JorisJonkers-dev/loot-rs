@@ -203,3 +203,25 @@ fn the_kinds_of_findings_are_exhaustive_for_this_version_but_callers_keep_a_wild
     assert_eq!(label, "missing");
     assert!(finding.hard);
 }
+
+#[test]
+fn a_mod_manager_reads_a_plugin_header_and_places_what_is_not_installed() {
+    let fixture = world();
+    let masterlist = Masterlist::parse(MASTERLIST).expect("masterlist");
+    let load_order = load_order();
+    let result = sort(
+        &load_order,
+        &masterlist,
+        &fixture.data(),
+        &SortOptions::default(),
+    )
+    .expect("sort");
+    let full = result.order_with_not_installed(&load_order);
+    assert_eq!(full.len(), load_order.len());
+    assert!(full.contains(&"Gone.esp".to_owned()));
+    let header =
+        loot_rs::api::read_plugin_header(&fixture.data().join("Patch.esp")).expect("header");
+    assert_eq!(header.masters, ["Base.esp"]);
+    assert_eq!(MessageKind::Warn.label(), "warn");
+    assert_eq!(FindingKind::LoadAfter.label(), "load after");
+}

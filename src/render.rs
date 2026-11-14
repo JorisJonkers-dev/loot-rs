@@ -7,6 +7,11 @@ use std::fmt::Write;
 /// Group-order findings printed per plugin before the rest are summarised.
 const GROUP_LINES_PER_PLUGIN: usize = 5;
 
+/// The version of the JSON that [`render_json`] and [`render_sort_json`] write, as the integer `schema_version` at
+/// the start of each document. It rises when a key is removed, renamed or changes meaning; adding a key does not
+/// raise it.
+pub const SCHEMA_VERSION: u32 = 1;
+
 fn message_lines(out: &mut String, indent: &str, message: &AppliedMessage) {
     let mut lines = message.content.trim().lines();
     let _ = writeln!(
@@ -170,12 +175,12 @@ fn json_strings(out: &mut String, items: &[String]) {
 
 /// Render the report as one line of JSON, for tools that compare it with another implementation.
 ///
-/// Keys: `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`, `messages`,
+/// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`, `messages`,
 /// `tags_add`, `tags_remove`, `findings`), `general_findings`, `not_installed`, `warnings` and
 /// `hard_violations`. Everything is in load order and the text is the same as in [`render`].
 #[must_use]
 pub fn render_json(report: &Report) -> String {
-    let mut out = String::from("{\"general_messages\":");
+    let mut out = format!("{{\"schema_version\":{SCHEMA_VERSION},\"general_messages\":");
     json_list(&mut out, &report.globals, json_message);
     out.push_str(",\"plugins\":");
     json_list(&mut out, &report.plugins, |out, plugin| {
@@ -283,35 +288,22 @@ pub fn render_sort(result: &SortOutput) -> String {
 }
 
 fn message_label(kind: crate::api::MessageKind) -> &'static str {
-    match kind {
-        crate::api::MessageKind::Say => "say",
-        crate::api::MessageKind::Warn => "warn",
-        crate::api::MessageKind::Error => "error",
-    }
+    kind.label()
 }
 
 fn finding_label(kind: crate::api::FindingKind) -> &'static str {
-    use crate::api::FindingKind as Kind;
-    match kind {
-        Kind::MissingRequirement => FindingKind::MissingRequirement.label(),
-        Kind::Incompatible => FindingKind::Incompatible.label(),
-        Kind::LoadAfter => FindingKind::LoadAfter.label(),
-        Kind::GroupOrder => FindingKind::GroupOrder.label(),
-        Kind::UndefinedGroup => FindingKind::UndefinedGroup.label(),
-        Kind::Unsupported => FindingKind::Unsupported.label(),
-        Kind::ConditionError => FindingKind::ConditionError.label(),
-    }
+    kind.label()
 }
 
 /// The result of a sort as one line of JSON, in the shape of [`render_json`] plus the sort.
 ///
-/// Keys: `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
+/// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
 /// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `findings`), `generated_general_messages`,
 /// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
 /// `warnings`, `hard_violations`.
 #[must_use]
 pub fn render_sort_json(result: &SortOutput) -> String {
-    let mut out = String::from("{\"sorted\":");
+    let mut out = format!("{{\"schema_version\":{SCHEMA_VERSION},\"sorted\":");
     json_strings(&mut out, &result.order);
     out.push_str(",\"general_messages\":");
     json_list(&mut out, &result.general_messages, json_api_message);

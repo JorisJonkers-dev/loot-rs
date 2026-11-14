@@ -643,3 +643,87 @@ fn more_than_255_active_plugins_are_a_warning_about_the_load_order() {
     .expect("sorts");
     assert_eq!(output.generated_general_messages, []);
 }
+
+fn output_with_order(names: &[&str]) -> SortOutput {
+    SortOutput {
+        order: names.iter().map(|name| (*name).to_owned()).collect(),
+        ..SortOutput::default()
+    }
+}
+
+#[test]
+fn a_plugin_that_is_not_installed_goes_after_the_installed_plugin_that_preceded_it() {
+    let output = output_with_order(&["A.esm", "B.esp", "C.esp"]);
+    let load_order = slots(&["A.esm", "Gone.esp", "C.esp", "B.esp"]);
+    assert_eq!(
+        output.order_with_not_installed(&load_order),
+        ["A.esm", "Gone.esp", "B.esp", "C.esp"]
+    );
+}
+
+#[test]
+fn plugins_that_are_not_installed_and_lead_the_load_order_stay_first_in_their_order() {
+    let output = output_with_order(&["A.esm", "B.esp"]);
+    let load_order = slots(&["Gone1.esp", "Gone2.esp", "B.esp", "A.esm", "Gone3.esp"]);
+    assert_eq!(
+        output.order_with_not_installed(&load_order),
+        ["Gone1.esp", "Gone2.esp", "A.esm", "Gone3.esp", "B.esp"]
+    );
+}
+
+#[test]
+fn placing_not_installed_plugins_matches_names_without_regard_to_case() {
+    let output = output_with_order(&["A.esm", "B.esp"]);
+    let load_order = slots(&["a.ESM", "Gone.esp", "b.esp"]);
+    assert_eq!(
+        output.order_with_not_installed(&load_order),
+        ["A.esm", "Gone.esp", "B.esp"]
+    );
+}
+
+#[test]
+fn placing_with_nothing_missing_returns_the_sorted_order() {
+    let output = output_with_order(&["B.esp", "A.esm"]);
+    assert_eq!(
+        output.order_with_not_installed(&slots(&["A.esm", "B.esp"])),
+        ["B.esp", "A.esm"]
+    );
+}
+
+#[test]
+fn message_and_finding_kinds_have_the_labels_of_the_output() {
+    assert_eq!(MessageKind::Say.label(), "say");
+    assert_eq!(MessageKind::Warn.label(), "warn");
+    assert_eq!(MessageKind::Error.label(), "error");
+    assert_eq!(
+        FindingKind::MissingRequirement.label(),
+        "missing requirement"
+    );
+    assert_eq!(FindingKind::Incompatible.label(), "incompatible");
+    assert_eq!(FindingKind::LoadAfter.label(), "load after");
+    assert_eq!(FindingKind::GroupOrder.label(), "group order");
+    assert_eq!(FindingKind::UndefinedGroup.label(), "undefined group");
+    assert_eq!(FindingKind::Unsupported.label(), "unsupported");
+    assert_eq!(FindingKind::ConditionError.label(), "condition error");
+}
+
+#[test]
+fn the_sort_json_starts_with_the_integer_schema_version() {
+    let json = crate::render::render_sort_json(&SortOutput::default());
+    assert!(
+        json.starts_with(&format!(
+            "{{\"schema_version\":{SCHEMA_VERSION},\"sorted\":"
+        )),
+        "{json}"
+    );
+    assert_eq!(SCHEMA_VERSION, 1);
+}
+
+#[test]
+fn read_plugin_header_gives_the_masters_and_flags() {
+    let dir = TempDir::new();
+    dir.plugin("Patch.esp", &["Base.esm"]);
+    let header = read_plugin_header(&dir.path().join("Patch.esp")).expect("header");
+    assert_eq!(header.masters, ["Base.esm"]);
+    assert!(!header.is_master());
+}
