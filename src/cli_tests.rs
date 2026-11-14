@@ -233,3 +233,31 @@ fn the_command_is_check_or_sort() {
     assert_eq!(parse_args(&full()).expect("parses").command, Command::Check);
     assert_eq!(parse_args(&sort).expect("parses").command, Command::Sort);
 }
+
+#[test]
+fn game_dir_and_repeated_extra_data_are_parsed() {
+    let args: Vec<String> = [
+        "sort",
+        "--masterlist",
+        "m",
+        "--plugins",
+        "p",
+        "--data",
+        "d",
+        "--game-dir",
+        "g",
+        "--extra-data",
+        "e1",
+        "--extra-data",
+        "e2",
+    ]
+    .iter()
+    .map(ToString::to_string)
+    .collect();
+    let parsed = parse_args(&args).expect("parses");
+    assert_eq!(parsed.game_dir, Some(PathBuf::from("g")));
+    assert_eq!(
+        parsed.extra_data,
+        [PathBuf::from("e1"), PathBuf::from("e2")]
+    );
+}

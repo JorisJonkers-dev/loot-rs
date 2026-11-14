@@ -21,6 +21,7 @@ fn data(names: &[&str]) -> TempDir {
     dir
 }
 
+#[allow(clippy::needless_pass_by_value)]
 fn run_with(
     yaml: &str,
     dir: &TempDir,
@@ -726,4 +727,76 @@ fn read_plugin_header_gives_the_masters_and_flags() {
     let header = read_plugin_header(&dir.path().join("Patch.esp")).expect("header");
     assert_eq!(header.masters, ["Base.esm"]);
     assert!(!header.is_master());
+}
+
+#[test]
+fn a_game_directory_makes_a_parent_path_condition_hold() {
+    let game = TempDir::new();
+    game.file("nvse_1_4.dll", b"x");
+    let staging = TempDir::new();
+    staging.plugin("A.esp", &[]);
+    let yaml = "plugins:\n  - name: A.esp\n    msg:\n      - type: say\n        content: nvse is here\n        condition: 'file(\"../nvse_1_4.dll\")'\n";
+    let texts = |output: &SortOutput| -> Vec<String> {
+        output.plugins[0]
+            .messages
+            .iter()
+            .map(|m| m.text.clone())
+            .collect()
+    };
+    let without = run(yaml, &staging, &["A.esp"]).expect("sorts");
+    assert_eq!(texts(&without), Vec::<String>::new());
+    let options = SortOptions::default().with_game_dir(game.path());
+    let with = run_with(yaml, &staging, &["A.esp"], options).expect("sorts");
+    assert_eq!(texts(&with), ["nvse is here"]);
+}
+
+#[test]
+fn a_plugin_only_in_an_additional_directory_is_installed_and_sorted() {
+    let data_dir = TempDir::new();
+    data_dir.plugin("Base.esm", &[]);
+    let extra = TempDir::new();
+    extra.plugin("Patch.esp", &["Base.esm"]);
+    let options = SortOptions::default().with_additional_data_dir(extra.path());
+    let output = run_with("", &data_dir, &["Patch.esp", "Base.esm"], options).expect("sorts");
+    assert_eq!(order(&output), ["Base.esm", "Patch.esp"]);
+    assert_eq!(output.not_installed, Vec::<String>::new());
+    assert!(output.warnings.is_empty(), "{:?}", output.warnings);
+}
+
+#[test]
+fn a_ghosted_plugin_is_sorted_as_the_plugin() {
+    let dir = TempDir::new();
+    dir.plugin("Base.esm", &[]);
+    dir.plugin("Patch.esp.ghost", &["Base.esm"]);
+    let output = run("", &dir, &["Patch.esp", "Base.esm"]).expect("sorts");
+    assert_eq!(order(&output), ["Base.esm", "Patch.esp"]);
+}
+
+#[test]
+fn a_case_collision_in_a_directory_is_a_warning() {
+    let dir = data(&["A.esp"]);
+    dir.file("x.dll", b"1");
+    dir.file("X.dll", b"2");
+    let output = run("", &dir, &["A.esp"]).expect("sorts");
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|w| w.contains("differ only in case")),
+        "{:?}",
+        output.warnings
+    );
+}
+
+#[test]
+fn a_missing_additional_directory_is_a_warning() {
+    let dir = data(&["A.esp"]);
+    let options = SortOptions::default().with_additional_data_dir("/nonexistent-loot-rs-dir");
+    let output = run_with("", &dir, &["A.esp"], options).expect("sorts");
+    assert!(
+        output
+            .warnings
+            .iter()
+            .any(|w| w.contains("not a directory"))
+    );
 }

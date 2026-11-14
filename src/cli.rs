@@ -24,7 +24,7 @@ pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
 pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups] [--json]
+pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--json]
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
 sort: prints the load order sorted with LOOT's algorithm (a port of libloot's plugin graph)
@@ -54,6 +54,10 @@ pub struct Args {
     pub plugins: PathBuf,
     /// The game's `Data` directory.
     pub data: PathBuf,
+    /// The game directory, what `..` in a condition names.
+    pub game_dir: Option<PathBuf>,
+    /// Further data directories, searched in this order before `data`.
+    pub extra_data: Vec<PathBuf>,
     /// Switches for the check.
     pub options: Options,
     /// Print the report as JSON (see [`render::render_json`]) instead of text.
@@ -73,6 +77,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         None => return Err("missing command".into()),
     };
     let (mut masterlist, mut plugins, mut data) = (None, None, None);
+    let (mut game_dir, mut extra_data) = (None, Vec::new());
     let mut options = Options::default();
     let mut json = false;
     while let Some(flag) = args.next() {
@@ -85,6 +90,8 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             "--masterlist" => masterlist = Some(value("--masterlist")?),
             "--plugins" => plugins = Some(value("--plugins")?),
             "--data" => data = Some(value("--data")?),
+            "--game-dir" => game_dir = Some(value("--game-dir")?),
+            "--extra-data" => extra_data.push(value("--extra-data")?),
             "--strict-groups" => options.strict_groups = true,
             "--json" => json = true,
             other => return Err(format!("unknown argument {other:?}")),
@@ -95,6 +102,8 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         masterlist: masterlist.ok_or("--masterlist is required")?,
         plugins: plugins.ok_or("--plugins is required")?,
         data: data.ok_or("--data is required")?,
+        game_dir,
+        extra_data,
         options,
         json,
     })
@@ -138,7 +147,11 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
     if args.command == Command::Sort {
         return execute_sort(args, &yaml, &slots, out);
     }
-    let report = run(&metadata, &FsEnv::new(&args.data, slots), args.options);
+    let env = FsEnv::new(&args.data, slots)
+        .with_game_dir(args.game_dir.as_deref())
+        .with_additional_data_dirs(&args.extra_data);
+    let mut report = run(&metadata, &env, args.options);
+    report.metadata_warnings.extend(env.case_warnings());
     let text = if args.json {
         render::render_json(&report)
     } else {
@@ -164,7 +177,10 @@ fn execute_sort(
         .iter()
         .map(|slot| PluginSlot::new(slot.name.clone(), slot.active))
         .collect();
-    let options = SortOptions::default().with_strict_groups(args.options.strict_groups);
+    let mut options = SortOptions::default()
+        .with_strict_groups(args.options.strict_groups)
+        .with_additional_data_dirs(args.extra_data.iter());
+    options.game_dir.clone_from(&args.game_dir);
     let result = sort(&load_order, &masterlist, &args.data, &options)
         .map_err(|error| format!("cannot sort: {error}"))?;
     let text = if args.json {

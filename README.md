@@ -82,7 +82,7 @@ field. Every size read from the file is checked before the interpreter sees it, 
   400 plugin names taken from the current New Vegas masterlist, 53 items were skipped for `version()`.
 * `dirty` / `clean` are read as data; CRCs are not compared and no cleaning messages are produced.
 * No userlist, no prelude replacement, no `url`, no localised message selection (English is used), no Markdown
-  rendering, no metadata merging across masterlist and userlist, no ghosted plugins (`.ghost`).
+  rendering, no metadata merging across masterlist and userlist.
 * Groups are checked pairwise and independently; LOOT's rule that a group edge is dropped when it would clash
   with a master, `after` or `req` edge is not applied, so a group note can appear that LOOT would not enforce.
 * The checks look only at the plugin list you give. Masters are not checked (that is `fnvorder check`).

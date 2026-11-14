@@ -255,3 +255,89 @@ fn crc32_of_a_file_is_the_crc32_of_its_bytes_across_block_boundaries() {
     }
     assert!(crc32_file(&dir.path().join("missing")).is_err());
 }
+
+fn layout() -> (TempDir, TempDir) {
+    let game = TempDir::new();
+    game.file("Data/placeholder.txt", b"");
+    let staging = TempDir::new();
+    staging.file("data/placeholder.txt", b"");
+    (game, staging)
+}
+
+#[test]
+fn a_parent_path_reaches_the_game_directory_when_one_is_set() {
+    let (game, staging) = layout();
+    game.file("x.dll", b"x");
+    let data = staging.path().join("data");
+    let without = FsEnv::new(&data, vec![]);
+    assert_eq!(without.count_files("../x.dll"), Ok(0));
+    let with = FsEnv::new(&data, vec![]).with_game_dir(Some(game.path()));
+    assert_eq!(with.count_files("../x.dll"), Ok(1));
+    assert_eq!(with.count_files("../X.DLL"), Ok(1));
+    assert_eq!(with.file_size("../x.dll"), Some(1));
+}
+
+#[test]
+fn a_parent_path_is_the_parent_of_data_without_a_game_directory() {
+    let (game, _staging) = layout();
+    game.file("x.dll", b"x");
+    let env = FsEnv::new(&game.path().join("Data"), vec![]);
+    assert_eq!(env.count_files("../x.dll"), Ok(1));
+}
+
+#[test]
+fn additional_directories_are_searched_before_data_in_the_order_given() {
+    let (game, staging) = layout();
+    let (first, second) = (TempDir::new(), TempDir::new());
+    second.file("shared.txt", b"22");
+    first.file("shared.txt", b"1");
+    game.file("Data/shared.txt", b"333");
+    game.file("Data/only-data.txt", b"4");
+    let env = FsEnv::new(&game.path().join("Data"), vec![])
+        .with_additional_data_dirs(&[first.path().to_path_buf(), second.path().to_path_buf()]);
+    assert_eq!(env.file_size("shared.txt"), Some(1));
+    assert_eq!(env.file_size("only-data.txt"), Some(1));
+    let reversed = FsEnv::new(&game.path().join("Data"), vec![])
+        .with_additional_data_dirs(&[second.path().to_path_buf(), first.path().to_path_buf()]);
+    assert_eq!(reversed.file_size("shared.txt"), Some(2));
+    drop(staging);
+}
+
+#[test]
+fn a_name_pattern_counts_each_name_once_across_directories() {
+    let (game, _staging) = layout();
+    let extra = TempDir::new();
+    extra.file("a1.txt", b"");
+    extra.file("a2.txt", b"");
+    game.file("Data/A1.txt", b"");
+    let env = FsEnv::new(&game.path().join("Data"), vec![])
+        .with_additional_data_dirs(&[extra.path().to_path_buf()]);
+    assert_eq!(env.count_files("a[0-9]\\.txt"), Ok(2));
+}
+
+#[test]
+fn a_ghosted_plugin_counts_as_the_plugin() {
+    let dir = TempDir::new();
+    dir.plugin("Mod.esp.ghost", &[]);
+    dir.file("notes.txt.ghost", b"");
+    let env = FsEnv::new(dir.path(), vec![slot("mod.esp", true)]);
+    assert!(env.installed("Mod.esp"));
+    assert!(env.is_active("Mod.esp"));
+    assert_eq!(env.count_files("Mod\\.esp"), Ok(1));
+    assert_eq!(env.count_files("notes.txt"), Ok(0));
+    assert!(env.resolve("Mod.esp").is_some());
+}
+
+#[test]
+fn names_that_differ_only_in_case_are_a_warning() {
+    let dir = TempDir::new();
+    dir.file("Thing.dll", b"1");
+    dir.file("thing.DLL", b"22");
+    dir.file("other.txt", b"");
+    let env = FsEnv::new(dir.path(), vec![]);
+    let warnings = env.case_warnings();
+    assert_eq!(warnings.len(), 1);
+    assert!(warnings[0].contains("Thing.dll, thing.DLL"), "{warnings:?}");
+    assert!(warnings[0].contains("differ only in case"));
+    assert_eq!(env.count_files("THING.dll"), Ok(1));
+}

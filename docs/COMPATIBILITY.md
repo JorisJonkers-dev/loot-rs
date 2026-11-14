@@ -115,5 +115,7 @@ there are no others known. One thing is not verified: no run against a real libl
 | `plugins.txt`, active-only style | supported | |
 | `plugins.txt`, `*` style | supported | |
 | `loadorder.txt` | unsupported | Not read; give a `plugins.txt` in load order |
-| Ghosted plugins (`.ghost`) | unsupported | |
+| Ghosted plugins (`.ghost`) | supported | `X.esp.ghost` in a data directory counts as `X.esp`; names are not rewritten in `plugins.txt` |
+| Game directory, additional data directories | supported | `SortOptions::game_dir` and `additional_data_dirs`, or `--game-dir` and `--extra-data`; additional directories first, then `Data`; `..` is the game directory. See API.md |
+| Names differing only in case | warning | Reported in `warnings`; matching stays case-insensitive |
 | Master flag / master list sort rules | unsupported | See `fnvorder check` in NV-Linux-Modding |
