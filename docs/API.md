@@ -64,8 +64,9 @@ The algorithm is libloot's (see [COMPATIBILITY.md](COMPATIBILITY.md) for what is
    hold) and the game's hard-coded first plugin (`FalloutNV.esm`). A cycle among them is a `Conflict` error.
 3. Edges from groups: a plugin in a group loads before the plugins of groups that load after it, each edge only when it
    closes no cycle (found with libloot's depth-first search order).
-4. Overlap edges (plugins that change the same records, then the same archive paths): the one that changes more loads
-   first. **Not fed yet**: the record and archive data are not read, so these edges are absent.
+4. Overlap edges: of two plugins that have a record in common, the one that overrides more records loads first (the
+   record ids are read from the plugin files); then of two that load the same archive paths, the one that loads more.
+   **Archive data is not read yet**, so only the record overlap applies.
 5. Tie-break edges that keep the current load order wherever nothing above forbids it, and a topological sort. A plugin
    therefore moves only for a reason, and sorting a sorted order changes nothing.
 

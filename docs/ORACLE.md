@@ -43,7 +43,7 @@ The pieces, all under `scripts/oracle/` (Python 3, standard library only):
 | Script | Does |
 | --- | --- |
 | `materialise.py` | builds the `Data` directory, `plugins.txt` and `masterlist.yaml` of a golden case on disk, with the same synthetic plugin bytes the Rust tests write; `ensure_master` adds an empty `FalloutNV.esm` because libloot refuses a game directory without it |
-| `loot_driver.py` | the libloot side: opens the game directory with libloot's Python bindings (`loot_api`), loads the masterlist, loads the plugins (headers only), asks the database for the evaluated general messages and per-plugin metadata, runs LOOT's sort, and writes `loot.json` |
+| `loot_driver.py` | the libloot side: opens the game directory with libloot's Python bindings (`loot_api`), loads the masterlist, loads the plugins (in full, because the sort uses their records), asks the database for the evaluated general messages and per-plugin metadata, runs LOOT's sort, and writes `loot.json` |
 | `compare.py` | compares `ours.json` (`loot-rs sort --json`) with `loot.json`; its header documents both shapes |
 | `run.py` | does all of it for one case, all cases, or a real load order, and keeps the JSON files under `--work` |
 
@@ -58,7 +58,7 @@ scripts/oracle/run.py --loot-rs target/release/loot-rs \
   --driver "python3 scripts/oracle/loot_driver.py" --all --work ~/oracle-work
 ```
 
-`--all` runs the 22 cases of `tests/golden` and the 6 of `tests/golden_sort`; `--case tests/golden_sort/groups` runs one.
+`--all` runs the 22 cases of `tests/golden` and the 8 of `tests/golden_sort`; `--case tests/golden_sort/groups` runs one.
 Without `--driver`, or when `loot_api` is not installed, it still runs `loot-rs` on every case, prints `skipped` and
 exits 3: that means nothing was compared, never "no difference". Exit codes: 0 compared and no difference, 1
 differences, 2 an error, 3 skipped.

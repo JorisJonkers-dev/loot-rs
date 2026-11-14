@@ -42,3 +42,13 @@ reproduced in `src/sort/search.rs`); userlist (user metadata) edges and Starfiel
 ported; a group that nobody defined is left without edges instead of being an error. Every ported file says so in
 its header. libloot is licensed GPL-3.0-or-later and this crate GPL-3.0-only: the combination is distributed under
 GPL-3.0, which the licence allows.
+
+## `src/records.rs` (GPL-3.0-or-later)
+
+The record reader is written for this crate (a flat scan of the record headers of a Fallout: New Vegas plugin, with
+every size checked against the file). What it computes is libloot's and esplugin's: a record id is the FormID resolved
+against the plugin's masters (master name and object index; a master byte past the master list means the plugin
+itself), a plugin overrides a record when its master byte names a master, and two plugins overlap when they share a
+resolved id. That follows `esplugin` (<https://github.com/Ortham/esplugin>, `src/plugin.rs` and `src/record_id.rs`,
+GPL-3.0, Copyright (C) 2017 Oliver Hamlet) as libloot uses it (`Plugin::do_records_overlap` and
+`override_record_count`). The file header says so.

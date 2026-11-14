@@ -5,6 +5,7 @@
 pub mod model;
 
 use loot_rs::plugin::{FLAG_ESM, synthetic_plugin};
+use loot_rs::records::synthetic_records;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -109,24 +110,35 @@ pub fn proptest_config(cases: u32) -> proptest::test_runner::Config {
 }
 
 /// Build the `Data` directory a golden case describes (`data.txt`): `plugin NAME [esm] [masters=A,B]` writes a
-/// synthetic plugin, `file PATH text=TEXT` writes a file.
+/// synthetic plugin (`records=HEX,HEX` adds a group with a record of each of those form ids), `file PATH text=TEXT`
+/// writes a file.
 pub fn build_data(fixture: &Fixture, spec: &str) {
     for line in spec.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let mut words = line.split_whitespace();
         match words.next() {
             Some("plugin") => {
                 let name = words.next().expect("plugin name");
-                let (mut flags, mut masters) = (0, Vec::new());
+                let (mut flags, mut masters, mut form_ids) = (0, Vec::new(), Vec::new());
                 for word in words {
                     if word == "esm" {
                         flags |= FLAG_ESM;
                     } else if let Some(list) = word.strip_prefix("masters=") {
                         masters = list.split(',').collect();
+                    } else if let Some(list) = word.strip_prefix("records=") {
+                        form_ids = list
+                            .split(',')
+                            .map(|id| (u32::from_str_radix(id, 16).expect("hex form id"), 0))
+                            .collect();
                     } else {
                         panic!("unknown plugin option {word:?} in {line:?}");
                     }
                 }
-                fixture.file(name, &synthetic_plugin(flags, &masters, None));
+                let bytes = if form_ids.is_empty() {
+                    synthetic_plugin(flags, &masters, None)
+                } else {
+                    synthetic_records(flags, &masters, &[(*b"NPC_", &form_ids)])
+                };
+                fixture.file(name, &bytes);
             }
             Some("file") => {
                 let path = words.next().expect("file path");

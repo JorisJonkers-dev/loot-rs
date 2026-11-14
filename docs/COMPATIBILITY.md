@@ -64,8 +64,8 @@ cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACL
 | Cycle among these edges is an error naming the cycle | supported | `SortError::Conflict` names the first two plugins of the cycle |
 | Group edges: depth-first searches of the group graph, roots first by longest path, skipped when they would close a cycle, the `default` group last | supported | Same code path as libloot, including which edges are skipped. A group `after` a group nobody defined has that edge ignored, a plugin in an undefined group gets no group edges (libloot refuses both with an error; the finding is in `check`) |
 | Cycle among groups | supported | `SortError::GroupCycle` (LOOT refuses it too) |
-| Record overlap edges | partial | The graph code is ported and tested; the record data is not read yet, so no plugin overlaps another and these edges are absent. A load order where two plugins change the same records can come out in another order than LOOT's |
-| Asset (archive) overlap edges | partial | Same: ported, not fed yet |
+| Record overlap edges | supported | The record ids of every installed plugin are read (`src/records.rs`, FormIDs resolved against the plugin's masters as esplugin does): the plugin that overrides more records loads first when two plugins have a record in common. A plugin whose records cannot be read is noted and counts as having none |
+| Asset (archive) overlap edges | partial | The graph code is ported and tested; the archive (BSA) contents are not read yet, so these edges are absent. A load order where two plugins load the same archive paths can come out in another order than LOOT's |
 | Tie-break edges and pinning | supported | |
 | Topological sort | supported | petgraph's depth-first topological sort, reproduced |
 | Messages LOOT's application generates while sorting (missing masters, inactive requirements, dirty plugins) | unsupported | |
