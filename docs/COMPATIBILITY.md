@@ -72,8 +72,10 @@ cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACL
 | The Bash Tags of the plugin's description (`bash_tags`) | supported | `{{BASH:Tag,Tag}}`, as libloot reads them |
 
 Everything here is Fallout: New Vegas only. Differences that follow from what is not supported are listed above;
-there are no others known. One thing is not verified: no run against a real libloot has been made, see
-[ORACLE.md](ORACLE.md); the port is checked against libloot's own unit tests and its documentation.
+there are no others known. The sorted order, and the messages, Bash Tags, groups and cleaning data of a plugin and the
+general messages (conditions evaluated, user metadata left out), are compared with libloot 0.29.7 on random synthetic
+worlds, with the known differences listed in `scripts/oracle/compare.py` ([ORACLE.md](ORACLE.md)); the port is also
+checked against libloot's own unit tests and its documentation.
 
 ## Condition language
 
