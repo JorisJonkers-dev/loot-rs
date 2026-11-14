@@ -219,7 +219,10 @@ fn json_output_is_one_line_and_keeps_the_exit_code() {
     let (code, out, err) = run_main(&args);
     assert_eq!((code, err.as_str()), (EXIT_VIOLATION, ""));
     assert_eq!(out.lines().count(), 1, "{out}");
-    assert!(out.starts_with("{\"general_messages\":[]"), "{out}");
+    assert!(
+        out.starts_with("{\"schema_version\":1,\"general_messages\":[]"),
+        "{out}"
+    );
     assert!(out.contains("\"hard_violations\":1}"), "{out}");
 }
 

@@ -54,7 +54,9 @@ use crate::metadata::{
 };
 use crate::overlap::PluginOverlaps;
 use crate::plugin;
+pub use crate::plugin::{PluginError, PluginHeader};
 use crate::records::{self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordsError};
+pub use crate::render::SCHEMA_VERSION;
 use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, PluginInput};
 use crate::validate;
 use std::collections::{HashMap, HashSet};
@@ -179,6 +181,18 @@ pub enum MessageKind {
     Error,
 }
 
+impl MessageKind {
+    /// The word used for this kind in the text and JSON output: `say`, `warn` or `error`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::Say => "say",
+            Self::Warn => "warn",
+            Self::Error => "error",
+        }
+    }
+}
+
 /// A message from the masterlist whose condition holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -207,6 +221,22 @@ pub enum FindingKind {
     Unsupported,
     /// A condition was invalid or could not be evaluated, so its item was not applied.
     ConditionError,
+}
+
+impl FindingKind {
+    /// The short label used for this kind in the text and JSON output, for example `missing requirement`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::MissingRequirement => "missing requirement",
+            Self::Incompatible => "incompatible",
+            Self::LoadAfter => "load after",
+            Self::GroupOrder => "group order",
+            Self::UndefinedGroup => "undefined group",
+            Self::Unsupported => "unsupported",
+            Self::ConditionError => "condition error",
+        }
+    }
 }
 
 impl From<InnerKind> for FindingKind {
@@ -375,6 +405,54 @@ impl SortOutput {
             .collect();
         given != self.order
     }
+
+    /// The whole load order with the plugins that are not installed put back, by the default rule: a plugin that
+    /// is not installed goes right after the installed plugin that precedes it in `load_order` (after any
+    /// not-installed plugins already placed there), or first when nothing installed precedes it. Names are matched
+    /// without regard to ASCII case; installed plugins keep the sorted order of [`SortOutput::order`].
+    ///
+    /// A caller that wants another rule places [`SortOutput::not_installed`] itself.
+    #[must_use]
+    pub fn order_with_not_installed(&self, load_order: &[PluginSlot]) -> Vec<String> {
+        let installed = |name: &str| {
+            self.order
+                .iter()
+                .any(|item| item.eq_ignore_ascii_case(name))
+        };
+        // Not-installed plugins by the lowercase name of the installed plugin they follow (`None`: the front).
+        let mut after: HashMap<Option<String>, Vec<&str>> = HashMap::new();
+        let mut anchor: Option<String> = None;
+        for slot in load_order {
+            if installed(&slot.name) {
+                anchor = Some(slot.name.to_ascii_lowercase());
+            } else {
+                after.entry(anchor.clone()).or_default().push(&slot.name);
+            }
+        }
+        let mut placed: Vec<String> = after
+            .remove(&None)
+            .unwrap_or_default()
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        for name in &self.order {
+            placed.push(name.clone());
+            if let Some(names) = after.remove(&Some(name.to_ascii_lowercase())) {
+                placed.extend(names.into_iter().map(str::to_owned));
+            }
+        }
+        placed
+    }
+}
+
+/// Read the header of a plugin file: its masters, flags, author, description and record count. Reads only the header
+/// record, so it is cheap to call for every plugin of a load order.
+///
+/// # Errors
+/// An I/O error for a file that cannot be read; a header that is malformed gives [`std::io::ErrorKind::InvalidData`]
+/// wrapping a [`PluginError`].
+pub fn read_plugin_header(path: &Path) -> std::io::Result<PluginHeader> {
+    plugin::read_header(path)
 }
 
 /// Why [`sort`] gave no result.

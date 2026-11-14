@@ -107,3 +107,13 @@ earlier ones forward), adds the `SortError` variants `GroupCycle` and `Internal`
 callers already have a wildcard arm), and replaces the `sort` module's functions (`sort::order` is now `sort::sort`
 over `PluginInput`s; that module is public for tests and carries no promise). The `api` module's signatures are
 unchanged, but `PluginResult` and `SortOutput` (both `#[non_exhaustive]`) gain fields (`generated_messages`, `bash_tags`, `generated_general_messages`), and the JSON of `loot-rs sort --json` gains the same keys. Release as a minor version.
+
+## JSON schema version
+
+`loot-rs check --json` and `loot-rs sort --json` write an integer `schema_version` as the first key (`api::SCHEMA_VERSION`, now 1). It rises when a key is removed, renamed or changes meaning; a new key does not raise it, so a consumer ignores keys it does not know.
+
+## Helpers for a mod manager
+
+* `SortOutput::order_with_not_installed(&load_order)`: the whole load order with the not-installed plugins put back, each right after the installed plugin that preceded it in the given order (first when none did).
+* `MessageKind::label()` and `FindingKind::label()`: the words the text and JSON output use.
+* `api::read_plugin_header(path)`, with `api::PluginHeader` and `api::PluginError`: the header of one plugin (masters, flags, author, description, record count). `PluginHeader` is `#[non_exhaustive]`.

@@ -70,6 +70,7 @@ impl std::error::Error for PluginError {}
 
 /// The parts of a plugin header the load order needs.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct PluginHeader {
     /// Record flags.
     pub flags: u32,
