@@ -25,8 +25,7 @@ two should agree on:
 Ordering is checked two ways: every `after`, `req` and header-master rule of `loot-rs sort`, and every constraint
 `check` reports as violated, must hold in the order LOOT's sort produces (group rules are listed as notes); and
 `loot-rs sort` is a port of LOOT's algorithm, so on the synthetic cases, which have no records in common, the two
-orders should be **equal**. Until the record and archive overlap data is read (see
-[COMPATIBILITY.md](COMPATIBILITY.md)), a real load order in which plugins change the same records can still differ.
+orders should be **equal**. The record and archive overlap data are read as libloot reads them (see [COMPATIBILITY.md](COMPATIBILITY.md)); a real load order that differs from LOOT's order is a case to examine, not an expected difference.
 
 Known, expected differences (not bugs): `loot-rs` does not implement `filename_version()`,
 `description_contains()` and `is_executable()`, and implements `version()` and `product_version()` only on
@@ -58,7 +57,7 @@ scripts/oracle/run.py --loot-rs target/release/loot-rs \
   --driver "python3 scripts/oracle/loot_driver.py" --all --work ~/oracle-work
 ```
 
-`--all` runs the 22 cases of `tests/golden` and the 8 of `tests/golden_sort`; `--case tests/golden_sort/groups` runs one.
+`--all` runs the 22 cases of `tests/golden` and the 10 of `tests/golden_sort`; `--case tests/golden_sort/groups` runs one.
 Without `--driver`, or when `loot_api` is not installed, it still runs `loot-rs` on every case, prints `skipped` and
 exits 3: that means nothing was compared, never "no difference". Exit codes: 0 compared and no difference, 1
 differences, 2 an error, 3 skipped.

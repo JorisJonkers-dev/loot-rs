@@ -14,7 +14,6 @@
 //! plugin itself) and the low 24 bits are the object. Two plugins have a record in common when some record has the
 //! same master name and object in both; a plugin overrides a record when its master byte names a master.
 
-use std::cell::Cell;
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
@@ -22,7 +21,6 @@ use std::io::{self, BufReader, Read, Seek};
 use std::path::Path;
 
 use crate::plugin::{RECORD_HEADER_SIZE, header_data_size};
-use crate::sort::Overlaps;
 
 /// Most records read from one plugin (`FalloutNV.esm` has about 400,000).
 pub const MAX_RECORDS_PER_PLUGIN: usize = 4_000_000;
@@ -202,70 +200,6 @@ fn read_header_bytes<R: Read>(
 fn skip<R: Read + Seek>(reader: &mut BufReader<R>, bytes: u64) -> Result<(), RecordsError> {
     let bytes = i64::try_from(bytes).map_err(|_| RecordsError::Truncated)?;
     reader.seek_relative(bytes).map_err(RecordsError::Io)
-}
-
-/// Which plugins have a record in common, from the ids of [`read_records`], for the sorter.
-#[derive(Debug, Default)]
-pub struct RecordOverlaps {
-    keys: Vec<Vec<u64>>,
-    work: Cell<u64>,
-}
-
-impl RecordOverlaps {
-    /// `keys[i]` are the sorted record keys of plugin `i` of the list given to the sorter (empty for a plugin
-    /// without records).
-    #[must_use]
-    pub fn new(keys: Vec<Vec<u64>>) -> Self {
-        Self {
-            keys,
-            work: Cell::new(0),
-        }
-    }
-
-    fn intersect(&self, a: &[u64], b: &[u64]) -> bool {
-        let (small, large) = if a.len() <= b.len() { (a, b) } else { (b, a) };
-        let (Some(&first), Some(&last)) = (small.first(), small.last()) else {
-            return false;
-        };
-        if large.last().is_some_and(|&top| top < first)
-            || large.first().is_some_and(|&bottom| bottom > last)
-        {
-            return false;
-        }
-        if small.len().saturating_mul(16) < large.len() {
-            let steps = u64::from(large.len().ilog2() + 1);
-            self.work.set(self.work.get() + small.len() as u64 * steps);
-            return small.iter().any(|key| large.binary_search(key).is_ok());
-        }
-        self.work
-            .set(self.work.get() + (small.len() + large.len()) as u64);
-        let (mut x, mut y) = (0, 0);
-        while x < small.len() && y < large.len() {
-            match small[x].cmp(&large[y]) {
-                std::cmp::Ordering::Less => x += 1,
-                std::cmp::Ordering::Greater => y += 1,
-                std::cmp::Ordering::Equal => return true,
-            }
-        }
-        false
-    }
-}
-
-impl Overlaps for RecordOverlaps {
-    fn records(&self, a: usize, b: usize) -> bool {
-        match (self.keys.get(a), self.keys.get(b)) {
-            (Some(a), Some(b)) => self.intersect(a, b),
-            _ => false,
-        }
-    }
-
-    fn assets(&self, _: usize, _: usize) -> bool {
-        false
-    }
-
-    fn work(&self) -> u64 {
-        self.work.get()
-    }
 }
 
 /// A group of records for [`synthetic_records`]: its label and `(form id, data size)` of each record.

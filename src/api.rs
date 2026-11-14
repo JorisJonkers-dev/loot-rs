@@ -43,16 +43,16 @@
 //! other modules of the crate (`check`, `condition`, `env`, `metadata`, `plugin`, `render`, `sort`, `cli`) are the
 //! implementation and are not covered by that promise. See `docs/API.md`.
 
+use crate::archives::{self, ArchiveError, MAX_ASSETS_TOTAL, PathIds, PluginAssets};
 use crate::check::{self, FindingKind as InnerKind};
 use crate::condition::{ConditionError, eval_str};
 use crate::env::{FsEnv, Slot, crc32_file};
 use crate::metadata::{
     self, DEFAULT_GROUP, MessageKind as InnerMessageKind, Metadata, PluginEntry,
 };
+use crate::overlap::PluginOverlaps;
 use crate::plugin;
-use crate::records::{
-    self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordOverlaps, RecordsError,
-};
+use crate::records::{self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordsError};
 use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, PluginInput};
 use std::collections::{HashMap, HashSet};
 use std::fmt;
@@ -526,16 +526,21 @@ pub fn sort(
 
     let name_of = |index: usize| facts[index].name.to_string();
     let records = read_all_records(&env, &facts, &mut output.warnings)?;
+    let assets = read_all_assets(data_dir, &facts, &mut output.warnings)?;
     let inputs: Vec<PluginInput> = facts
         .iter()
         .enumerate()
         .map(|(index, fact)| {
             let mut input = plugin_input(fact, &rules, index);
             input.override_records = records[index].overridden;
+            input.assets = assets[index].keys.len();
             input
         })
         .collect();
-    let overlaps = RecordOverlaps::new(records.into_iter().map(|plugin| plugin.keys).collect());
+    let overlaps = PluginOverlaps::new(
+        records.into_iter().map(|plugin| plugin.keys).collect(),
+        assets.into_iter().map(|plugin| plugin.keys).collect(),
+    );
     let groups: Vec<GroupInput> = metadata
         .groups
         .iter()
@@ -614,6 +619,38 @@ fn read_all_records(
                 ));
                 all.push(PluginRecords::default());
             }
+        }
+    }
+    Ok(all)
+}
+
+/// The files of the archives each installed plugin loads. An archive that cannot be read is noted and skipped; a
+/// limit is an error.
+fn read_all_assets(
+    data_dir: &Path,
+    facts: &[Facts],
+    warnings: &mut Vec<String>,
+) -> Result<Vec<PluginAssets>, SortError> {
+    let mut ids = PathIds::default();
+    let mut budget = MAX_ASSETS_TOTAL;
+    let mut all = Vec::with_capacity(facts.len());
+    for fact in facts {
+        let found = archives::associated_archives(data_dir, fact.name);
+        let mut skipped = Vec::new();
+        match archives::read_plugin_assets(&found, &mut ids, &mut budget, &mut skipped) {
+            Ok(assets) => all.push(assets),
+            Err(ArchiveError::TooMuch) => return Err(SortError::TooMuchWork),
+            Err(error) => {
+                // Not produced by `read_plugin_assets`, which reports everything else through `skipped`.
+                warnings.push(format!("{}: archives not read ({error})", fact.name));
+                all.push(PluginAssets::default());
+            }
+        }
+        for (path, error) in skipped {
+            let file = path
+                .file_name()
+                .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
+            warnings.push(format!("{}: archive {file} not read ({error})", fact.name));
         }
     }
     Ok(all)

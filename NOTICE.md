@@ -52,3 +52,13 @@ itself), a plugin overrides a record when its master byte names a master, and tw
 resolved id. That follows `esplugin` (<https://github.com/Ortham/esplugin>, `src/plugin.rs` and `src/record_id.rs`,
 GPL-3.0, Copyright (C) 2017 Oliver Hamlet) as libloot uses it (`Plugin::do_records_overlap` and
 `override_record_count`). The file header says so.
+
+## `src/archives.rs`, `src/overlap.rs` (GPL-3.0-or-later)
+
+`src/archives.rs` finds the BSA archives a plugin loads and reads the folder and file names they list, as libloot does
+for Fallout: New Vegas (`src/archive/find.rs`, `bsa.rs`, `parse.rs` of libloot; GPL-3.0-or-later, Copyright (C) the
+libloot authors): archives in `Data` whose names begin with the plugin's name, names normalised (no end slashes, `\`
+for `/`, ASCII lower case), each folder and file pair counted once. The reader is rewritten with every size checked
+against the file; Fallout 4 and Starfield archives and the other games' rules are left out. `src/overlap.rs` is the
+"do two sorted lists share an item" test of esplugin and libloot (`do_assets_overlap`) with a cheaper search for a
+short list in a long one. Both files say so in their headers.

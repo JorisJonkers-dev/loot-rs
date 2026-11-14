@@ -8,10 +8,13 @@
 //! * `exe_version` (cargo feature `executable-versions`): `version()` and `product_version()` on executables.
 //! * [`check`]: applies the metadata to a load order and produces a [`check::Report`].
 //! * [`cli`]: argument parsing and the `check` command.
+//! * [`archives`]: the BSA archives a plugin loads and the files they hold, for the overlap between plugins.
+//! * [`overlap`]: sorted lists of ids and which plugins share one.
 //! * [`records`]: the records of a plugin, for the overlap between plugins.
 //! * [`render`]: plain-text output of a report.
 
 pub mod api;
+pub mod archives;
 pub mod check;
 pub mod cli;
 pub mod condition;
@@ -19,6 +22,7 @@ pub mod env;
 #[cfg(feature = "executable-versions")]
 pub mod exe_version;
 pub mod metadata;
+pub mod overlap;
 pub mod plugin;
 pub mod records;
 pub mod render;

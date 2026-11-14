@@ -37,6 +37,23 @@ def synthetic_records(flags: int, masters: list[str], form_ids: list[int]) -> by
     return synthetic_plugin(flags, masters) + group
 
 
+def synthetic_bsa(folders: list[tuple[str, list[str]]]) -> bytes:
+    """The bytes of loot_rs::archives::synthetic_bsa(104, folders): the tables of a version 104 archive, no data."""
+    file_count = sum(len(files) for _, files in folders)
+    folder_names_length = sum(len(name) + 1 for name, _ in folders)
+    file_names_length = sum(len(file) + 1 for _, files in folders for file in files)
+    baseline = 36 + 16 * len(folders) + file_names_length
+    head = b"BSA\0" + struct.pack(
+        "<8I", 104, 36, 3, len(folders), file_count, folder_names_length, file_names_length, 0
+    )
+    records, folder_records = b"", b""
+    for name, files in folders:
+        folder_records += b"\0" * 8 + struct.pack("<II", len(files), baseline + len(records))
+        records += bytes([len(name) + 1]) + name.encode("latin-1") + b"\0" + b"\0" * (16 * len(files))
+    names = b"".join(file.encode("latin-1") + b"\0" for _, files in folders for file in files)
+    return head + folder_records + records + names
+
+
 def materialise(case: Path, out: Path) -> None:
     data = out / "Data"
     data.mkdir(parents=True, exist_ok=True)
@@ -58,6 +75,14 @@ def materialise(case: Path, out: Path) -> None:
             target = data / words[1]
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(synthetic_records(flags, masters, form_ids) if form_ids else synthetic_plugin(flags, masters))
+        elif words[0] == "bsa":
+            folders = []
+            for folder in words[2].split(";"):
+                name, files = folder.split("=", 1)
+                folders.append((name, [file for file in files.split(",") if file]))
+            target = data / words[1]
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(synthetic_bsa(folders))
         elif words[0] == "file":
             target = data / words[1]
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -91,11 +116,14 @@ def selftest() -> None:
     assert records[len(header):][:4] == b"GRUP" and struct.unpack_from("<I", records, len(header) + 4)[0] == 24 + 48
     first = records[len(header) + 24:]
     assert first[:4] == b"NPC_" and struct.unpack_from("<I", first, 12)[0] == 0x800
+    archive = synthetic_bsa([("meshes", ["a.nif", "b.nif"]), ("textures", ["c.dds"])])
+    assert archive[:4] == b"BSA\0" and struct.unpack_from("<I", archive, 4)[0] == 104
+    assert archive.endswith(b"a.nif\0b.nif\0c.dds\0") and len(archive) == 36 + 32 + (1 + 7 + 32) + (1 + 9 + 16) + 18
     with tempfile.TemporaryDirectory() as tmp:
         case = Path(tmp) / "case"
         case.mkdir()
         (case / "data.txt").write_text(
-            "plugin A.esm esm\nplugin B.esp masters=A.esm records=800,1000001\nfile docs/x.txt text=hello\n"
+            "plugin A.esm esm\nplugin B.esp masters=A.esm records=800,1000001\nbsa B.bsa meshes=a.nif\nfile docs/x.txt text=hello\n"
         )
         (case / "plugins.txt").write_text("A.esm\nB.esp\n")
         (case / "masterlist.yaml").write_text("plugins: []\n")
@@ -104,6 +132,7 @@ def selftest() -> None:
         assert (out / "Data" / "docs" / "x.txt").read_bytes() == b"hello"
         assert struct.unpack_from("<I", (out / "Data" / "A.esm").read_bytes(), 8)[0] == FLAG_ESM
         assert (out / "Data" / "B.esp").read_bytes() == synthetic_records(0, ["A.esm"], [0x800, 0x1000001])
+        assert (out / "Data" / "B.bsa").read_bytes() == synthetic_bsa([("meshes", ["a.nif"])])
         assert (out / "plugins.txt").read_text() == "A.esm\nB.esp\n"
         ensure_master(out)
         assert (out / "plugins.txt").read_text() == "FalloutNV.esm\nA.esm\nB.esp\n"

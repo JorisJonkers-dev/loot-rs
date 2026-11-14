@@ -72,9 +72,8 @@ field. Every size read from the file is checked before the interpreter sees it, 
 ## What it does NOT do
 
 * Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) is a port
-  of libloot's plugin graph (masters, `req`, `after`, groups, tie-breaks). Record overlap is used; archive (BSA) overlap
-  is not read yet, so where two plugins load the same archive paths the order can differ from LOOT's, and the userlist
-  is not read; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+  of libloot's plugin graph (masters, `req`, `after`, groups, tie-breaks). Record overlap and archive (BSA) overlap are
+  used; the userlist is not read; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 * It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
 * The condition functions `filename_version`, `description_contains` and `is_executable` are **not implemented**,
   and `version` and `product_version` are implemented only for executables and DLLs and only when built with the

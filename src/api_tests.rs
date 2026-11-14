@@ -490,3 +490,60 @@ fn a_rule_wins_over_the_overlap_and_a_plugin_whose_records_cannot_be_read_is_not
     assert_eq!(output.warnings.len(), 1);
     assert!(output.warnings[0].starts_with("Cut.esp: records not readable"));
 }
+
+#[test]
+fn the_plugin_that_loads_more_of_the_same_archive_files_goes_first() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    dir.plugin("A.esp", &[]);
+    dir.plugin("B.esp", &[]);
+    dir.file(
+        "A.bsa",
+        &crate::archives::synthetic_bsa(104, &[("meshes", &["x.nif"])]),
+    );
+    dir.file(
+        "B - Main.bsa",
+        &crate::archives::synthetic_bsa(104, &[("meshes", &["x.nif", "y.nif", "z.nif"])]),
+    );
+    let output = run("", &dir, &["FalloutNV.esm", "A.esp", "B.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "B.esp", "A.esp"]);
+
+    // Different files in the same folder do not overlap.
+    dir.file(
+        "B - Main.bsa",
+        &crate::archives::synthetic_bsa(104, &[("meshes", &["y.nif", "z.nif"])]),
+    );
+    let output = run("", &dir, &["FalloutNV.esm", "A.esp", "B.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "A.esp", "B.esp"]);
+}
+
+#[test]
+fn records_win_over_archive_files_and_an_unreadable_archive_is_noted() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    records_plugin(
+        &dir,
+        "A.esp",
+        &["FalloutNV.esm"],
+        &[0x0000_0001, 0x0000_0002],
+    );
+    records_plugin(&dir, "B.esp", &["FalloutNV.esm"], &[0x0000_0001]);
+    // B loads more files than A, and both have them in common, but they also have records in common and A
+    // changes more of them.
+    dir.file(
+        "A.bsa",
+        &crate::archives::synthetic_bsa(104, &[("f", &["1"])]),
+    );
+    dir.file(
+        "B.bsa",
+        &crate::archives::synthetic_bsa(104, &[("f", &["1", "2", "3"])]),
+    );
+    dir.file(
+        "B - Broken.bsa",
+        b"BSA\0 broken but longer than a header, really it is",
+    );
+    let output = run("", &dir, &["FalloutNV.esm", "B.esp", "A.esp"]).expect("sorts");
+    assert_eq!(order(&output), ["FalloutNV.esm", "A.esp", "B.esp"]);
+    assert_eq!(output.warnings.len(), 1);
+    assert!(output.warnings[0].starts_with("B.esp: archive B - Broken.bsa not read"));
+}

@@ -4,6 +4,7 @@
 
 pub mod model;
 
+use loot_rs::archives::synthetic_bsa;
 use loot_rs::plugin::{FLAG_ESM, synthetic_plugin};
 use loot_rs::records::synthetic_records;
 use std::fs;
@@ -111,7 +112,7 @@ pub fn proptest_config(cases: u32) -> proptest::test_runner::Config {
 
 /// Build the `Data` directory a golden case describes (`data.txt`): `plugin NAME [esm] [masters=A,B]` writes a
 /// synthetic plugin (`records=HEX,HEX` adds a group with a record of each of those form ids), `file PATH text=TEXT`
-/// writes a file.
+/// writes a file, `bsa NAME.bsa folder=file,file;folder=file` writes a version 104 archive that lists those files.
 pub fn build_data(fixture: &Fixture, spec: &str) {
     for line in spec.lines().map(str::trim).filter(|l| !l.is_empty()) {
         let mut words = line.split_whitespace();
@@ -139,6 +140,23 @@ pub fn build_data(fixture: &Fixture, spec: &str) {
                     synthetic_records(flags, &masters, &[(*b"NPC_", &form_ids)])
                 };
                 fixture.file(name, &bytes);
+            }
+            Some("bsa") => {
+                // `bsa NAME.bsa folder=file,file;folder=file`: a version 104 archive with those files.
+                let name = words.next().expect("bsa name");
+                let spec = words.next().expect("bsa folders");
+                let folders: Vec<(&str, Vec<&str>)> = spec
+                    .split(';')
+                    .map(|folder| {
+                        let (name, files) = folder.split_once('=').expect("folder=files");
+                        (name, files.split(',').filter(|f| !f.is_empty()).collect())
+                    })
+                    .collect();
+                let refs: Vec<(&str, &[&str])> = folders
+                    .iter()
+                    .map(|(name, files)| (*name, files.as_slice()))
+                    .collect();
+                fixture.file(name, &synthetic_bsa(104, &refs));
             }
             Some("file") => {
                 let path = words.next().expect("file path");

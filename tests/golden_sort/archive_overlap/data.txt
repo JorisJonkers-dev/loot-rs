@@ -1,0 +1,7 @@
+plugin FalloutNV.esm esm
+plugin A.esp
+plugin B.esp
+plugin C.esp
+bsa A.bsa meshes=x.nif
+bsa B.bsa meshes=x.nif,y.nif,z.nif
+bsa C.bsa meshes=q.nif,r.nif,s.nif,t.nif
