@@ -25,8 +25,9 @@
 //!
 //! # Contract
 //!
-//! * Nothing is written. Plugin files are only read (headers, and whole files for a checksum when the masterlist
-//!   has cleaning data for them), and the masterlist is only read.
+//! * Nothing is written. Plugin files are only read (their records, as the sort needs them, and whole files for a
+//!   checksum when the masterlist has cleaning data for them), archives only for their tables, and the
+//!   masterlist is only read.
 //! * The result depends only on the arguments and the files under `data_dir`: no clock, no network, no
 //!   randomness. Which group rules are dropped does not depend on the order given, and sorting a sorted order
 //!   changes nothing.
@@ -40,8 +41,9 @@
 //! Everything in this module follows semantic versioning (while the crate is 0.x, a minor version may break it, a
 //! patch version never does). Structs are `#[non_exhaustive]` and built with `new` or `Default`, so a field can be
 //! added without a break; enums are `#[non_exhaustive]`, so a variant can be added: always keep a `_` arm. The
-//! other modules of the crate (`check`, `condition`, `env`, `metadata`, `plugin`, `render`, `sort`, `cli`) are the
-//! implementation and are not covered by that promise. See `docs/API.md`.
+//! other modules of the crate (`archives`, `check`, `cli`, `condition`, `env`, `metadata`, `overlap`, `plugin`,
+//! `records`, `render`, `sort`, `validate`) are the implementation and are not covered by that promise. See
+//! `docs/API.md`.
 
 use crate::archives::{self, ArchiveError, MAX_ASSETS_TOTAL, PathIds, PluginAssets};
 use crate::check::{self, FindingKind as InnerKind};

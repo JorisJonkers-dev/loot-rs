@@ -27,7 +27,7 @@ pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--strict-groups] [--json]
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
-sort: prints the load order sorted by the metadata rules (masters, after, req, groups; not LOOT's algorithm)
+sort: prints the load order sorted with LOOT's algorithm (a port of libloot's plugin graph)
 with the messages, tags and findings that apply to it.
 Neither writes anything.
 
