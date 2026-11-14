@@ -1,13 +1,25 @@
 //! The load order and the `Data` directory that conditions and rules are evaluated against.
 //!
 //! Paths in metadata are relative to the `Data` directory and are matched case-insensitively
-//! (the game's file system is, a Linux one is not), including `..` for the game directory.
+//! (the game's file system is, a Linux one is not).
+//!
+//! # Where a path is looked for
+//!
+//! A load order can be spread over several directories (a mod manager's staging tree next to the game's own
+//! `Data`). [`FsEnv`] searches, for a path or a name pattern, the additional data directories in the order given
+//! and then the `Data` directory, as `loot-condition-interpreter` does. When a file exists in several of them, the
+//! first directory that has it wins, for its contents as well as for its existence: that is the file that is read
+//! for a header, records, a checksum or a version. A leading `..` names the game directory when one is set
+//! ([`FsEnv::with_game_dir`]) and the parent of the searched directory when not.
+//!
+//! A plugin stored as `Name.esp.ghost` (or `.esm.ghost`) counts as `Name.esp`, as in libloot. Two names in one
+//! directory that differ only in case are matched in sorted order and reported by [`FsEnv::case_warnings`].
 
 use crate::condition::{ConditionError, Env};
 use crate::metadata::{compile_whole_name, looks_like_regex};
 use crate::plugin;
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -101,8 +113,29 @@ pub fn crc32_file(path: &Path) -> io::Result<u32> {
 /// A load order over a `Data` directory on disk.
 pub struct FsEnv {
     data: PathBuf,
+    extra: Vec<PathBuf>,
+    game: Option<PathBuf>,
     slots: Vec<Slot>,
     listings: RefCell<HashMap<PathBuf, Vec<String>>>,
+    collisions: RefCell<BTreeSet<String>>,
+}
+
+const GHOST: &str = ".ghost";
+
+/// True for a file name with a plugin extension (`.esp` or `.esm`), without regard to case.
+fn has_plugin_extension(name: &str) -> bool {
+    Path::new(name).extension().is_some_and(|extension| {
+        extension.eq_ignore_ascii_case("esp") || extension.eq_ignore_ascii_case("esm")
+    })
+}
+
+/// `name` without a `.ghost` suffix when what is left has a plugin extension, as libloot trims it.
+fn unghosted(name: &str) -> &str {
+    let lower = name.to_ascii_lowercase();
+    match lower.strip_suffix(GHOST) {
+        Some(stem) if has_plugin_extension(stem) => &name[..stem.len()],
+        _ => name,
+    }
 }
 
 impl FsEnv {
@@ -111,9 +144,54 @@ impl FsEnv {
     pub fn new(data: &Path, slots: Vec<Slot>) -> Self {
         Self {
             data: data.to_path_buf(),
+            extra: Vec::new(),
+            game: None,
             slots,
             listings: RefCell::new(HashMap::new()),
+            collisions: RefCell::new(BTreeSet::new()),
         }
+    }
+
+    /// Set the game directory: what a leading `..` in a path names.
+    #[must_use]
+    pub fn with_game_dir(mut self, game: Option<&Path>) -> Self {
+        self.game = game.map(Path::to_path_buf);
+        self
+    }
+
+    /// Set the additional data directories, searched in this order before the `Data` directory.
+    #[must_use]
+    pub fn with_additional_data_dirs(mut self, dirs: &[PathBuf]) -> Self {
+        self.extra = dirs.to_vec();
+        self
+    }
+
+    /// The game directory, when one was set.
+    #[must_use]
+    pub fn game_dir(&self) -> Option<&Path> {
+        self.game.as_deref()
+    }
+
+    /// The additional data directories, in search order.
+    #[must_use]
+    pub fn additional_data_dirs(&self) -> &[PathBuf] {
+        &self.extra
+    }
+
+    /// The directories that are searched, in order: the additional ones, then the `Data` directory.
+    fn roots(&self) -> impl Iterator<Item = &PathBuf> {
+        self.extra.iter().chain(std::iter::once(&self.data))
+    }
+
+    /// One warning for every directory searched (and every other directory listed so far) that holds two names
+    /// differing only in case. Such names cannot both exist on the game's file system; here the first in sorted
+    /// order is used.
+    #[must_use]
+    pub fn case_warnings(&self) -> Vec<String> {
+        for root in self.roots() {
+            let _ = self.listing(root);
+        }
+        self.collisions.borrow().iter().cloned().collect()
     }
 
     /// The load order.
@@ -132,7 +210,7 @@ impl FsEnv {
         if let Some(cached) = self.listings.borrow().get(dir) {
             return Ok(cached.clone());
         }
-        let names = match fs::read_dir(dir) {
+        let names: Vec<String> = match fs::read_dir(dir) {
             Ok(entries) => entries
                 .filter_map(Result::ok)
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
@@ -145,39 +223,84 @@ impl FsEnv {
                 )));
             }
         };
+        let mut names = names;
+        names.sort();
+        self.note_collisions(dir, &names);
         self.listings
             .borrow_mut()
             .insert(dir.to_path_buf(), names.clone());
         Ok(names)
     }
 
-    /// Resolve a `/`-separated path under `Data`, matching each component case-insensitively.
+    fn note_collisions(&self, dir: &Path, names: &[String]) {
+        let mut by_lower: HashMap<String, Vec<&str>> = HashMap::new();
+        for name in names {
+            by_lower.entry(name.to_lowercase()).or_default().push(name);
+        }
+        let mut groups: Vec<Vec<&str>> = by_lower.into_values().filter(|g| g.len() > 1).collect();
+        groups.sort();
+        for group in groups {
+            self.collisions.borrow_mut().insert(format!(
+                "{}: {} differ only in case; conditions match case-insensitively and use {}",
+                dir.display(),
+                group.join(", "),
+                group[0]
+            ));
+        }
+    }
+
+    /// Resolve a `/`-separated path, matching each component case-insensitively: in the additional data
+    /// directories in order, then in `Data`. The first directory that has the path wins. `None` when no directory
+    /// has it. A plugin name also finds `Name.esp.ghost`.
     #[must_use]
     pub fn resolve(&self, relative: &str) -> Option<PathBuf> {
-        let mut current = self.data.clone();
+        self.roots()
+            .find_map(|root| self.resolve_in(root, relative))
+    }
+
+    fn resolve_in(&self, root: &Path, relative: &str) -> Option<PathBuf> {
+        let mut current = root.to_path_buf();
+        let mut depth = 0usize;
         for part in relative.split('/').filter(|part| !part.is_empty()) {
             match part {
                 "." => {}
-                ".." => {
-                    current.pop();
-                }
-                name => {
-                    let direct = current.join(name);
-                    if direct.exists() {
-                        current = direct;
-                    } else {
-                        let lower = name.to_lowercase();
-                        let found = self
-                            .listing(&current)
-                            .ok()?
-                            .into_iter()
-                            .find(|candidate| candidate.to_lowercase() == lower)?;
-                        current = current.join(found);
+                ".." => match &self.game {
+                    Some(game) if depth == 0 => current.clone_from(game),
+                    _ => {
+                        current.pop();
+                        depth = depth.saturating_sub(1);
                     }
+                },
+                name => {
+                    depth += 1;
+                    current = self.child(&current, name)?;
                 }
             }
         }
         Some(current)
+    }
+
+    /// The entry of `dir` named `name` without regard to case, the exact spelling first.
+    fn child(&self, dir: &Path, name: &str) -> Option<PathBuf> {
+        let direct = dir.join(name);
+        if direct.exists() {
+            return Some(direct);
+        }
+        let lower = name.to_lowercase();
+        let listing = self.listing(dir).ok()?;
+        let found = listing
+            .iter()
+            .find(|candidate| candidate.to_lowercase() == lower)
+            .or_else(|| {
+                if !has_plugin_extension(name) {
+                    return None;
+                }
+                let ghost = format!("{lower}{GHOST}");
+                listing
+                    .iter()
+                    .find(|candidate| candidate.to_lowercase() == ghost)
+            })?;
+        Some(dir.join(found))
     }
 
     /// True when `name` is installed in the `Data` directory.
@@ -217,14 +340,19 @@ impl Env for FsEnv {
         }
         let (dir, pattern) = Self::regex_parts(path);
         let regex = compile_whole_name(pattern).map_err(ConditionError::Syntax)?;
-        let Some(dir) = self.resolve(dir) else {
-            return Ok(0);
-        };
-        Ok(self
-            .listing(&dir)?
-            .iter()
-            .filter(|name| regex.is_match(name))
-            .count())
+        let mut seen = HashSet::new();
+        for root in self.roots() {
+            let Some(dir) = self.resolve_in(root, dir) else {
+                continue;
+            };
+            for name in self.listing(&dir)? {
+                let name = unghosted(&name);
+                if regex.is_match(name) {
+                    seen.insert(name.to_lowercase());
+                }
+            }
+        }
+        Ok(seen.len())
     }
 
     fn count_active(&self, path: &str) -> Result<usize, ConditionError> {

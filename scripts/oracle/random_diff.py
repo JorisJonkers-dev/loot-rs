@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Differential test: loot-rs against the real libloot on random synthetic load orders.
 
-Each world is a handful of invented plugins (masters, records, BSA archives), groups with `after` lists and
+Each world is a handful of invented plugins (masters, records, BSA archives), some in an additional data
+directory (`Extra`, searched before `Data`), groups with `after` lists and
 `after` and `req` rules; both tools sort the same directory, given the same current order, and the sorted orders
 must be equal. An error is a result too: both refusing counts as agreement. Nothing here uses game files.
 
@@ -16,6 +17,7 @@ Exit status: 0 no difference, 1 differences (the first few are printed with thei
 driver given or built: nothing was compared).
 """
 import json
+import os
 import random
 import shutil
 import subprocess
@@ -53,7 +55,8 @@ def world(rng: random.Random, most: int = 12) -> dict:
         if rng.random() < 0.4:
             folder = rng.choice(["meshes", "textures"])
             archive = [(folder, [f"f{rng.randint(0, 5)}.nif" for _ in range(rng.randint(1, 5))])]
-        plugins.append({"name": name, "esm": name.endswith(".esm"), "masters": listed, "records": records, "archive": archive})
+        plugins.append({"name": name, "esm": name.endswith(".esm"), "masters": listed, "records": records, "archive": archive,
+                        "extra": rng.random() < 0.3})
     group_after = {"g1": [], "g2": ["g1"], "g3": ["g1"] if rng.random() < 0.5 else ["g2"]}
     if rng.random() < 0.5:
         group_after["default"] = [rng.choice(["g1", "g2"])]
@@ -73,9 +76,12 @@ def world(rng: random.Random, most: int = 12) -> dict:
 
 
 def write(w: dict, root: Path) -> list[str]:
-    """The game directory of a world: `Data`, `masterlist.yaml`, `plugins.txt`, `local`. Returns the load order."""
+    """The game directory of a world: `Data`, `Extra` (an additional data directory that holds the plugins the
+    world marks with `extra`, with their archives), `masterlist.yaml`, `plugins.txt`, `local`. Returns the load order."""
     data = root / "Data"
     data.mkdir(parents=True)
+    extra = root / "Extra"
+    extra.mkdir()
     (data / "FalloutNV.esm").write_bytes(m.synthetic_plugin(m.FLAG_ESM, []))
     for plugin in w["plugins"]:
         flags = m.FLAG_ESM if plugin["esm"] else 0
@@ -83,9 +89,10 @@ def write(w: dict, root: Path) -> list[str]:
             blob = m.synthetic_records(flags, plugin["masters"], plugin["records"])
         else:
             blob = m.synthetic_plugin(flags, plugin["masters"])
-        (data / plugin["name"]).write_bytes(blob)
+        home = extra if plugin.get("extra") else data
+        (home / plugin["name"]).write_bytes(blob)
         if plugin["archive"]:
-            (data / (Path(plugin["name"]).stem + ".bsa")).write_bytes(m.synthetic_bsa(plugin["archive"]))
+            (home / (Path(plugin["name"]).stem + ".bsa")).write_bytes(m.synthetic_bsa(plugin["archive"]))
     lines = ["groups:"]
     for group, after in w["group_after"].items():
         lines.append(f"  - name: {group}")
@@ -108,7 +115,7 @@ def write(w: dict, root: Path) -> list[str]:
 def sort_ours(binary: str, root: Path) -> list[str] | str:
     done = subprocess.run(
         [binary, "sort", "--masterlist", str(root / "masterlist.yaml"), "--plugins", str(root / "plugins.txt"),
-         "--data", str(root / "Data"), "--json"],
+         "--data", str(root / "Data"), "--extra-data", str(root / "Extra"), "--json"],
         capture_output=True, text=True, check=False,
     )
     if done.returncode in (0, 1):
@@ -120,6 +127,7 @@ def sort_libloot(driver: str, root: Path, order: list[str]) -> list[str] | str:
     done = subprocess.run(
         [driver, str(root), str(root / "local"), str(root / "masterlist.yaml"), *order],
         capture_output=True, text=True, check=False,
+        env={**os.environ, "LIBLOOT_DRIVER_EXTRA_DATA": str(root / "Extra")},
     )
     try:
         result = json.loads(done.stdout)
@@ -153,7 +161,11 @@ def selftest() -> None:
             order = write(w, root / "game")
             assert order[0] == "FalloutNV.esm" and len(order) == len(w["plugins"]) + 1
             for name in order:
-                assert (root / "game" / "Data" / name).is_file()
+                assert (root / "game" / "Data" / name).is_file() or (root / "game" / "Extra" / name).is_file()
+            for plugin in w["plugins"]:
+                home = "Extra" if plugin["extra"] else "Data"
+                assert (root / "game" / home / plugin["name"]).is_file(), "a plugin is in its own directory"
+                assert not (root / "game" / ("Data" if plugin["extra"] else "Extra") / plugin["name"]).exists()
             assert (root / "game" / "masterlist.yaml").read_text().startswith("groups:")
         finally:
             shutil.rmtree(root, ignore_errors=True)

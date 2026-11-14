@@ -28,7 +28,7 @@
 //! * Nothing is written. Plugin files are only read (their records, as the sort needs them, and whole files for a
 //!   checksum when the masterlist has cleaning data for them), archives only for their tables, and the
 //!   masterlist is only read.
-//! * The result depends only on the arguments and the files under `data_dir`: no clock, no network, no
+//! * The result depends only on the arguments and the files under `data_dir`, `SortOptions::game_dir` and `SortOptions::additional_data_dirs`: no clock, no network, no
 //!   randomness. Which group rules are dropped does not depend on the order given, and sorting a sorted order
 //!   changes nothing.
 //! * Every size that comes from input is bounded (see `docs/RESOURCE-LIMITS.md`), and limits are errors, never
@@ -153,11 +153,19 @@ impl PluginSlot {
 }
 
 /// Switches for [`sort`].
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+///
+/// Not `Copy` since it holds directories; clone it where a copy is needed.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct SortOptions {
     /// Count group violations and undefined groups as hard findings (see `docs/GROUPS.md`). Off by default.
     pub strict_groups: bool,
+    /// The game directory: what a leading `..` in a condition path names (`../nvse_1_4.dll`). When unset, `..` is
+    /// the parent of the directory searched.
+    pub game_dir: Option<PathBuf>,
+    /// Further directories that hold plugins and files, searched in this order before `data_dir`. When a file is
+    /// in several directories, the first one that has it is used (see `docs/API.md`).
+    pub additional_data_dirs: Vec<PathBuf>,
 }
 
 impl SortOptions {
@@ -165,6 +173,31 @@ impl SortOptions {
     #[must_use]
     pub const fn with_strict_groups(mut self, strict: bool) -> Self {
         self.strict_groups = strict;
+        self
+    }
+
+    /// Set the game directory (see [`SortOptions::game_dir`]).
+    #[must_use]
+    pub fn with_game_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.game_dir = Some(dir.into());
+        self
+    }
+
+    /// Add an additional data directory after those already added (see [`SortOptions::additional_data_dirs`]).
+    #[must_use]
+    pub fn with_additional_data_dir(mut self, dir: impl Into<PathBuf>) -> Self {
+        self.additional_data_dirs.push(dir.into());
+        self
+    }
+
+    /// Replace the additional data directories (see [`SortOptions::additional_data_dirs`]).
+    #[must_use]
+    pub fn with_additional_data_dirs<I, P>(mut self, dirs: I) -> Self
+    where
+        I: IntoIterator<Item = P>,
+        P: Into<PathBuf>,
+    {
+        self.additional_data_dirs = dirs.into_iter().map(Into::into).collect();
         self
     }
 }
@@ -590,7 +623,9 @@ pub fn sort(
     }
     let metadata = &masterlist.metadata;
     let mut output = SortOutput::default();
-    let env = FsEnv::new(data_dir, distinct_slots(load_order, &mut output.warnings));
+    let slots = distinct_slots(load_order, &mut output.warnings);
+    let env = search_env(data_dir, slots, options);
+    check_directories(&env, options, &mut output.warnings);
     let installed: Vec<&Slot> = env
         .slots()
         .iter()
@@ -614,7 +649,7 @@ pub fn sort(
 
     let name_of = |index: usize| facts[index].name.to_string();
     let records = read_all_records(&env, &facts, &mut output.warnings)?;
-    let assets = read_all_assets(data_dir, &facts, &mut output.warnings)?;
+    let assets = read_all_assets(&env, data_dir, &facts, &mut output.warnings)?;
     let inputs: Vec<PluginInput> = facts
         .iter()
         .enumerate()
@@ -667,7 +702,7 @@ pub fn sort(
         .iter()
         .map(|&index| installed[index].clone())
         .collect();
-    let sorted_env = FsEnv::new(data_dir, sorted_slots);
+    let sorted_env = search_env(data_dir, sorted_slots, options);
     let report = check::run(
         metadata,
         &sorted_env,
@@ -684,6 +719,23 @@ pub fn sort(
         &report,
     );
     Ok(output)
+}
+
+/// The environment over `data_dir` and the directories of `options`.
+fn search_env(data_dir: &Path, slots: Vec<Slot>, options: &SortOptions) -> FsEnv {
+    FsEnv::new(data_dir, slots)
+        .with_game_dir(options.game_dir.as_deref())
+        .with_additional_data_dirs(&options.additional_data_dirs)
+}
+
+/// Warnings about the directories searched: one that is not a directory, names that differ only in case.
+fn check_directories(env: &FsEnv, options: &SortOptions, warnings: &mut Vec<String>) {
+    for dir in options.game_dir.iter().chain(&options.additional_data_dirs) {
+        if !dir.is_dir() {
+            warnings.push(format!("{}: not a directory, ignored", dir.display()));
+        }
+    }
+    warnings.extend(env.case_warnings());
 }
 
 /// What the masterlist and LOOT's own checks say about each plugin, in the sorted order.
@@ -781,6 +833,7 @@ fn read_all_records(
 /// The files of the archives each installed plugin loads. An archive that cannot be read is noted and skipped; a
 /// limit is an error.
 fn read_all_assets(
+    env: &FsEnv,
     data_dir: &Path,
     facts: &[Facts],
     warnings: &mut Vec<String>,
@@ -789,7 +842,14 @@ fn read_all_assets(
     let mut budget = MAX_ASSETS_TOTAL;
     let mut all = Vec::with_capacity(facts.len());
     for fact in facts {
-        let found = archives::associated_archives(data_dir, fact.name);
+        // As libloot does, archives are taken from every directory searched, the additional ones first.
+        let found: Vec<PathBuf> = env
+            .additional_data_dirs()
+            .iter()
+            .map(PathBuf::as_path)
+            .chain(std::iter::once(data_dir))
+            .flat_map(|dir| archives::associated_archives(dir, fact.name))
+            .collect();
         let mut skipped = Vec::new();
         match archives::read_plugin_assets(&found, &mut ids, &mut budget, &mut skipped) {
             Ok(assets) => all.push(assets),

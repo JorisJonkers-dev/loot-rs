@@ -19,7 +19,7 @@ let result = sort(&load_order, &masterlist, Path::new("Data"), &SortOptions::def
 
 ## Command line
 
-`loot-rs sort --masterlist <file> --plugins <plugins.txt> --data <Data> [--strict-groups] [--json]` runs the same code: the
+`loot-rs sort --masterlist <file> --plugins <plugins.txt> --data <Data> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--json]` runs the same code: the
 text is the order with what applies to each plugin, `--json` is one line with `sorted`, `plugins`, `general_messages`,
 `dirty`, `rules`, `dropped_group_rules`, `not_installed`, `warnings` and `hard_violations`. Exit code 0, or 1 when a
 finding is hard, or 2 when the rules contradict each other or an input cannot be read.
@@ -30,8 +30,8 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | --- | --- |
 | `load_order: &[PluginSlot]` | The current order, each plugin with its file name and whether it is active |
 | `masterlist: &Masterlist` | A masterlist read once with `Masterlist::parse(text)` or `Masterlist::from_file(path)` (8 MiB limit, aliases bounded), reusable |
-| `data_dir: &Path` | The game's `Data` directory; condition paths are relative to it, `..` reaches the game directory |
-| `options: &SortOptions` | `strict_groups` (see [GROUPS.md](GROUPS.md)); default is soft |
+| `data_dir: &Path` | The game's `Data` directory (or a mod manager's staging `data` folder); condition paths are relative to it |
+| `options: &SortOptions` | `strict_groups` (see [GROUPS.md](GROUPS.md)); default is soft. `game_dir` and `additional_data_dirs` (below) |
 
 `SortOutput`:
 
@@ -53,6 +53,31 @@ rules that cannot both hold: the first two plugins of the cycle), `MasterOrder {
 the master flag that has to load before one with it), `GroupCycle(groups)` (groups that load after each other),
 `TooMuchWork`, `Internal(text)` (a check inside the sorter failed: a bug). A masterlist condition that cannot be evaluated is not an error: the item is left
 out and reported.
+
+## Game directory and additional data directories
+
+`SortOptions` has `game_dir: Option<PathBuf>` and `additional_data_dirs: Vec<PathBuf>`, set with `with_game_dir`,
+`with_additional_data_dir` and `with_additional_data_dirs`; `loot-rs check` and `sort` take them as `--game-dir` and a
+repeatable `--extra-data`. `SortOptions` is no longer `Copy` (clone it where a copy is needed).
+
+The rule, the one `loot-condition-interpreter` and libloot use:
+
+* A path (in a condition, a plugin name, a `BashTags` file) is looked for in the additional directories in the order
+  given, then in `data_dir`. Every component is matched without regard to case.
+* When a file exists in several directories the first directory that has it wins, for its contents as well as its
+  existence: that file's header, records, checksum, size and version are the ones used. `file()`, `active()`,
+  `many()`, `checksum()`, `readable()`, `is_master()` and `file_size()` follow this rule. A name pattern counts each
+  name once across all directories.
+* A leading `..` names `game_dir` when it is set. Without it, `..` is the parent of the directory searched (so a
+  staging tree's `data/..` is the staging folder, not the game).
+* A plugin that is only in an additional directory is installed, read and sorted. Archives (`.bsa`) are taken from
+  every directory, additional ones first, as libloot does.
+* `Name.esp.ghost` (and `.esm.ghost`) in a directory counts as the plugin `Name.esp`, as libloot trims the suffix.
+  `ghost` files that are not plugins are not renamed.
+* Two names in one searched directory that differ only in case are reported in `warnings` (the first in sorted
+  order is used); a `game_dir` or additional directory that is not a directory is a warning too.
+
+The JSON gains no key: the new texts are entries of `warnings`, so `schema_version` stays 1.
 
 ## What the sort does
 
