@@ -65,6 +65,7 @@ pub(super) struct PluginGraph<'a> {
     scratch: Scratch,
     overlaps: &'a dyn Overlaps,
     exceeded: bool,
+    cancelled: bool,
     added: Vec<(usize, usize, EdgeType)>,
     skipped: Vec<(usize, usize, EdgeType)>,
 }
@@ -81,6 +82,7 @@ impl<'a> PluginGraph<'a> {
             scratch: Scratch::new(n),
             overlaps,
             exceeded: false,
+            cancelled: false,
             added: Vec::new(),
             skipped: Vec::new(),
         }
@@ -95,12 +97,20 @@ impl<'a> PluginGraph<'a> {
         if !self.exceeded && self.scratch.work.saturating_add(self.overlaps.work()) > WORK_BUDGET {
             self.exceeded = true;
         }
+        if !self.exceeded && self.overlaps.cancelled() {
+            self.exceeded = true;
+            self.cancelled = true;
+        }
         self.exceeded
     }
 
     fn check_budget(&mut self) -> Result<(), GraphError> {
         if self.out_of_budget() {
-            Err(GraphError::TooMuchWork)
+            Err(if self.cancelled {
+                GraphError::Cancelled
+            } else {
+                GraphError::TooMuchWork
+            })
         } else {
             Ok(())
         }

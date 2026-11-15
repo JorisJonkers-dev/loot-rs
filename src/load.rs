@@ -18,7 +18,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use crate::archives::{self, ArchiveError, MAX_ASSETS_TOTAL, PathIds, PluginAssets};
-use crate::parallel::{self, SharedBudget};
+use crate::parallel::{self, CancelToken, SharedBudget};
 use crate::records::{
     self, MAX_RECORDS_PER_PLUGIN, MAX_RECORDS_TOTAL, NameIds, OwnerIds, PluginRecords, RecordsError,
 };
@@ -146,21 +146,46 @@ pub struct RecordJob<'a> {
     pub masters: &'a [String],
 }
 
-/// A limit was passed (the sort reports `TooMuchWork`).
+/// Why reading stopped without a result.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct OverLimit;
+pub enum Stop {
+    /// A limit was passed (the sort reports `TooMuchWork`).
+    OverLimit,
+    /// The caller cancelled the sort.
+    Cancelled,
+}
+
+/// What the caller wants told and can ask for while files are read.
+#[derive(Clone, Copy)]
+pub struct Hooks<'a> {
+    /// Set when the caller wants the work to stop; checked before each file.
+    pub cancel: Option<&'a CancelToken>,
+    /// Called once per plugin (records) or archive (tables) done, from any thread.
+    pub done: &'a (dyn Fn() + Sync),
+}
+
+impl Hooks<'_> {
+    fn cancelled(&self) -> bool {
+        parallel::cancelled(self.cancel)
+    }
+}
+
+fn interrupted<E: From<std::io::Error>>() -> E {
+    std::io::Error::from(std::io::ErrorKind::Interrupted).into()
+}
 
 /// The record ids of every plugin of `jobs`; a plugin that cannot be read is noted in `warnings` and counts as one
 /// without records.
 ///
 /// # Errors
-/// [`OverLimit`] by the rule in the module documentation.
+/// [`Stop::OverLimit`] by the rule in the module documentation, [`Stop::Cancelled`] when `hooks.cancel` is set.
 pub fn read_records(
     jobs: &[RecordJob],
     threads: usize,
     cache: Option<&SortCache>,
+    hooks: Hooks,
     warnings: &mut Vec<String>,
-) -> Result<Vec<PluginRecords>, OverLimit> {
+) -> Result<Vec<PluginRecords>, Stop> {
     let mut local = CacheData::default();
     let mut guard = cache.map(SortCache::lock);
     let data = guard.as_deref_mut().unwrap_or(&mut local);
@@ -189,8 +214,13 @@ pub fn read_records(
     let read = |threads: usize, chunk: usize, indices: &[usize]| {
         let budget = SharedBudget::new(MAX_RECORDS_TOTAL, chunk);
         parallel::map(indices, threads, |&index| {
+            if hooks.cancelled() {
+                return Err(RecordsError::Io(interrupted()));
+            }
             let path = jobs[index].path.unwrap_or_else(|| Path::new(""));
-            records::read_records_at(path, &owners[index], &budget)
+            let read = records::read_records_at(path, &owners[index], &budget);
+            (hooks.done)();
+            read
         })
     };
     let refused = |results: &[Result<PluginRecords, RecordsError>]| {
@@ -198,7 +228,13 @@ pub fn read_records(
             .iter()
             .any(|result| matches!(result, Err(RecordsError::TooMany)))
     };
+    for _ in 0..jobs.len() - misses.len() {
+        (hooks.done)();
+    }
     let results = read(threads, 1 << 16, &misses);
+    if hooks.cancelled() {
+        return Err(Stop::Cancelled);
+    }
     if refused(&results) {
         // Exact, one plugin after the other, and nothing taken from the cache or put into it.
         let all: Vec<usize> = (0..jobs.len())
@@ -208,6 +244,9 @@ pub fn read_records(
             (0..jobs.len()).map(|_| None).collect();
         for (index, result) in all.iter().copied().zip(read(1, 1, &all)) {
             merged[index] = Some(result);
+        }
+        if hooks.cancelled() {
+            return Err(Stop::Cancelled);
         }
         return finish_records(jobs, merged, warnings);
     }
@@ -234,7 +273,7 @@ pub fn read_records(
         .filter_map(|result| result.as_ref().ok())
         .any(|records| records.keys.len() > MAX_RECORDS_PER_PLUGIN);
     if total > MAX_RECORDS_TOTAL || too_large {
-        return Err(OverLimit);
+        return Err(Stop::OverLimit);
     }
     if let Some(cache) = cache {
         let mut data = cache.lock();
@@ -256,13 +295,13 @@ fn finish_records(
     jobs: &[RecordJob],
     merged: Vec<Option<Result<PluginRecords, RecordsError>>>,
     warnings: &mut Vec<String>,
-) -> Result<Vec<PluginRecords>, OverLimit> {
+) -> Result<Vec<PluginRecords>, Stop> {
     let mut all = Vec::with_capacity(jobs.len());
     for (job, result) in jobs.iter().zip(merged) {
         match result {
             None => all.push(PluginRecords::default()),
             Some(Ok(records)) => all.push(records),
-            Some(Err(RecordsError::TooMany)) => return Err(OverLimit),
+            Some(Err(RecordsError::TooMany)) => return Err(Stop::OverLimit),
             Some(Err(error)) => {
                 warnings.push(format!(
                     "{}: records not readable ({error}); it is treated as having none",
@@ -282,14 +321,15 @@ type ArchiveRead = Result<(usize, Vec<u64>), ArchiveError>;
 /// archive that cannot be read is noted and skipped, as libloot does.
 ///
 /// # Errors
-/// [`OverLimit`] by the rule in the module documentation.
+/// [`Stop::OverLimit`] by the rule in the module documentation, [`Stop::Cancelled`] when `hooks.cancel` is set.
 pub fn read_assets(
     names: &[&str],
     archives: &[Vec<PathBuf>],
     threads: usize,
     cache: Option<&SortCache>,
+    hooks: Hooks,
     warnings: &mut Vec<String>,
-) -> Result<Vec<PluginAssets>, OverLimit> {
+) -> Result<Vec<PluginAssets>, Stop> {
     let mut local = CacheData::default();
     let mut guard = cache.map(SortCache::lock);
     let data = guard.as_deref_mut().unwrap_or(&mut local);
@@ -316,7 +356,14 @@ pub fn read_assets(
         .filter(|&at| hits[at].is_none())
         .collect();
     let budget = SharedBudget::new(MAX_ASSETS_TOTAL, 1 << 12);
+    for _ in 0..distinct.len() - misses.len() {
+        (hooks.done)();
+    }
     let read: Vec<ArchiveRead> = parallel::map(&misses, threads, |&at| {
+        if hooks.cancelled() {
+            return Err(ArchiveError::Io(interrupted()));
+        }
+        let _done = Finally(hooks.done);
         let mut holder = budget.holder();
         let mut keys = Vec::new();
         archives::read_archive_with(&distinct[at], &ids, &mut keys, &mut holder)?;
@@ -326,6 +373,9 @@ pub fn read_assets(
         holder.keep(keys.len());
         Ok((raw, keys))
     });
+    if hooks.cancelled() {
+        return Err(Stop::Cancelled);
+    }
     if read
         .iter()
         .any(|result| matches!(result, Err(ArchiveError::TooMuch)))
@@ -363,7 +413,7 @@ pub fn read_assets(
             }
         }
         if before.saturating_add(raw) > MAX_ASSETS_TOTAL {
-            return Err(OverLimit);
+            return Err(Stop::OverLimit);
         }
         keys.sort_unstable();
         keys.dedup();
@@ -380,12 +430,21 @@ pub fn read_assets(
     Ok(all)
 }
 
+/// Calls the function when dropped: once per archive, however reading it ended.
+struct Finally<'a>(&'a (dyn Fn() + Sync));
+
+impl Drop for Finally<'_> {
+    fn drop(&mut self) {
+        (self.0)();
+    }
+}
+
 /// One plugin after the other with an exact budget, the cache left alone.
 fn read_assets_exactly(
     names: &[&str],
     archives: &[Vec<PathBuf>],
     warnings: &mut Vec<String>,
-) -> Result<Vec<PluginAssets>, OverLimit> {
+) -> Result<Vec<PluginAssets>, Stop> {
     let ids = PathIds::default();
     let budget = SharedBudget::new(MAX_ASSETS_TOTAL, 1);
     let mut all = Vec::with_capacity(names.len());
@@ -393,7 +452,7 @@ fn read_assets_exactly(
         let mut skipped = Vec::new();
         match archives::read_plugin_assets_shared(found, &ids, &budget, &mut skipped) {
             Ok(assets) => all.push(assets),
-            Err(_) => return Err(OverLimit),
+            Err(_) => return Err(Stop::OverLimit),
         }
         for (path, error) in skipped {
             let file = path

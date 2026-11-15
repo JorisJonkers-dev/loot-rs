@@ -105,6 +105,10 @@ pub trait Overlaps {
     fn work(&self) -> u64 {
         0
     }
+    /// True when the caller asked the sort to stop; the sort then ends with [`GraphError::Cancelled`].
+    fn cancelled(&self) -> bool {
+        false
+    }
 }
 
 /// No overlap data: only the metadata decides.
@@ -185,6 +189,8 @@ pub enum GraphError {
     GroupCycle(Vec<String>),
     /// The work budget ran out.
     TooMuchWork,
+    /// The caller asked the sort to stop.
+    Cancelled,
     /// A check inside the sorter failed; a bug, never input.
     Internal(&'static str),
 }
@@ -212,6 +218,7 @@ impl fmt::Display for GraphError {
             ),
             Self::GroupCycle(groups) => write!(f, "groups that load after each other: {groups:?}"),
             Self::TooMuchWork => write!(f, "the load order needs more work than the limit allows"),
+            Self::Cancelled => write!(f, "the sort was cancelled"),
             Self::Internal(text) => write!(f, "internal error: {text}"),
         }
     }

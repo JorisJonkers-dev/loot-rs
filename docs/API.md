@@ -70,6 +70,29 @@ within the same second to the same size is not noticed: use a new cache after su
 `Masterlist`, `SortOptions` and `SortCache` are `Send` and `Sync`: one masterlist can be shared by sorts on several
 threads. Speed measurements and the decisions behind them are in [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md).
 
+## Cancelling, progress, codes and conditions
+
+* `SortOptions::with_cancel(token)`: a `CancelToken` (`CancelToken::new()`, or `CancelToken::from(Arc<AtomicBool>)`);
+  `token.cancel()` from any thread makes the sort return `SortError::Cancelled` soon after. It is checked before each
+  file is read, between the stages and inside the graph search; nothing is written and no thread is left running.
+* `SortOptions::with_progress(ProgressHook::new(|progress| ...))`: called with `Progress { stage, done, total }` from the
+  sort's threads. Stages, in order: `ReadingPlugins` (headers and records, per plugin), `ReadingArchives` (per archive,
+  left out when `skip_archives`), `ComparingPlugins` (per plugin), `Sorting` (0 then 1), `Checking` (0 then 1). Each
+  stage starts with `done` 0 and ends with `done == total`. Counts only, never names.
+* `SortError::code()`: `data-directory`, `too-many-plugins`, `conflict`, `master-order`, `group-cycle`,
+  `too-much-work`, `internal`, `cancelled`. A code keeps its meaning; a new variant gets a new code.
+* `api::evaluate(condition, load_order, data_dir, options) -> Result<bool, EvaluateError>`: one condition string,
+  evaluated as the sort evaluates the masterlist's (a tester for a doctor command). `EvaluateError::code()`:
+  `data-directory`, `invalid`, `unsupported`.
+* Switches for a caller that wants only the order: `skip_checksums` (no whole-file CRC-32 for cleaning data, so
+  `dirty` is empty; the order is unchanged), `skip_archives` (no BSA tables, so no asset overlap: the order can differ
+  from LOOT's), `skip_executable_versions` (`version()`/`product_version()` on executables are unsupported).
+  `SortOptions::order_only()` sets all three.
+* Cargo feature `serde`: `Serialize` for `SortOutput` and its parts, with exactly the keys and values of
+  `loot-rs sort --json` without `schema_version` and `contract` (`tests/serde.rs` compares the two). Written by hand on
+  `serde` without derive macros; the default build does not depend on `serde`. `SortOutput::hard_violations()` is the
+  JSON's `hard_violations`.
+
 ## Game directory and additional data directories
 
 `SortOptions` has `game_dir: Option<PathBuf>` and `additional_data_dirs: Vec<PathBuf>`, set with `with_game_dir`,
@@ -181,6 +204,13 @@ for this mode. New optional keys do not raise `schema_version`, which stays 1, a
 * Cargo features are additive. `executable-versions` (see the README) changes only which conditions can be evaluated.
 * The tests in `tests/api.rs` use only `loot_rs::api` and `loot_rs::plugin::synthetic_plugin` from outside the crate; a
   change that breaks them is a breaking change.
+
+### Added in this version
+
+`SortOptions::threads`, `cache`, `cancel`, `progress`, `skip_checksums`, `skip_archives`, `skip_executable_versions`
+and their builders; `SortCache`, `CancelToken`, `Progress`, `Stage`, `ProgressHook`; `SortError::Cancelled` and
+`SortError::code()`; `api::evaluate` and `EvaluateError`; `SortOutput::hard_violations()`; the `serde` feature. All
+additions: no signature changed, and `SortError` is `#[non_exhaustive]`.
 
 ## Not in the API yet
 
