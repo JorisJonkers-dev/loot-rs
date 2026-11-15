@@ -45,7 +45,8 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | `dirty` | `DirtyInfo` (plugin, CRC-32, dirty or clean, utility, ITM, UDR, NAV) where an installed file's CRC-32 is on the masterlist's `dirty` or `clean` list. Only files that have such data are read |
 | `not_installed` | Plugins of the load order that are not in `Data`; they are not in `order`, the caller places them |
 | `dropped_group_rules` | Group rules `(later, earlier)` that the final order does not satisfy: the sorter left the edge out because it would have closed a cycle |
-| `mode`, `moves` | The mode that made the order; with `MinimalChange`, one `PluginMove` per plugin that moved (`plugin`, `from`, `to`, `reason`, `other`, `indirect`), else empty |
+| `mode`, `moves` | The mode that made the order; with `MinimalChange`, one `PluginMove` per plugin that moved (`plugin`, `from`, `to`, `reason`, `other`, `indirect`, `reasons`), else empty |
+| `explanations` | Every installed plugin whose place changed, in sorted order, as a `PluginMove` with every reason (`MoveExplanation`: `reason`, `other`, `later`, `indirect`, and `via`, `groups`, `counts` where they apply). See Why plugins moved |
 | `warnings` | Skipped things: unreadable plugin headers, duplicate names, an ordering rule whose condition could not be evaluated |
 | `changed(&load_order)` | Whether the order differs from the one given |
 
@@ -69,6 +70,24 @@ within the same second to the same size is not noticed: use a new cache after su
 
 `Masterlist`, `SortOptions` and `SortCache` are `Send` and `Sync`: one masterlist can be shared by sorts on several
 threads. Speed measurements and the decisions behind them are in [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md).
+
+## Why plugins moved
+
+`SortOutput::explanations` lists every installed plugin whose place in the result differs from its place in the given
+order (`from` and `to` count installed plugins only); a plugin that kept its place is not listed. In a full sort the
+reasons are computed from the edges the sorter added, never guessed from the final order:
+
+* every edge between the plugin and a plugin that was on its other side in the given order: `header-master`, `req`,
+  `after`, `group` (with `groups`: the earlier plugin's group, then the later's), `record-overlap` and
+  `asset-overlap` (with `counts`: override records or archive files of the earlier plugin, then the later's; the
+  one with more loads first), `hardcoded` (`FalloutNV.esm` first);
+* when there is none, `master-flag` when a plugin of the other partition crossed it (masters load first);
+* otherwise one indirect reason: a plugin that crossed it, joined to it by a chain of edges, and `via`, the link of the
+  chain that goes against the given order (that link's class is the `reason`; `tie-break` only appears here).
+
+`later` says whether the reason puts the plugin after `other` (it moved later) or before. `reason`, `other` and
+`indirect` of the `PluginMove` itself repeat the first reason. In a minimal-change sort `explanations` equals `moves`.
+Reasons hold names and counts only.
 
 ## Cancelling, progress, codes and conditions
 
@@ -209,7 +228,10 @@ for this mode. New optional keys do not raise `schema_version`, which stays 1, a
 
 `SortOptions::threads`, `cache`, `cancel`, `progress`, `skip_checksums`, `skip_archives`, `skip_executable_versions`
 and their builders; `SortCache`, `CancelToken`, `Progress`, `Stage`, `ProgressHook`; `SortError::Cancelled` and
-`SortError::code()`; `api::evaluate` and `EvaluateError`; `SortOutput::hard_violations()`; the `serde` feature. All
+`SortError::code()`; `api::evaluate` and `EvaluateError`; `SortOutput::hard_violations()`; the `serde` feature;
+`SortOutput::explanations`, `PluginMove::reasons`, `MoveExplanation` and the `MoveReason` variants `RecordOverlap`,
+`AssetOverlap` and `TieBreak`. The JSON gains the key `explanations` (and `reasons` in each move): new keys, so
+`schema_version` stays 1. All
 additions: no signature changed, and `SortError` is `#[non_exhaustive]`.
 
 ## Not in the API yet

@@ -49,6 +49,7 @@ use crate::archives::{ArchiveIndex, PluginAssets};
 use crate::check::{self, FindingKind as InnerKind};
 use crate::condition::{ConditionError, eval_str};
 use crate::env::{FsEnv, Slot, crc32_file};
+use crate::explain;
 use crate::load;
 pub use crate::load::SortCache;
 use crate::metadata::{
@@ -181,7 +182,7 @@ impl SortMode {
     }
 }
 
-/// The class of the constraint that forced a plugin to move in [`SortMode::MinimalChange`].
+/// The class of the rule that forced a plugin to move (see [`PluginMove`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MoveReason {
@@ -195,12 +196,20 @@ pub enum MoveReason {
     Req,
     /// The masterlist's `after` entry.
     After,
-    /// The group rules (only with `strict_groups`).
+    /// The group rules (in a minimal-change sort only with `strict_groups`).
     Group,
+    /// The two plugins change the same records and the other changes more (full sort only).
+    RecordOverlap,
+    /// The two plugins load archives with the same files and the other loads more (full sort only).
+    AssetOverlap,
+    /// The edge the sort adds to keep the given order where nothing else decides (full sort only; it is a reason
+    /// only on a path, never on its own).
+    TieBreak,
 }
 
 impl MoveReason {
-    /// A short word for output: `master-flag`, `hardcoded`, `header-master`, `req`, `after` or `group`.
+    /// A short word for output: `master-flag`, `hardcoded`, `header-master`, `req`, `after`, `group`,
+    /// `record-overlap`, `asset-overlap` or `tie-break`.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -210,11 +219,39 @@ impl MoveReason {
             Self::Req => "req",
             Self::After => "after",
             Self::Group => "group",
+            Self::RecordOverlap => "record-overlap",
+            Self::AssetOverlap => "asset-overlap",
+            Self::TieBreak => "tie-break",
         }
     }
 }
 
-/// A plugin that [`SortMode::MinimalChange`] moved, and why.
+/// One reason a plugin moved: a rule between it and `other` that puts it on the other side of `other` than in the
+/// given order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MoveExplanation {
+    /// The class of the rule.
+    pub reason: MoveReason,
+    /// The other plugin.
+    pub other: String,
+    /// True when the rule puts this plugin after `other` (it moved later), false when before.
+    pub later: bool,
+    /// True when the rule is not between the two plugins directly: a chain of rules connects them, and `via` is the
+    /// link of the chain that goes against the given order.
+    pub indirect: bool,
+    /// For an indirect reason, that link: `(loads first, loads later)`.
+    pub via: Option<(String, String)>,
+    /// For a group rule: the groups of the rule's two plugins, the earlier one's first.
+    pub groups: Option<(String, String)>,
+    /// For an overlap rule: the override records (record overlap) or archive files (asset overlap) of the rule's two
+    /// plugins, the earlier one's first; the one with more loads first.
+    pub counts: Option<(usize, usize)>,
+}
+
+/// A plugin that moved, and why: in [`SortOutput::explanations`] every installed plugin whose place changed, with
+/// every reason found (at least one); in [`SortOutput::moves`] each plugin a minimal-change sort moved, with the
+/// constraint that forced it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct PluginMove {
@@ -231,6 +268,8 @@ pub struct PluginMove {
     /// True when the constraint follows from a chain of constraints rather than being stated directly; `reason`
     /// is then the class of the first link.
     pub indirect: bool,
+    /// Every reason, the one above first. Names and counts only, never file contents.
+    pub reasons: Vec<MoveExplanation>,
 }
 
 /// Switches for [`sort`].
@@ -722,9 +761,24 @@ pub struct SortOutput {
     pub mode: SortMode,
     /// Plugins that moved and why; empty unless the mode is [`SortMode::MinimalChange`].
     pub moves: Vec<PluginMove>,
+    /// Every installed plugin whose place differs from its place in the given order, in the sorted order, with every
+    /// reason found (see [`PluginMove`]). In a full sort the reasons come from the edges the sorter added; in a
+    /// minimal-change sort this is [`SortOutput::moves`]. A plugin that kept its place is not listed.
+    pub explanations: Vec<PluginMove>,
 }
 
 impl SortOutput {
+    /// The mode, and the moves into `explanations` (and into `moves` for a minimal-change sort).
+    fn set_moves(&mut self, mode: SortMode, moves: Vec<PluginMove>) {
+        self.mode = mode;
+        if mode == SortMode::MinimalChange {
+            self.explanations.clone_from(&moves);
+            self.moves = moves;
+        } else {
+            self.explanations = moves;
+        }
+    }
+
     /// Findings that fail a check (`hard`), over every plugin: the `hard_violations` of `loot-rs sort --json`.
     #[must_use]
     pub fn hard_violations(&self) -> usize {
@@ -1017,8 +1071,7 @@ pub fn sort(
     let (order, moves) = order_plugins(&inputs, &groups, &overlaps, options, &name_of)?;
     sorting.tick();
     let checking = Reporter::start(hook, Stage::Checking, 1);
-    output.mode = options.mode;
-    output.moves = moves;
+    output.set_moves(options.mode, moves);
     record_order(&mut output, &rules, &order, &name_of);
 
     // What the masterlist says, with the plugins in their sorted places: a rule that the sort could not satisfy
@@ -1407,7 +1460,8 @@ fn order_plugins(
         SortMode::Full => {
             let sorted = sort::sort(inputs, groups, &early, overlaps)
                 .map_err(|error| sort_error(&error, name_of))?;
-            Ok((sorted.order, Vec::new()))
+            let moves = explained_moves(inputs, &sorted, name_of);
+            Ok((sorted.order, moves))
         }
         SortMode::MinimalChange => {
             let repaired =
@@ -1416,13 +1470,25 @@ fn order_plugins(
             let moves = repaired
                 .moves
                 .iter()
-                .map(|moved| PluginMove {
-                    plugin: name_of(moved.plugin),
-                    from: moved.from,
-                    to: moved.to,
-                    reason: move_reason(moved.class),
-                    other: name_of(moved.other),
-                    indirect: moved.indirect,
+                .map(|moved| {
+                    let reason = move_reason(moved.class);
+                    PluginMove {
+                        plugin: name_of(moved.plugin),
+                        from: moved.from,
+                        to: moved.to,
+                        reason,
+                        other: name_of(moved.other),
+                        indirect: moved.indirect,
+                        reasons: vec![MoveExplanation {
+                            reason,
+                            other: name_of(moved.other),
+                            later: moved.to > moved.from,
+                            indirect: moved.indirect,
+                            via: None,
+                            groups: None,
+                            counts: None,
+                        }],
+                    }
                 })
                 .collect();
             Ok((repaired.order, moves))
@@ -1437,7 +1503,78 @@ fn move_reason(class: sort::EdgeType) -> MoveReason {
         sort::EdgeType::MasterlistRequirement => MoveReason::Req,
         sort::EdgeType::MasterlistLoadAfter => MoveReason::After,
         sort::EdgeType::MasterlistGroup => MoveReason::Group,
+        sort::EdgeType::RecordOverlap => MoveReason::RecordOverlap,
+        sort::EdgeType::AssetOverlap => MoveReason::AssetOverlap,
+        sort::EdgeType::TieBreak => MoveReason::TieBreak,
         _ => MoveReason::MasterFlag,
+    }
+}
+
+/// The moves of a full sort, each with the reasons `explain` finds in the edges the sorter added, in the sorted order.
+fn explained_moves(
+    inputs: &[PluginInput],
+    sorted: &sort::Sorted,
+    name_of: &dyn Fn(usize) -> String,
+) -> Vec<PluginMove> {
+    let is_master: Vec<bool> = inputs.iter().map(|input| input.is_master).collect();
+    let mut moved = explain::explain(&sorted.order, &sorted.edges, &is_master);
+    moved.sort_by_key(|entry| entry.to);
+    moved
+        .into_iter()
+        .filter_map(|entry| {
+            let reasons: Vec<MoveExplanation> = entry
+                .reasons
+                .iter()
+                .map(|reason| move_explanation(inputs, entry.plugin, reason, name_of))
+                .collect();
+            let first = reasons.first()?.clone();
+            Some(PluginMove {
+                plugin: name_of(entry.plugin),
+                from: entry.plugin,
+                to: entry.to,
+                reason: first.reason,
+                other: first.other,
+                indirect: first.indirect,
+                reasons,
+            })
+        })
+        .collect()
+}
+
+fn move_explanation(
+    inputs: &[PluginInput],
+    plugin: usize,
+    reason: &explain::Reason,
+    name_of: &dyn Fn(usize) -> String,
+) -> MoveExplanation {
+    let class = match reason.cause {
+        explain::Cause::Edge(kind) => move_reason(kind),
+        explain::Cause::MasterFlag => MoveReason::MasterFlag,
+    };
+    // The rule's two plugins, the one that loads first first: the link of the chain, or the two plugins.
+    let (first, second) = reason.via.unwrap_or(if reason.later {
+        (reason.other, plugin)
+    } else {
+        (plugin, reason.other)
+    });
+    let groups = (class == MoveReason::Group)
+        .then(|| (inputs[first].group.clone(), inputs[second].group.clone()));
+    let counts = match class {
+        MoveReason::RecordOverlap => Some((
+            inputs[first].override_records,
+            inputs[second].override_records,
+        )),
+        MoveReason::AssetOverlap => Some((inputs[first].assets, inputs[second].assets)),
+        _ => None,
+    };
+    MoveExplanation {
+        reason: class,
+        other: name_of(reason.other),
+        later: reason.later,
+        indirect: reason.via.is_some(),
+        via: reason.via.map(|(from, to)| (name_of(from), name_of(to))),
+        groups,
+        counts,
     }
 }
 

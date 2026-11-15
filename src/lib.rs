@@ -25,6 +25,7 @@ pub mod condition;
 pub mod env;
 #[cfg(feature = "executable-versions")]
 pub mod exe_version;
+pub mod explain;
 mod load;
 pub mod metadata;
 pub mod overlap;
