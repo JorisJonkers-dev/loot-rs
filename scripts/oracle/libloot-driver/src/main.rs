@@ -176,8 +176,64 @@ fn metadata(args: &[String]) {
     );
 }
 
+/// One JSON string literal (as Python's `json.dumps` writes it): `\"`, `\\`, `\n`, `\t`, `\uXXXX` with surrogate pairs.
+fn json_string(text: &str) -> Option<String> {
+    let inner = text.strip_prefix('"')?.strip_suffix('"')?;
+    let mut out = String::new();
+    let mut chars = inner.chars();
+    let mut pending_high: Option<u32> = None;
+    while let Some(c) = chars.next() {
+        if c != '\\' {
+            out.push(c);
+            continue;
+        }
+        match chars.next()? {
+            'n' => out.push('\n'),
+            't' => out.push('\t'),
+            'r' => out.push('\r'),
+            'u' => {
+                let code = u32::from_str_radix(&chars.by_ref().take(4).collect::<String>(), 16).ok()?;
+                if (0xD800..0xDC00).contains(&code) {
+                    pending_high = Some(code);
+                    continue;
+                }
+                let code = match pending_high.take() {
+                    Some(high) => 0x10000 + ((high - 0xD800) << 10) + (code - 0xDC00),
+                    None => code,
+                };
+                out.push(char::from_u32(code)?);
+            }
+            other => out.push(other),
+        }
+    }
+    Some(out)
+}
+
+/// `--regex-table <cases.tsv>`: for each `pattern<TAB>name` line (JSON strings), libloot's answer: the pattern
+/// compiled as libloot compiles plugin names (regress, flags `iu`, `^{pattern}$`) and matched with `find`. Prints the
+/// line with `true`, `false` or `error` appended. The cases are fixed and small, so nothing here can grow.
+fn regex_table(path: &str) {
+    let text = std::fs::read_to_string(path).expect("the cases file");
+    for line in text.lines().filter(|line| !line.starts_with('#') && !line.is_empty()) {
+        let (pattern, name) = line.split_once('\t').expect("pattern<TAB>name");
+        let (pattern, name) = (
+            json_string(pattern).expect("a JSON string"),
+            json_string(name).expect("a JSON string"),
+        );
+        let answer = match regress::Regex::with_flags(&format!("^{pattern}$"), "iu") {
+            Ok(regex) => regex.find(&name).is_some().to_string(),
+            Err(_) => "error".to_string(),
+        };
+        println!("{line}\t{answer}");
+    }
+}
+
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--regex-table") {
+        regex_table(args.get(2).map_or("tests/regex/cases.tsv", String::as_str));
+        return;
+    }
     if args.get(1).map(String::as_str) == Some("--metadata") {
         if args.len() < 6 {
             eprintln!(

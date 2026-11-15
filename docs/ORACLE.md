@@ -73,6 +73,17 @@ graph (compared against the world, not against loot-rs). One more difference was
 loot-rs accepts `not not file("X")`, libloot's grammar does not (it refuses the whole masterlist); the generator
 therefore writes `not (...)`.
 
+### Plugin-name regular expressions against libloot's engine
+
+`tests/regex/cases.tsv` is a fixed table of plugin-name patterns and names, chosen to cover the syntax LOOT documents
+and the places where the `regex` crate and ECMAScript differ (class escapes, white space, case folding of non-ASCII
+letters, top-level alternation). Its third column is libloot's answer, produced by
+`libloot-driver --regex-table tests/regex/cases.tsv` (regress with the `iu` flags, `^{pattern}$`, as libloot compiles
+names); `tests/regex_semantics.rs` checks loot-rs against it in every CI run, without libloot. To add a case, append
+`pattern<TAB>name` (JSON strings) to a scratch file, run the driver on it under a memory cap
+(`prlimit --as=2147483648 ...`) and append its output. The table is deliberately small and hand-built: random patterns
+with nested repetition make a backtracking engine take unbounded memory.
+
 ### Plugin headers and record keys against esplugin
 
 libloot reads plugins with esplugin; `src/plugin.rs` (header) and `src/records.rs` (record keys and the overridden count

@@ -197,7 +197,7 @@ fn name_patterns_expose_their_text_and_match_exact_names_case_insensitively() {
     assert!(!exact.matches("A.esp.bak"));
     assert_eq!(exact.text(), "A.esp");
     let regex = NamePattern::Regex(compile_whole_name("A.*").expect("compiles"));
-    assert_eq!(regex.text(), "^(?:A.*)$");
+    assert_eq!(regex.text(), "^A.*$");
 }
 
 #[test]
@@ -695,4 +695,15 @@ fn url_entries_are_read_as_links_with_optional_names() {
             name: Some("Page".into())
         }
     );
+}
+
+#[test]
+fn a_top_level_alternation_is_anchored_as_loot_anchors_it() {
+    // libloot builds `^{name}$`, so `A|B` is "starts with A, or ends with B".
+    let regex = compile_whole_name(r"Foo.*|.*Bar\.esp").expect("compiles");
+    assert!(regex.is_match("Foo Patch.esm"));
+    assert!(regex.is_match("Some Bar.esp"));
+    assert!(!regex.is_match("Other.esp"));
+    let alternation = compile_whole_name("A|B").expect("compiles");
+    assert!(alternation.is_match("A.esp") && alternation.is_match("x B"));
 }

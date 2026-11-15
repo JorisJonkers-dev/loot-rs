@@ -103,6 +103,23 @@ fn assert_plugin_versions_are_evaluated(texts: &[&str]) {
     );
 }
 
+/// A skipped regular expression is an entry LOOT applies and loot-rs does not (for example look-around, which the
+/// `regex` crate lacks): the weekly run fails on it instead of only printing it (issue #37).
+#[test]
+#[ignore = "needs the real masterlist: set LOOT_RS_MASTERLIST"]
+fn no_regular_expression_of_the_real_masterlist_is_skipped() {
+    let metadata = parse_masterlist(&masterlist_text()).expect("the real masterlist parses");
+    let skipped: Vec<&String> = metadata
+        .warnings
+        .iter()
+        .filter(|warning| warning.contains("regular expression skipped"))
+        .collect();
+    assert!(
+        skipped.is_empty(),
+        "regular expressions this engine cannot compile: {skipped:?}"
+    );
+}
+
 #[test]
 #[ignore = "needs the real masterlist: set LOOT_RS_MASTERLIST"]
 fn the_real_masterlist_parses_and_every_condition_in_it_is_valid_syntax() {

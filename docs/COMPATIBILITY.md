@@ -24,7 +24,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | Key | Status | Notes |
 | --- | --- | --- |
 | `name`, exact | supported | Case-insensitive |
-| `name`, regex | partial | Whole name, case-insensitive, Unicode. Detected by `:\*?\|` as in LOOT. Rust `regex` syntax, so look-around and back-references are not available: such an entry is skipped with a warning |
+| `name`, regex | supported, except look-around and back-references | Anchored as libloot anchors it (`^{pattern}$`, so a top-level `A\|B` is "starts with A or ends with B"), case-insensitive, with ECMAScript's meaning of `\d`, `\w`, `\s` and their complements (ASCII digits and word characters, ECMAScript white space), as libloot's regress engine with the `iu` flags. Checked on a fixed table of 96 cases whose answers come from libloot (`tests/regex/cases.tsv`, `tests/regex_semantics.rs`): case folding of `ß`, `ẞ`, the Kelvin sign, `ſ`, Greek and accented letters agrees. Look-around and back-references are not available in the `regex` crate: such an entry is skipped with a warning, and the weekly real-masterlist run fails on it (decision in #37: the gap is accepted; the New Vegas masterlist has no such entry) |
 | `group` | partial | First entry that sets it wins (merging replaces it only when unset). Undefined group is a note |
 | `after` | supported | Violated when the named installed plugin is later in the order. `condition` honoured |
 | `req` | supported | Missing file is a hard violation; a required plugin that loads later is a hard violation. `condition`, `constraint`, `display`, `detail` honoured |
