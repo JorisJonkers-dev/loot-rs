@@ -24,7 +24,7 @@ baseline, adapted to a Linux-first Rust library and CLI (no Windows build, no up
 | Dependency cooldown | `.cargo/config.toml`, `renovate.json` | Cargo ignores versions younger than 7 days from 1.100 on (1.99 warns that it ignores the setting); Renovate has the estate preset's `minimumReleaseAge`. The registry proxy refuses younger versions |
 | Dependency updates | `renovate.json` | Extends `github>JorisJonkers-dev/renovate-config` |
 | Repository settings | `scripts/setup-repo.sh`, `scripts/apply-ruleset.sh` | `--audit` is read-only, `DRY_RUN=1` prints the calls; the owner applies |
-| Oracle | `scripts/oracle/`, `docs/ORACLE.md`, `task oracle` | Runs `loot-rs sort` and libloot on the same synthetic cases or on the owner's real load order, locally; CI runs only the self-tests and never needs libloot or the game. Pending real runs |
+| Oracle | `scripts/oracle/`, `docs/ORACLE.md`, `task oracle` | Runs `loot-rs sort` and libloot on the same synthetic cases or on the owner's real load order, locally; CI runs only the self-tests and never needs libloot or the game |
 | Local setup | `mise.toml`, `Taskfile.yml`, `scripts/install-git-hooks.sh` | `mise install`, then `task check` |
 
 ## Why release-please uses `rust`

@@ -9,7 +9,8 @@ This is an independent port, not an official LOOT project.
 **Licence: GPL-3.0**, the licence of LOOT and libloot (read from their `LICENSE` files, see
 [docs/UPSTREAMS.md](docs/UPSTREAMS.md)). This is a port in the licensing sense: it follows LOOT's rule semantics,
 which were read from LOOT's public metadata documentation (https://loot-api.readthedocs.io), and is kept under
-LOOT's licence. No LOOT source code is copied in this first slice. LOOT is by Oliver Hamlet (Ortham) and
+LOOT's licence. The sorter, the record and archive overlap, the generated messages and the version grammar are ported
+from libloot and LOOT's source; [NOTICE.md](NOTICE.md) lists each part and where it came from. LOOT is by Oliver Hamlet (Ortham) and
 contributors: https://github.com/loot/loot. The masterlist is community data under its own licence (CC0-1.0 for
 `loot/falloutnv`) and is read at run time from a path you give; it is never copied into this repository.
 
@@ -71,21 +72,19 @@ port of libloot's rules (`src/version.rs`). Every size read from the file is che
 
 ## What it does NOT do
 
-* Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) is a port
-  of libloot's plugin graph (masters, `req`, `after`, groups, tie-breaks). Record overlap and archive (BSA) overlap are
-  used; the userlist is not read; see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
+* Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) sorts: it is a
+  port of libloot's plugin graph (masters, `req`, `after`, groups, record overlap, archive (BSA) overlap, tie-breaks),
+  and `dirty` / `clean` CRCs are compared with the installed files. What is ported and what is not is listed in
+  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 * It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
-* The condition functions `filename_version`, `description_contains` and `is_executable` are **not implemented**,
-  and `version` and `product_version` are implemented only for executables and DLLs and only when built with the
-  cargo feature `executable-versions` (below). An item guarded by an unimplemented one is not applied and is
-  reported as unsupported (with a count at the end); it is never guessed. They are common: on a synthetic list of
-  400 plugin names taken from the current New Vegas masterlist, 53 items were skipped for `version()` (before `version()` on plugins was evaluated; not re-measured).
-* `dirty` / `clean` are read as data; CRCs are not compared and no cleaning messages are produced.
-* No userlist, no prelude replacement, no `url`, no localised message selection (English is used), no Markdown
-  rendering, no metadata merging across masterlist and userlist.
-* Groups are checked pairwise and independently; LOOT's rule that a group edge is dropped when it would clash
-  with a master, `after` or `req` edge is not applied, so a group note can appear that LOOT would not enforce.
-* The checks look only at the plugin list you give. Masters are not checked (that is `fnvorder check`).
+* `version` and `product_version` on executables and DLLs need the cargo feature `executable-versions` (below).
+  An item guarded by a condition this crate cannot evaluate is not applied and is reported as unsupported (with a
+  count at the end); it is never guessed.
+* No Markdown rendering: message text is returned as the masterlist writes it.
+* `check` looks only at the plugin list you give and does not sort. Its group findings are pairwise: it does not drop
+  the group rules that `sort` drops because they clash with a master, `after` or `req` rule, so `check` can show a
+  group note that `sort` (and LOOT) would not enforce. `sort` reports only the group rules it really dropped
+  (`dropped_group_rules`).
 
 Every LOOT feature is listed as supported, partial or unsupported in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
@@ -112,25 +111,20 @@ skipped with a warning instead of matching wrongly.
 
 ## How it was tested
 
-* 27 unit tests: the plugin reader, the YAML subset (aliases, merge keys, localised content, group merging,
-  regex names, bad input), the condition grammar and precedence, unsupported functions, CRC-32.
-* 15 integration tests that run the built binary on throwaway game directories whose plugin files are generated
-  byte by byte inside the test: exit codes, each violation kind, conditional requirements, regex entries and paths,
-  case-insensitive paths, groups (transitive, cyclic, undefined), the starred `plugins.txt` style, bad arguments,
-  and a check that nothing under the fixture changed.
-* `cargo fmt`, `cargo clippy --all-targets -- -D warnings` and `cargo test` pass.
-* Smoke test, not in the repository: the real `loot/falloutnv` masterlist (8,213 lines) parses, and a check over
-  400 empty files named after masterlist entries runs in about 0.4 s in a debug build. Nothing was compared with
-  LOOT's own output, so **agreement with LOOT is not verified**. No game data was used.
-* CI: see `.github/workflows/ci.yml` (format, clippy, tests with an 80% line coverage gate, release build,
-  gitleaks, actionlint).
+* Unit tests next to each module (`src/*_tests.rs`): the plugin and record readers, the archive tables, the YAML subset
+  (aliases, merge keys, localised content, group merging, regex names, bad input), the condition grammar and
+  precedence, the version grammar, the sorter (libloot's own sorting tests, translated) and the generated messages.
+* Integration tests (`tests/`) that run the library and the built binary on throwaway game directories whose plugin
+  and archive files are generated byte by byte inside the test: golden check and sort cases, property tests over
+  generated worlds, resource-limit tests, and a check that nothing under the fixture changed.
+* The sorted order, messages, Bash Tags, groups and cleaning data are compared with the real libloot on random
+  synthetic worlds, and the plugin readers with esplugin; see [docs/ORACLE.md](docs/ORACLE.md) for the runs and their
+  results. The owner's real load order is compared locally and privately by `scripts/oracle/oracle_run.py`.
+* Fuzzing, mutation testing and a weekly run against the real masterlist: see [docs/TESTING.md](docs/TESTING.md) and
+  [docs/PRACTICES.md](docs/PRACTICES.md). `task check` runs what CI runs.
 
 ## Open questions
 
-* `loot-condition-interpreter` is used only for executable and DLL versions, behind a cargo feature. `version()` on
-  plugins is evaluated by this crate (a port of libloot's `extract_version` and of the interpreter's version
-  comparison, MIT and GPL-3.0 notices in `NOTICE.md`), so the default build gains no dependency.
 * Group violations are soft by default and hard with `--strict-groups`; see [docs/GROUPS.md](docs/GROUPS.md).
-  Open: applying LOOT's dropping of group edges before reporting.
-* A golden comparison against LOOT's real report for one profile (run under MO2 or Wine) is the way to find
-  disagreements; it needs a decision on where the oracle files may live.
+* The messages the LOOT application (not libloot) generates are ported from its source and documentation; they are not
+  yet compared with the application's own output (issue #38).
