@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.5.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.4.0...v0.5.0) (2026-11-15)
+
+
+### Features
+
+* **api:** cancel and report progress of a sort, stable error codes, evaluate a condition, skip switches and a serde feature ([#52](https://github.com/JorisJonkers-dev/loot-rs/issues/52)) ([a1dda6d](https://github.com/JorisJonkers-dev/loot-rs/commit/a1dda6db448d23f125558ad3445656a721ffc0dc))
+* **api:** choose the message language, state the Markdown contract and return plugin URLs ([#57](https://github.com/JorisJonkers-dev/loot-rs/issues/57)) ([efd0059](https://github.com/JorisJonkers-dev/loot-rs/commit/efd005903762b51354de609523bd20f559e38565))
+* **api:** explain each move of the sorted order from the edges the sorter added ([#53](https://github.com/JorisJonkers-dev/loot-rs/issues/53)) ([2bdb61c](https://github.com/JorisJonkers-dev/loot-rs/commit/2bdb61c19dbc3efbb2f746c2d54cc1ce09ab41c7))
+* **api:** identify the masterlist by its blob id and source, and replace its prelude as libloot does ([#54](https://github.com/JorisJonkers-dev/loot-rs/issues/54)) ([ec38612](https://github.com/JorisJonkers-dev/loot-rs/commit/ec38612ada1c4c2d0290be3c1dbd995b3f33981f))
+* **api:** read a userlist and merge user metadata and user rules into the sort ([#55](https://github.com/JorisJonkers-dev/loot-rs/issues/55)) ([0d85b6d](https://github.com/JorisJonkers-dev/loot-rs/commit/0d85b6d4422334b253630f7ddd5a0d0c1545088b))
+* **condition:** implement filename_version, description_contains and is_executable ([#59](https://github.com/JorisJonkers-dev/loot-rs/issues/59)) ([5aed745](https://github.com/JorisJonkers-dev/loot-rs/commit/5aed745a76147d4e77207cdc9096957d65f44b73))
+
+
+### Bug Fixes
+
+* **api:** report the progress of a stage in order when items finish on several threads ([#58](https://github.com/JorisJonkers-dev/loot-rs/issues/58)) ([6eab606](https://github.com/JorisJonkers-dev/loot-rs/commit/6eab60693a6b67b6d634c589b2578f8daf8d7cee))
+* **metadata:** match plugin-name expressions as libloot does and check them on a table of libloot's answers ([#61](https://github.com/JorisJonkers-dev/loot-rs/issues/61)) ([ff0becf](https://github.com/JorisJonkers-dev/loot-rs/commit/ff0becf96f63fe18645286ef25452eaf611b149c))
+
+
+### Performance Improvements
+
+* **sort:** read plugins in parallel, compare overlaps ahead on threads and add an optional SortCache ([#51](https://github.com/JorisJonkers-dev/loot-rs/issues/51)) ([c7c42f2](https://github.com/JorisJonkers-dev/loot-rs/commit/c7c42f23c235065954849a4b9098d5a267e3c0bf))
+
 ## [0.4.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.3.0...v0.4.0) (2026-11-14)
 
 
