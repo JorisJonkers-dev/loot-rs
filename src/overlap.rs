@@ -11,6 +11,8 @@ use std::cell::Cell;
 use std::cmp::Ordering;
 use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 
+use crate::parallel::CancelToken;
+
 use crate::sort::Overlaps;
 
 /// One sorted list of `u64` ids for each plugin of the list given to the sorter.
@@ -131,6 +133,7 @@ pub struct PluginOverlaps {
     records: KeySets,
     assets: KeySets,
     table: PairTable,
+    cancel: Option<CancelToken>,
 }
 
 impl PluginOverlaps {
@@ -141,7 +144,16 @@ impl PluginOverlaps {
             records: KeySets::new(records),
             assets: KeySets::new(assets),
             table: PairTable::default(),
+            cancel: None,
         }
+    }
+
+    /// Let the sorter stop when `cancel` is set (see [`Overlaps::cancelled`]); [`PluginOverlaps::precompute`] stops
+    /// too.
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: Option<CancelToken>) -> Self {
+        self.cancel = cancel;
+        self
     }
 
     /// Compare, on up to `threads` threads, every pair the sorter can ask about, so that its questions are answered
@@ -153,9 +165,15 @@ impl PluginOverlaps {
     /// # Errors
     /// `Err(())` when the comparisons need more than [`OVERLAP_WORK_BUDGET`] steps. The verdict depends only on the
     /// input: the steps of each pair are fixed, and the work stops early only once the total is known to pass the
-    /// limit.
+    /// limit. Also `Err(())` when the sort was cancelled ([`PluginOverlaps::with_cancel`]). `row_done` is called once per
+    /// plugin whose pairs are compared, from any thread.
     #[allow(clippy::result_unit_err)]
-    pub fn precompute(&mut self, needs: PairNeeds, threads: usize) -> Result<(), ()> {
+    pub fn precompute(
+        &mut self,
+        needs: PairNeeds,
+        threads: usize,
+        row_done: &(dyn Fn() + Sync),
+    ) -> Result<(), ()> {
         let n = needs
             .is_master
             .len()
@@ -165,7 +183,11 @@ impl PluginOverlaps {
         let assets = &self.assets.sets;
         let work = AtomicU64::new(0);
         let rows: Vec<usize> = (0..n).collect();
+        let cancel = self.cancel.as_ref();
         let computed: Vec<Option<Vec<u8>>> = crate::parallel::map(&rows, threads, |&a| {
+            if crate::parallel::cancelled(cancel) {
+                return None;
+            }
             let mut row = vec![0u8; n];
             let mut steps = 0u64;
             for (b, slot) in row.iter_mut().enumerate().skip(a + 1) {
@@ -197,6 +219,7 @@ impl PluginOverlaps {
             if work.fetch_add(steps, AtomicOrdering::Relaxed) + steps > OVERLAP_WORK_BUDGET {
                 return None;
             }
+            row_done();
             Some(row)
         });
         let mut cells = vec![0u8; n * n];
@@ -229,6 +252,10 @@ impl Overlaps for PluginOverlaps {
 
     fn work(&self) -> u64 {
         self.records.work() + self.assets.work()
+    }
+
+    fn cancelled(&self) -> bool {
+        crate::parallel::cancelled(self.cancel.as_ref())
     }
 }
 

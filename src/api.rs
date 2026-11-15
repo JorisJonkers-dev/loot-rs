@@ -56,6 +56,7 @@ use crate::metadata::{
 };
 use crate::overlap::{PairNeeds, PluginOverlaps};
 use crate::parallel;
+pub use crate::parallel::CancelToken;
 use crate::plugin;
 pub use crate::plugin::{PluginError, PluginHeader};
 use crate::records::PluginRecords;
@@ -237,6 +238,8 @@ pub struct PluginMove {
 /// Not `Copy` since it holds directories; clone it where a copy is needed.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 #[non_exhaustive]
+// Independent on/off switches, each with its own builder; an enum per switch would add nothing.
+#[allow(clippy::struct_excessive_bools)]
 pub struct SortOptions {
     /// Count group violations and undefined groups as hard findings (see `docs/GROUPS.md`). Off by default.
     pub strict_groups: bool,
@@ -254,6 +257,20 @@ pub struct SortOptions {
     /// What earlier sorts read, reused when the files are unchanged (see [`SortCache`]). The result is the same with
     /// or without it.
     pub cache: Option<SortCache>,
+    /// Set it (from any thread) to stop the sort: it returns [`SortError::Cancelled`] soon after, having written
+    /// nothing and left no threads running. Checked before each file and inside the graph search.
+    pub cancel: Option<CancelToken>,
+    /// Called with the stage and counts as the sort goes, from the sort's threads (see [`Progress`]).
+    pub progress: Option<ProgressHook>,
+    /// Do not read whole plugins for the CRC-32 of the masterlist's cleaning data: [`SortOutput::dirty`] stays empty
+    /// and no cleaning message is generated. `checksum()` conditions are still evaluated. The order is unchanged.
+    pub skip_checksums: bool,
+    /// Do not read BSA tables: no asset overlap edges, so the order can differ from LOOT's where two plugins load
+    /// archives with the same files and nothing else decides between them.
+    pub skip_archives: bool,
+    /// Do not read executables' version resources (`version()` and `product_version()` on `.exe` and `.dll` files,
+    /// cargo feature `executable-versions`): such conditions evaluate as unsupported and their items are left out.
+    pub skip_executable_versions: bool,
 }
 
 impl SortOptions {
@@ -261,6 +278,51 @@ impl SortOptions {
     #[must_use]
     pub const fn with_mode(mut self, mode: SortMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// Stop the sort when `cancel` is set; see [`SortOptions::cancel`].
+    #[must_use]
+    pub fn with_cancel(mut self, cancel: CancelToken) -> Self {
+        self.cancel = Some(cancel);
+        self
+    }
+
+    /// Report progress to `hook`; see [`SortOptions::progress`].
+    #[must_use]
+    pub fn with_progress(mut self, hook: ProgressHook) -> Self {
+        self.progress = Some(hook);
+        self
+    }
+
+    /// Skip checksums, archive tables and executable versions: what a caller that wants only the order (and accepts
+    /// that archive overlap is not used) needs. See the three `skip_` fields.
+    #[must_use]
+    pub const fn order_only(mut self) -> Self {
+        self.skip_checksums = true;
+        self.skip_archives = true;
+        self.skip_executable_versions = true;
+        self
+    }
+
+    /// Set [`SortOptions::skip_checksums`].
+    #[must_use]
+    pub const fn with_skip_checksums(mut self, skip: bool) -> Self {
+        self.skip_checksums = skip;
+        self
+    }
+
+    /// Set [`SortOptions::skip_archives`].
+    #[must_use]
+    pub const fn with_skip_archives(mut self, skip: bool) -> Self {
+        self.skip_archives = skip;
+        self
+    }
+
+    /// Set [`SortOptions::skip_executable_versions`].
+    #[must_use]
+    pub const fn with_skip_executable_versions(mut self, skip: bool) -> Self {
+        self.skip_executable_versions = skip;
         self
     }
 
@@ -308,6 +370,125 @@ impl SortOptions {
     {
         self.additional_data_dirs = dirs.into_iter().map(Into::into).collect();
         self
+    }
+}
+
+/// A stage of [`sort`], for [`Progress`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Stage {
+    /// Plugin headers and records; `total` is the installed plugins.
+    ReadingPlugins,
+    /// Archive tables; `total` is the archives.
+    ReadingArchives,
+    /// Comparing the plugins' records and archive files; `total` is the installed plugins.
+    ComparingPlugins,
+    /// The graph sort; `total` is 1.
+    Sorting,
+    /// The masterlist's messages, findings and checksums over the sorted order; `total` is 1.
+    Checking,
+}
+
+impl Stage {
+    /// A short word for output: `reading-plugins`, `reading-archives`, `comparing-plugins`, `sorting` or `checking`.
+    #[must_use]
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::ReadingPlugins => "reading-plugins",
+            Self::ReadingArchives => "reading-archives",
+            Self::ComparingPlugins => "comparing-plugins",
+            Self::Sorting => "sorting",
+            Self::Checking => "checking",
+        }
+    }
+}
+
+/// How far a sort is: `done` of `total` in `stage`. Each stage is reported first with `done` 0; stages come in the
+/// order of [`Stage`] (one is left out when there is nothing to do in it). Counts only, never names.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Progress {
+    /// What the sort is doing.
+    pub stage: Stage,
+    /// Items done in this stage.
+    pub done: usize,
+    /// Items in this stage.
+    pub total: usize,
+}
+
+/// A function [`sort`] calls with its [`Progress`] (see [`SortOptions::with_progress`]). It is called from the
+/// sort's threads, so it must be `Send + Sync` and quick; it must not call [`sort`] itself.
+#[derive(Clone)]
+pub struct ProgressHook(std::sync::Arc<dyn Fn(Progress) + Send + Sync>);
+
+impl ProgressHook {
+    /// A hook that calls `f`.
+    pub fn new(f: impl Fn(Progress) + Send + Sync + 'static) -> Self {
+        Self(std::sync::Arc::new(f))
+    }
+}
+
+impl fmt::Debug for ProgressHook {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("ProgressHook")
+    }
+}
+
+/// Two hooks are equal when they are clones of the same one.
+impl PartialEq for ProgressHook {
+    fn eq(&self, other: &Self) -> bool {
+        std::sync::Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for ProgressHook {}
+
+/// Reports the progress of one stage.
+struct Reporter<'a> {
+    hook: Option<&'a ProgressHook>,
+    stage: Stage,
+    total: usize,
+    done: std::sync::atomic::AtomicUsize,
+}
+
+impl<'a> Reporter<'a> {
+    /// Start `stage` (reported with `done` 0).
+    fn start(hook: Option<&'a ProgressHook>, stage: Stage, total: usize) -> Self {
+        let reporter = Self {
+            hook,
+            stage,
+            total,
+            done: std::sync::atomic::AtomicUsize::new(0),
+        };
+        reporter.call(0);
+        reporter
+    }
+
+    /// One more item done.
+    fn tick(&self) {
+        if self.hook.is_some() {
+            let done = self.done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
+            self.call(done.min(self.total));
+        }
+    }
+
+    fn call(&self, done: usize) {
+        if let Some(hook) = self.hook {
+            (hook.0)(Progress {
+                stage: self.stage,
+                done,
+                total: self.total,
+            });
+        }
+    }
+}
+
+/// [`SortError::Cancelled`] when `options` asks the sort to stop.
+fn check_cancel(options: &SortOptions) -> Result<(), SortError> {
+    if parallel::cancelled(options.cancel.as_ref()) {
+        Err(SortError::Cancelled)
+    } else {
+        Ok(())
     }
 }
 
@@ -537,6 +718,16 @@ pub struct SortOutput {
 }
 
 impl SortOutput {
+    /// Findings that fail a check (`hard`), over every plugin: the `hard_violations` of `loot-rs sort --json`.
+    #[must_use]
+    pub fn hard_violations(&self) -> usize {
+        self.plugins
+            .iter()
+            .flat_map(|plugin| &plugin.findings)
+            .filter(|finding| finding.hard)
+            .count()
+    }
+
     /// True when the sorted order differs from the order of the installed plugins that was given.
     #[must_use]
     pub fn changed(&self, load_order: &[PluginSlot]) -> bool {
@@ -630,6 +821,27 @@ pub enum SortError {
     TooMuchWork,
     /// A check inside the sorter failed. This is a bug, never a property of the input.
     Internal(String),
+    /// The caller cancelled the sort ([`SortOptions::cancel`]).
+    Cancelled,
+}
+
+impl SortError {
+    /// A stable code for the variant, for programs and translations: `data-directory`, `too-many-plugins`,
+    /// `conflict`, `master-order`, `group-cycle`, `too-much-work`, `internal` or `cancelled`. A code never changes
+    /// meaning; a new variant gets a new code.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::DataDirectory(_) => "data-directory",
+            Self::TooManyPlugins(_) => "too-many-plugins",
+            Self::Conflict { .. } => "conflict",
+            Self::MasterOrder { .. } => "master-order",
+            Self::GroupCycle(_) => "group-cycle",
+            Self::TooMuchWork => "too-much-work",
+            Self::Internal(_) => "internal",
+            Self::Cancelled => "cancelled",
+        }
+    }
 }
 
 impl fmt::Display for SortError {
@@ -658,6 +870,7 @@ impl fmt::Display for SortError {
                 f.write_str("the load order needs more work than the limit allows")
             }
             Self::Internal(text) => write!(f, "internal error in the sorter: {text}"),
+            Self::Cancelled => f.write_str("the sort was cancelled"),
         }
     }
 }
@@ -753,24 +966,33 @@ pub fn sort(
     }
 
     let threads = parallel::threads(options.threads);
-    let facts = all_facts(&env, metadata, &installed, threads, &mut output.warnings);
+    let hook = options.progress.as_ref();
+    let reading = Reporter::start(hook, Stage::ReadingPlugins, installed.len());
+    let facts = all_facts(
+        &env,
+        metadata,
+        &installed,
+        threads,
+        options,
+        &mut output.warnings,
+    );
+    check_cancel(options)?;
     let rules = rules(&env, metadata, &facts, &mut output.warnings);
 
     let name_of = |index: usize| facts[index].name.to_string();
-    let records = read_all_records(
-        &facts,
-        threads,
-        options.cache.as_ref(),
-        &mut output.warnings,
-    )?;
-    let assets = read_all_assets(
-        &env,
-        data_dir,
-        &facts,
-        threads,
-        options.cache.as_ref(),
-        &mut output.warnings,
-    )?;
+    let records = read_all_records(&facts, threads, options, &reading, &mut output.warnings)?;
+    let assets = if options.skip_archives {
+        vec![PluginAssets::default(); facts.len()]
+    } else {
+        read_all_assets(
+            &env,
+            data_dir,
+            &facts,
+            threads,
+            options,
+            &mut output.warnings,
+        )?
+    };
     let inputs: Vec<PluginInput> = facts
         .iter()
         .enumerate()
@@ -781,31 +1003,16 @@ pub fn sort(
             input
         })
         .collect();
-    let overlaps = overlaps_of(&inputs, records, assets, threads)?;
+    let comparing = Reporter::start(hook, Stage::ComparingPlugins, inputs.len());
+    let overlaps = overlaps_of(&inputs, records, assets, threads, options, &comparing)?;
     let groups = group_inputs(metadata);
+    let sorting = Reporter::start(hook, Stage::Sorting, 1);
     let (order, moves) = order_plugins(&inputs, &groups, &overlaps, options, &name_of)?;
+    sorting.tick();
+    let checking = Reporter::start(hook, Stage::Checking, 1);
     output.mode = options.mode;
     output.moves = moves;
-    let position: Vec<usize> = {
-        let mut position = vec![0; facts.len()];
-        for (at, &index) in order.iter().enumerate() {
-            position[index] = at;
-        }
-        position
-    };
-    // Group rules the order does not satisfy: the sorter left them out because they would have closed a cycle.
-    let dropped: Vec<(usize, usize)> = rules
-        .soft
-        .iter()
-        .copied()
-        .filter(|&(earlier, later)| position[earlier] > position[later])
-        .collect();
-    output.dropped_group_rules = dropped
-        .iter()
-        .map(|&(earlier, later)| (name_of(later), name_of(earlier)))
-        .collect();
-    output.order = order.iter().map(|&index| name_of(index)).collect();
-    output.ordering_rules = ordering_rules(&rules, &dropped, &name_of);
+    record_order(&mut output, &rules, &order, &name_of);
 
     // What the masterlist says, with the plugins in their sorted places: a rule that the sort could not satisfy
     // shows up as a finding.
@@ -815,7 +1022,10 @@ pub fn sort(
         .collect();
     let sorted_env = search_env(data_dir, sorted_slots, options);
     // The checksums the cleaning data needs; the check below and `describe` reuse them.
-    prefetch_checksums(&facts, &sorted_env, threads);
+    if !options.skip_checksums {
+        prefetch_checksums(&facts, &sorted_env, threads, options.cancel.as_ref());
+    }
+    check_cancel(options)?;
     let report = check::run(
         metadata,
         &sorted_env,
@@ -823,7 +1033,17 @@ pub fn sort(
             strict_groups: options.strict_groups,
         },
     );
-    describe(&mut output, metadata, &facts, &order, &sorted_env, &report);
+    check_cancel(options)?;
+    describe(
+        &mut output,
+        metadata,
+        &facts,
+        &order,
+        &sorted_env,
+        &report,
+        options.skip_checksums,
+    );
+    checking.tick();
     Ok(output)
 }
 
@@ -845,11 +1065,14 @@ fn overlaps_of(
     records: Vec<PluginRecords>,
     assets: Vec<PluginAssets>,
     threads: usize,
+    options: &SortOptions,
+    reporter: &Reporter,
 ) -> Result<PluginOverlaps, SortError> {
     let mut overlaps = PluginOverlaps::new(
         records.into_iter().map(|plugin| plugin.keys).collect(),
         assets.into_iter().map(|plugin| plugin.keys).collect(),
-    );
+    )
+    .with_cancel(options.cancel.clone());
     let is_master: Vec<bool> = inputs.iter().map(|input| input.is_master).collect();
     let override_records: Vec<usize> = inputs.iter().map(|input| input.override_records).collect();
     let asset_counts: Vec<usize> = inputs.iter().map(|input| input.assets).collect();
@@ -861,20 +1084,127 @@ fn overlaps_of(
                 assets: &asset_counts,
             },
             threads,
+            &|| reporter.tick(),
         )
-        .map_err(|()| SortError::TooMuchWork)?;
+        .map_err(|()| {
+            if parallel::cancelled(options.cancel.as_ref()) {
+                SortError::Cancelled
+            } else {
+                SortError::TooMuchWork
+            }
+        })?;
     Ok(overlaps)
 }
 
 /// Read, on `threads` threads, the CRC-32 of every plugin whose cleaning data needs it, and give them to `env`.
-fn prefetch_checksums(facts: &[Facts], env: &FsEnv, threads: usize) {
+fn prefetch_checksums(facts: &[Facts], env: &FsEnv, threads: usize, cancel: Option<&CancelToken>) {
     let wanted: Vec<PathBuf> = facts
         .iter()
         .filter(|fact| needs_checksum(fact))
         .filter_map(|fact| fact.path.clone())
         .collect();
-    let crcs = parallel::map(&wanted, threads, |path| crc32_file(path).ok());
+    let crcs = parallel::map(&wanted, threads, |path| {
+        if parallel::cancelled(cancel) {
+            None
+        } else {
+            crc32_file(path).ok()
+        }
+    });
+    if parallel::cancelled(cancel) {
+        return;
+    }
     env.remember_crcs(wanted.into_iter().zip(crcs));
+}
+
+/// Why [`evaluate`] gave no answer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum EvaluateError {
+    /// `data_dir` is not a directory.
+    DataDirectory(PathBuf),
+    /// The condition is not valid LOOT condition syntax or is over a limit, or a file it names could not be read; the
+    /// text says why.
+    Invalid(String),
+    /// The condition uses a function this crate does not evaluate (named).
+    Unsupported(String),
+}
+
+impl EvaluateError {
+    /// A stable code for the variant: `data-directory`, `invalid` or `unsupported`.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::DataDirectory(_) => "data-directory",
+            Self::Invalid(_) => "invalid",
+            Self::Unsupported(_) => "unsupported",
+        }
+    }
+}
+
+impl fmt::Display for EvaluateError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DataDirectory(path) => write!(f, "{}: not a directory", path.display()),
+            Self::Invalid(text) => f.write_str(text),
+            Self::Unsupported(name) => write!(f, "unsupported condition function {name}()"),
+        }
+    }
+}
+
+impl std::error::Error for EvaluateError {}
+
+/// Evaluate one LOOT condition string (for example `file("NVSE/nvse_1_4.dll") and not active("Old.esp")`) against
+/// a load order and its data directory, as [`sort`] evaluates the masterlist's conditions: a tester for a doctor
+/// command. An empty condition is true. `options` supplies the game and additional data directories and the
+/// executable-version switch; the other options do not matter. Nothing is written.
+///
+/// # Errors
+/// [`EvaluateError`] for a data directory that is not one, a condition that is not valid, or one that uses a function
+/// this crate cannot evaluate.
+pub fn evaluate(
+    condition: &str,
+    load_order: &[PluginSlot],
+    data_dir: &Path,
+    options: &SortOptions,
+) -> Result<bool, EvaluateError> {
+    if !data_dir.is_dir() {
+        return Err(EvaluateError::DataDirectory(data_dir.to_path_buf()));
+    }
+    let mut ignored = Vec::new();
+    let env = search_env(data_dir, distinct_slots(load_order, &mut ignored), options);
+    eval_str(condition, &env).map_err(|error| match error {
+        ConditionError::Unsupported(name) => EvaluateError::Unsupported(name),
+        other => EvaluateError::Invalid(other.to_string()),
+    })
+}
+
+/// The sorted order, the group rules it does not satisfy and the rules it honours, into `output`.
+fn record_order(
+    output: &mut SortOutput,
+    rules: &Rules,
+    order: &[usize],
+    name_of: &dyn Fn(usize) -> String,
+) {
+    let position: Vec<usize> = {
+        let mut position = vec![0; order.len()];
+        for (at, &index) in order.iter().enumerate() {
+            position[index] = at;
+        }
+        position
+    };
+    // Group rules the order does not satisfy: the sorter left them out because they would have closed a cycle.
+    let dropped: Vec<(usize, usize)> = rules
+        .soft
+        .iter()
+        .copied()
+        .filter(|&(earlier, later)| position[earlier] > position[later])
+        .collect();
+    output.dropped_group_rules = dropped
+        .iter()
+        .map(|&(earlier, later)| (name_of(later), name_of(earlier)))
+        .collect();
+    output.order = order.iter().map(|&index| name_of(index)).collect();
+    output.ordering_rules = ordering_rules(rules, &dropped, name_of);
 }
 
 /// The environment over `data_dir` and the directories of `options`.
@@ -882,6 +1212,7 @@ fn search_env(data_dir: &Path, slots: Vec<Slot>, options: &SortOptions) -> FsEnv
     FsEnv::new(data_dir, slots)
         .with_game_dir(options.game_dir.as_deref())
         .with_additional_data_dirs(&options.additional_data_dirs)
+        .with_executable_versions(!options.skip_executable_versions)
 }
 
 /// Warnings about the directories searched: one that is not a directory, names that differ only in case.
@@ -902,11 +1233,18 @@ fn describe(
     order: &[usize],
     sorted_env: &FsEnv,
     report: &check::Report,
+    skip_checksums: bool,
 ) {
     output.general_messages = messages(&report.globals);
     let matches: Vec<Vec<(CleaningStatus, &Cleaning)>> = order
         .iter()
-        .map(|&index| cleaning_matches(&facts[index], sorted_env))
+        .map(|&index| {
+            if skip_checksums {
+                Vec::new()
+            } else {
+                cleaning_matches(&facts[index], sorted_env)
+            }
+        })
         .collect();
     let defined: HashSet<&str> = metadata
         .groups
@@ -958,7 +1296,8 @@ fn describe(
 fn read_all_records(
     facts: &[Facts],
     threads: usize,
-    cache: Option<&SortCache>,
+    options: &SortOptions,
+    reporter: &Reporter,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<PluginRecords>, SortError> {
     let jobs: Vec<load::RecordJob> = facts
@@ -969,8 +1308,11 @@ fn read_all_records(
             masters: &fact.masters,
         })
         .collect();
-    load::read_records(&jobs, threads, cache, warnings)
-        .map_err(|load::OverLimit| SortError::TooMuchWork)
+    let hooks = load::Hooks {
+        cancel: options.cancel.as_ref(),
+        done: &|| reporter.tick(),
+    };
+    load::read_records(&jobs, threads, options.cache.as_ref(), hooks, warnings).map_err(stop_error)
 }
 
 /// The files of the archives each installed plugin loads (see `load::read_assets`). As libloot does, archives are
@@ -980,7 +1322,7 @@ fn read_all_assets(
     data_dir: &Path,
     facts: &[Facts],
     threads: usize,
-    cache: Option<&SortCache>,
+    options: &SortOptions,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<PluginAssets>, SortError> {
     let dirs: Vec<&Path> = env
@@ -992,8 +1334,34 @@ fn read_all_assets(
     let index = ArchiveIndex::new(&dirs);
     let names: Vec<&str> = facts.iter().map(|fact| fact.name).collect();
     let found: Vec<Vec<PathBuf>> = names.iter().map(|name| index.archives_of(name)).collect();
-    load::read_assets(&names, &found, threads, cache, warnings)
-        .map_err(|load::OverLimit| SortError::TooMuchWork)
+    let mut distinct: Vec<&PathBuf> = found.iter().flatten().collect();
+    distinct.sort();
+    distinct.dedup();
+    let reporter = Reporter::start(
+        options.progress.as_ref(),
+        Stage::ReadingArchives,
+        distinct.len(),
+    );
+    let hooks = load::Hooks {
+        cancel: options.cancel.as_ref(),
+        done: &|| reporter.tick(),
+    };
+    load::read_assets(
+        &names,
+        &found,
+        threads,
+        options.cache.as_ref(),
+        hooks,
+        warnings,
+    )
+    .map_err(stop_error)
+}
+
+const fn stop_error(stop: load::Stop) -> SortError {
+    match stop {
+        load::Stop::OverLimit => SortError::TooMuchWork,
+        load::Stop::Cancelled => SortError::Cancelled,
+    }
 }
 
 /// The plugin that Fallout: New Vegas always loads first.
@@ -1083,6 +1451,7 @@ fn sort_error(error: &GraphError, name_of: &dyn Fn(usize) -> String) -> SortErro
         GraphError::TooMany(count) => SortError::TooManyPlugins(*count),
         GraphError::GroupCycle(groups) => SortError::GroupCycle(groups.clone()),
         GraphError::TooMuchWork => SortError::TooMuchWork,
+        GraphError::Cancelled => SortError::Cancelled,
         GraphError::Internal(text) => SortError::Internal((*text).to_string()),
     }
 }
@@ -1140,6 +1509,7 @@ fn all_facts<'a>(
     metadata: &'a Metadata,
     installed: &[&'a Slot],
     threads: usize,
+    options: &SortOptions,
     warnings: &mut Vec<String>,
 ) -> Vec<Facts<'a>> {
     let paths: Vec<Option<PathBuf>> = installed
@@ -1147,6 +1517,7 @@ fn all_facts<'a>(
         .map(|slot| env.resolve(&slot.name))
         .collect();
     let headers = parallel::map(&paths, threads, |path| match path {
+        _ if parallel::cancelled(options.cancel.as_ref()) => Err(io_error("cancelled")),
         Some(path) => plugin::read_header(path),
         None => Err(io_error("not found")),
     });

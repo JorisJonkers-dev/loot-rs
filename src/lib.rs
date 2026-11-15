@@ -16,6 +16,8 @@
 //! * [`render`]: plain-text output of a report.
 
 pub mod api;
+#[cfg(feature = "serde")]
+mod api_serde;
 pub mod archives;
 pub mod check;
 pub mod cli;

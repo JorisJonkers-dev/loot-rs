@@ -14,16 +14,22 @@ regex = "1"
 # MIT, by the LOOT authors. Opt-in (feature `executable-versions`): the default build does not contain it.
 # It pulls in esplugin (GPL-3.0), which this crate's own licence is compatible with.
 loot-condition-interpreter = { version = "6", optional = true }
+# MIT OR Apache-2.0. Opt-in (feature `serde`): `Serialize` for the sort output, written by hand (no derive macros).
+serde = { version = "1", optional = true, default-features = false, features = ["std"] }
 
 [features]
 default = []
 # version() and product_version() on executables and DLLs, through loot-condition-interpreter.
 executable-versions = ["dep:loot-condition-interpreter"]
+# `Serialize` for `api::SortOutput` and its parts, with the keys of `loot-rs sort --json`.
+serde = ["dep:serde"]
 
 [dev-dependencies]
 # Property-based tests. 1.12.0 was published 2026-10-10, MIT OR Apache-2.0. No `fork`/`timeout` features, so
 # rusty-fork and tempfile stay out of the tree; the std feature is enough for the strategies used.
 proptest = { version = "1.12.0", default-features = false, features = ["std"] }
+# MIT OR Apache-2.0. Only for the test that compares the `serde` output with the CLI's JSON.
+serde_json = "1"
 
 [lints.rust]
 unsafe_code = "forbid"

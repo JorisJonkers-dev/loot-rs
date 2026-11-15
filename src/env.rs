@@ -162,6 +162,8 @@ pub struct FsEnv {
     regexes: RefCell<HashMap<String, Result<Regex, String>>>,
     /// Results of whole conditions by their text (see [`Env::remembered`]).
     results: RefCell<HashMap<String, Result<bool, ConditionError>>>,
+    /// Whether version resources of executables are read (with the `executable-versions` feature).
+    executable_versions: bool,
 }
 
 const GHOST: &str = ".ghost";
@@ -196,7 +198,16 @@ impl FsEnv {
             crcs: RefCell::new(HashMap::new()),
             regexes: RefCell::new(HashMap::new()),
             results: RefCell::new(HashMap::new()),
+            executable_versions: true,
         }
+    }
+
+    /// Read executables' version resources (the default) or treat `version()` and `product_version()` on them as
+    /// unsupported.
+    #[must_use]
+    pub const fn with_executable_versions(mut self, read: bool) -> Self {
+        self.executable_versions = read;
+        self
     }
 
     /// Set the game directory: what a leading `..` in a path names.
@@ -487,6 +498,9 @@ impl Env for FsEnv {
         };
         if name == "version" && has_plugin_extension(unghosted(path)) {
             return self.plugin_version(path, args);
+        }
+        if !self.executable_versions {
+            return Err(ConditionError::Unsupported(name.to_string()));
         }
         #[cfg(feature = "executable-versions")]
         {

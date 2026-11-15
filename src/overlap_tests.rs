@@ -84,7 +84,9 @@ fn precomputed_answers_are_the_answers_of_comparing_one_pair_at_a_time() {
         override_records: &override_records,
         assets: &asset_counts,
     };
-    table.precompute(needs, 4).expect("within the budget");
+    table
+        .precompute(needs, 4, &|| {})
+        .expect("within the budget");
     for a in 0..12 {
         for b in 0..12 {
             assert_eq!(table.records(a, b), fresh.records(a, b), "records {a} {b}");

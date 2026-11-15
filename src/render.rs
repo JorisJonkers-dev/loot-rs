@@ -445,13 +445,7 @@ pub fn render_sort_json(result: &SortOutput) -> String {
     out.push_str(",\"warnings\":");
     json_strings(&mut out, &result.warnings);
     json_moves(&mut out, result);
-    let hard = result
-        .plugins
-        .iter()
-        .flat_map(|plugin| &plugin.findings)
-        .filter(|finding| finding.hard)
-        .count();
-    let _ = writeln!(out, ",\"hard_violations\":{hard}}}");
+    let _ = writeln!(out, ",\"hard_violations\":{}}}", result.hard_violations());
     out
 }
 

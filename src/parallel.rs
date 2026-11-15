@@ -2,7 +2,8 @@
 //! never depends on how many threads ran or which finished first.
 
 use std::num::NonZeroUsize;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 /// Most threads used when the caller leaves the choice to this crate.
 pub const MAX_THREADS: usize = 16;
@@ -67,6 +68,58 @@ where
         .into_iter()
         .map(|slot| slot.expect("every index is handed out exactly once"))
         .collect()
+}
+
+/// A flag a caller sets to stop a sort early (see `api::SortOptions::with_cancel`). Clones share the flag.
+#[derive(Clone, Default)]
+pub struct CancelToken(Arc<AtomicBool>);
+
+impl CancelToken {
+    /// A flag that is not set.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Ask every sort that holds this token (or a clone) to stop.
+    pub fn cancel(&self) {
+        self.0.store(true, Ordering::Relaxed);
+    }
+
+    /// True once [`CancelToken::cancel`] was called.
+    #[must_use]
+    pub fn is_cancelled(&self) -> bool {
+        self.0.load(Ordering::Relaxed)
+    }
+}
+
+impl From<Arc<AtomicBool>> for CancelToken {
+    fn from(flag: Arc<AtomicBool>) -> Self {
+        Self(flag)
+    }
+}
+
+impl std::fmt::Debug for CancelToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("CancelToken")
+            .field(&self.is_cancelled())
+            .finish()
+    }
+}
+
+/// Two tokens are equal when they share the same flag.
+impl PartialEq for CancelToken {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for CancelToken {}
+
+/// True when `cancel` is set.
+#[must_use]
+pub fn cancelled(cancel: Option<&CancelToken>) -> bool {
+    cancel.is_some_and(CancelToken::is_cancelled)
 }
 
 /// A count shared by threads that must stay at or below a limit, taken in chunks so that the threads rarely touch
