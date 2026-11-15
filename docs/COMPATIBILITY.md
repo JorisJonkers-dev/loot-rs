@@ -79,6 +79,22 @@ general messages (conditions evaluated, user metadata left out), are compared wi
 worlds, with the known differences listed in `scripts/oracle/compare.py` ([ORACLE.md](ORACLE.md)); the port is also
 checked against libloot's own unit tests and its documentation.
 
+## Generated messages LOOT's application shows and loot-rs does not port
+
+libloot does not produce these messages; LOOT's application does. Each was decided for Fallout: New Vegas under nvmod
+on Linux (issue #38):
+
+| Message | Decision | Why |
+| --- | --- | --- |
+| Case-sensitive path warnings (a file named in metadata or the load order differs in case from the file on disk) | Ported as data, not as LOOT's text | It applies on Linux. loot-rs resolves every path case-insensitively, so no rule is lost; names in a data directory that differ only in case are reported in `SortOutput::warnings` (`FsEnv::case_warnings`), and a caller that wants LOOT's wording writes it from that |
+| "Not sorted this session" | Not ported | It is the GUI's state of whether the user pressed Sort; nvmod decides when to sort and knows it |
+| The text LOOT shows for a sorting cycle | Not ported as text | The cycle is returned as data: `SortError::Conflict` (two plugins) or `SortError::RuleCycle` (each plugin with the rule and its source) and `SortError::code()`; the caller words it |
+| Checks of other games (light, medium, update and blueprint plugins) | Not applicable | Fallout: New Vegas has none of these plugin kinds |
+
+The texts of the messages loot-rs does generate are LOOT's English texts, taken from its source (`src/validate.rs`,
+NOTICE.md). Comparing them with the text the application shows, on synthetic Data directories, needs a run of LOOT
+under Wine by the owner (issue #38); until then they are checked against LOOT's source only.
+
 ## Condition language
 
 | Item | Status | Notes |
