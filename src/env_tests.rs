@@ -466,3 +466,172 @@ fn product_version_of_a_plugin_stays_unsupported() {
         Err(ConditionError::Unsupported("product_version".into()))
     );
 }
+
+// `filename_version`, `description_contains` and `is_executable`, after loot-condition-interpreter's own tests of them
+// (src/function/eval.rs and parse.rs), on synthetic files.
+
+fn condition_world() -> TempDir {
+    let dir = TempDir::new();
+    dir.file("Blank 5.esm", b"x");
+    dir.file("Blank A.esm", b"x");
+    dir.file("Docs/Readme v1.2.txt", b"x");
+    dir.file("Ghosted 3.esp.ghost", b"x");
+    dir.file("Blank.bsa", b"not a plugin");
+    dir.file(
+        "Blank.esp",
+        // Windows-1252 bytes, as in a real plugin: 0x80 is the euro sign, 0x83 the florin.
+        &crate::plugin::synthetic_plugin_bytes(0, &[], Some(b"A plugin with \x80\x83 in it")),
+    );
+    dir.file(
+        "Blank.esm",
+        &crate::plugin::synthetic_plugin(1, &[], Some("Nothing special")),
+    );
+    dir.file(
+        "NoDescription.esp",
+        &crate::plugin::synthetic_plugin(0, &[], None),
+    );
+    dir.file(
+        "loader.exe",
+        &crate::exe_version::PeSpec::new([1, 4, 0, 2], "1.4.0.2").build(),
+    );
+    dir.file("notes.exe", b"MZ but nothing more");
+    dir
+}
+
+fn holds_in(dir: &TempDir, text: &str) -> Result<bool, ConditionError> {
+    crate::condition::eval_str(text, &FsEnv::new(dir.path(), Vec::new()))
+}
+
+#[test]
+fn filename_version_compares_the_captured_version_of_a_matching_file() {
+    let dir = condition_world();
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Blank (\d).esm", "5", ==)"#),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Blank (\d).esm", ==, "5")"#),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Blank (\d).esm", "4", !=)"#),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Blank (\d).esm", "5", !=)"#),
+        Ok(false)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("blank (\d).ESM", "5", >=)"#),
+        Ok(true),
+        "case is ignored"
+    );
+}
+
+#[test]
+fn filename_version_looks_in_the_directory_of_the_path_and_ignores_ghost_extensions() {
+    let dir = condition_world();
+    assert_eq!(
+        holds_in(
+            &dir,
+            r#"filename_version("Docs/Readme v(.+)\.txt", "1.1", >)"#
+        ),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Ghosted (\d)\.esp", "3", ==)"#),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(
+            &dir,
+            r#"filename_version("Missing/Blank (\d).esm", "5", ==)"#
+        ),
+        Ok(false)
+    );
+}
+
+#[test]
+fn filename_version_is_false_when_no_file_matches_or_nothing_is_captured() {
+    let dir = condition_world();
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Blank (A+).esm", "1", ==)"#),
+        Ok(false)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Other (\d).esm", "5", ==)"#),
+        Ok(false)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"filename_version("Blank (\d)?A.esm", "1", ==)"#),
+        Ok(false)
+    );
+}
+
+#[test]
+fn filename_version_needs_exactly_one_capture_group_and_a_known_operator() {
+    let dir = condition_world();
+    for text in [
+        r#"filename_version("Blank .+.esm", "5", ==)"#,
+        r#"filename_version("Blank (\d)(\d).esm", "5", ==)"#,
+        r#"filename_version("Blank (\d).esm", "5", =~)"#,
+        r#"filename_version("Docs/", "5", ==)"#,
+        r#"filename_version("Blank (\d).esm", "5")"#,
+    ] {
+        assert!(
+            matches!(holds_in(&dir, text), Err(ConditionError::Syntax(_))),
+            "{text}"
+        );
+    }
+}
+
+#[test]
+fn description_contains_matches_the_plugin_description_case_insensitively() {
+    let dir = condition_world();
+    assert_eq!(
+        holds_in(
+            &dir,
+            "description_contains(\"Blank.esp\", \"\u{20ac}\u{192}.\")"
+        ),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"description_contains("Blank.esp", "a PLUGIN")"#),
+        Ok(true)
+    );
+    assert_eq!(
+        holds_in(&dir, r#"description_contains("Blank.esm", "plugin")"#),
+        Ok(false)
+    );
+}
+
+#[test]
+fn description_contains_is_false_for_a_missing_file_a_non_plugin_and_no_description() {
+    let dir = condition_world();
+    for path in ["missing.esp", "Blank.bsa", "NoDescription.esp"] {
+        let text = format!("description_contains(\"{path}\", \".*\")");
+        assert_eq!(holds_in(&dir, &text), Ok(false), "{path}");
+    }
+    assert!(matches!(
+        holds_in(&dir, r#"description_contains("Blank.esp", "(")"#),
+        Err(ConditionError::Syntax(_))
+    ));
+}
+
+#[test]
+fn is_executable_is_true_only_for_a_file_that_reads_as_a_pe_image() {
+    let dir = condition_world();
+    assert_eq!(holds_in(&dir, r#"is_executable("loader.exe")"#), Ok(true));
+    assert_eq!(
+        holds_in(&dir, r#"is_executable("LOADER.EXE")"#),
+        Ok(true),
+        "case is ignored"
+    );
+    for path in ["notes.exe", "Blank.esp", "missing.exe", "Docs"] {
+        assert_eq!(
+            holds_in(&dir, &format!("is_executable(\"{path}\")")),
+            Ok(false),
+            "{path}"
+        );
+    }
+}

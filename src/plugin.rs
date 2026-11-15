@@ -112,8 +112,17 @@ fn u16_at(data: &[u8], at: usize) -> Option<u16> {
     Some(u16::from_le_bytes(bytes.try_into().ok()?))
 }
 
-/// Decode a zero-terminated string; bytes above 0x7f map to the same code point (exact for
-/// Latin-1, close enough for file names).
+/// The characters of Windows-1252 bytes 0x80 to 0x9F; the five bytes it leaves undefined stay the C1 control of
+/// the same number, as the WHATWG encoding (which esplugin uses through `encoding_rs`) decodes them.
+const WINDOWS_1252_HIGH: [char; 32] = [
+    '\u{20AC}', '\u{0081}', '\u{201A}', '\u{0192}', '\u{201E}', '\u{2026}', '\u{2020}', '\u{2021}',
+    '\u{02C6}', '\u{2030}', '\u{0160}', '\u{2039}', '\u{0152}', '\u{008D}', '\u{017D}', '\u{008F}',
+    '\u{0090}', '\u{2018}', '\u{2019}', '\u{201C}', '\u{201D}', '\u{2022}', '\u{2013}', '\u{2014}',
+    '\u{02DC}', '\u{2122}', '\u{0161}', '\u{203A}', '\u{0153}', '\u{009D}', '\u{017E}', '\u{0178}',
+];
+
+/// Decode a zero-terminated Windows-1252 string, as esplugin decodes plugin strings: bytes below 0x80 and from
+/// 0xA0 on are the code point of the same number, 0x80 to 0x9F are [`WINDOWS_1252_HIGH`].
 fn zstring(payload: &[u8]) -> String {
     let end = payload
         .iter()
@@ -121,7 +130,10 @@ fn zstring(payload: &[u8]) -> String {
         .unwrap_or(payload.len());
     payload[..end]
         .iter()
-        .map(|&byte| char::from(byte))
+        .map(|&byte| match byte {
+            0x80..=0x9F => WINDOWS_1252_HIGH[usize::from(byte - 0x80)],
+            _ => char::from(byte),
+        })
         .collect()
 }
 
@@ -242,6 +254,15 @@ pub fn read_header(path: &Path) -> io::Result<PluginHeader> {
 /// Panics if the content does not fit the 16-bit subrecord sizes (tests only).
 #[must_use]
 pub fn synthetic_plugin(flags: u32, masters: &[&str], description: Option<&str>) -> Vec<u8> {
+    synthetic_plugin_bytes(flags, masters, description.map(str::as_bytes))
+}
+
+/// [`synthetic_plugin`] with the description given as the bytes to store (for example Windows-1252).
+///
+/// # Panics
+/// If a field is longer than a subrecord can hold (tests only).
+#[must_use]
+pub fn synthetic_plugin_bytes(flags: u32, masters: &[&str], description: Option<&[u8]>) -> Vec<u8> {
     fn subrecord(out: &mut Vec<u8>, kind: [u8; 4], payload: &[u8]) {
         out.extend_from_slice(&kind);
         let length = u16::try_from(payload.len()).expect("test subrecord fits in u16");
@@ -256,7 +277,7 @@ pub fn synthetic_plugin(flags: u32, masters: &[&str], description: Option<&str>)
     subrecord(&mut data, *b"HEDR", &hedr);
     subrecord(&mut data, *b"CNAM", b"tester\0");
     if let Some(text) = description {
-        let mut payload = text.as_bytes().to_vec();
+        let mut payload = text.to_vec();
         payload.push(0);
         subrecord(&mut data, *b"SNAM", &payload);
     }

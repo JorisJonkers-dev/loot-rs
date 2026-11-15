@@ -1,4 +1,6 @@
-//! `version()` and `product_version()` on executables and DLLs (cargo feature `executable-versions`).
+//! `version()` and `product_version()` on executables and DLLs (cargo feature `executable-versions`), and
+//! `is_executable()` (every build): the bounded PE reader below is compiled in every build, only the call into
+//! `loot-condition-interpreter` needs the feature.
 //!
 //! Comparing versions the way LOOT does is left to `loot-condition-interpreter` (MIT, by the LOOT authors).
 //! Reading the file is not, because the interpreter's PE reader trusts the file: it sizes buffers from `u32`
@@ -18,11 +20,16 @@
 //!
 //! [`PeSpec`] builds small PE images with a version resource, for tests (no game files are needed).
 
-use crate::condition::{Arg, ConditionError};
+#[cfg(feature = "executable-versions")]
+use crate::condition::Arg;
+use crate::condition::ConditionError;
+#[cfg(feature = "executable-versions")]
 use loot_condition_interpreter::{Expression, GameType, State};
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "executable-versions")]
+use std::path::PathBuf;
 
 /// Most data directories a PE header may declare (real images declare 16).
 pub const MAX_DATA_DIRECTORIES: u32 = 1024;
@@ -357,10 +364,21 @@ pub fn preflight(path: &Path, function: &str) -> Result<bool, ConditionError> {
     read_block(path, function).map(|block| block.is_some())
 }
 
+/// `is_executable(path)`: whether the file at `path` reads as a Windows executable, as `loot-condition-interpreter`
+/// decides it (its PE reader walks the headers, the section table and the version resource if there is one without
+/// an error). The walk here is this module's bounded one, so a file the interpreter would read with an absurd size
+/// is refused (false) instead of being read. A missing file or a directory is false.
+#[must_use]
+pub fn is_executable(path: &Path) -> bool {
+    path.is_file() && read_block(path, "version").is_ok()
+}
+
 /// A private directory under the temporary directory (mode 0700, created fresh, so nothing can be waiting in it),
 /// removed with its content when dropped.
+#[cfg(feature = "executable-versions")]
 struct Scratch(PathBuf);
 
+#[cfg(feature = "executable-versions")]
 impl Scratch {
     fn new() -> std::io::Result<Self> {
         use std::os::unix::fs::DirBuilderExt;
@@ -379,6 +397,7 @@ impl Scratch {
     }
 }
 
+#[cfg(feature = "executable-versions")]
 impl Drop for Scratch {
     fn drop(&mut self) {
         let _ = std::fs::remove_dir_all(&self.0);
@@ -391,6 +410,7 @@ impl Drop for Scratch {
 /// # Errors
 /// [`ConditionError::Syntax`] for a call the interpreter rejects, [`ConditionError::Unsupported`] for a
 /// plugin file, [`ConditionError::Environment`] for a file that cannot be read as a PE image.
+#[cfg(feature = "executable-versions")]
 pub fn evaluate(name: &str, args: &[Arg], resolved: Option<&Path>) -> Result<bool, ConditionError> {
     let syntax = |text: String| ConditionError::Syntax(text);
     if args.len() != 3 {
@@ -593,6 +613,10 @@ pub fn version_block_bytes(file: [u16; 4], product: &str) -> Vec<u8> {
     node("VS_VERSION_INFO", 52, 0, &fixed, &info)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "executable-versions"))]
 #[path = "exe_version_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "exe_version_reader_tests.rs"]
+mod reader_tests;

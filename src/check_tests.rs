@@ -376,9 +376,9 @@ globals:
 plugins:
   - name: A.esp
     msg:
-      - {type: say, content: 'm', condition: 'description_contains("A.esp", "x")'}
+      - {type: say, content: 'm', condition: 'product_version("A.esp", ==, "1")'}
     tag:
-      - {name: T, condition: 'is_executable("x.exe")'}
+      - {name: T, condition: 'product_version("x.esm", ==, "1")'}
     req:
       - {name: Gone.esp, condition: 'product_version("a.exe", >, "1")'}
     after:
@@ -399,11 +399,7 @@ plugins:
     assert!(report.findings().all(|f| !f.hard));
     assert_eq!(
         report.unsupported_functions(),
-        [
-            ("description_contains".to_string(), 1),
-            ("is_executable".to_string(), 1),
-            ("product_version".to_string(), 3),
-        ]
+        [("product_version".to_string(), 5)]
     );
 }
 

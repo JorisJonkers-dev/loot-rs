@@ -7,16 +7,16 @@ plugins:
     msg:
       - type: say
         content: 'needs the description'
-        condition: 'description_contains("B.esp", "patch")'
+        condition: 'product_version("B.esp", ==, "2")'
       - type: say
         content: 'decided by the supported part'
         condition: 'file("NotInstalled.esp") and product_version("x.exe", >, "1")'
       - type: say
         content: 'true or unsupported is true'
-        condition: 'file("B.esp") or is_executable("x.exe")'
+        condition: 'file("B.esp") or product_version("C.esp", <, "3")'
     tag:
       - name: 'Relev'
-        condition: 'filename_version("A (.+).esp", ==, "1")'
+        condition: 'product_version("A.esp", >, "0")'
     req:
       - name: 'Missing.esp'
         condition: 'product_version("Missing.esp", >=, "2")'

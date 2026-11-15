@@ -93,9 +93,9 @@ task oracle:esplugin      # cargo test --release --manifest-path scripts/oracle/
 
 No difference was found in the meaning of the header or of the record keys (all of the above agree). Two known
 differences are pinned by tests, so that a change on either side is noticed: loot-rs refuses a plugin whose last record is cut off
-(esplugin seeks past the end of the file and reads what is there), and loot-rs reads description bytes as Latin-1 where
-esplugin decodes Windows-1252 (the bytes 0x80 to 0x9f differ; only the ASCII `{{BASH:..}}` tags are read from a
-description, so no result depends on it).
+(esplugin seeks past the end of the file and reads what is there), and loot-rs decoded description bytes as Latin-1 where
+esplugin decodes Windows-1252; it now decodes Windows-1252 as esplugin does (the bytes 0x80 to 0x9f), which
+`description_contains()` needs.
 
 On the real plugin files, `oracle_run.py --esplugin` (config key `[tools] esplugin_diff`, the built `esplugin-diff`
 program) stages each dataset as the sort mode does, runs the comparison on every plugin and every pair, and prints
@@ -132,12 +132,10 @@ Ordering is checked two ways: every `after`, `req` and header-master rule of `lo
 `loot-rs sort` is a port of LOOT's algorithm, so on the synthetic cases, which have no records in common, the two
 orders should be **equal**. The record and archive overlap data are read as libloot reads them (see [COMPATIBILITY.md](COMPATIBILITY.md)); a real load order that differs from LOOT's order is a case to examine, not an expected difference.
 
-Known, expected differences (not bugs): `loot-rs` does not implement `filename_version()`,
-`description_contains()` and `is_executable()`, and implements `version()` and `product_version()` only on
-executables and DLLs with the cargo feature `executable-versions` (build with `--features executable-versions` for the
+Known, expected differences (not bugs): `loot-rs` implements `version()` and `product_version()` on
+executables and DLLs only with the cargo feature `executable-versions` (build with `--features executable-versions` for the
 comparison), so other items that use them are reported as unsupported and left out (see
-[TESTING.md](TESTING.md)); LOOT localises and renders Markdown in messages, `loot-rs` keeps the English text with
-substitutions applied; LOOT's application adds messages of its own (missing masters, inactive requirements, dirty plugins); libloot does
+[TESTING.md](TESTING.md)); LOOT renders the Markdown of messages, `loot-rs` returns it as written; LOOT's application adds messages of its own (missing masters, inactive requirements, dirty plugins); libloot does
 not, so they are in `generated_messages` and are not compared with libloot's output.
 
 ## How to run it

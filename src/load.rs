@@ -162,6 +162,28 @@ pub struct Hooks<'a> {
     pub cancel: Option<&'a CancelToken>,
     /// Called once per plugin (records) or archive (tables) done, from any thread.
     pub done: &'a (dyn Fn() + Sync),
+    /// The limits (the crate's constants; tests make them small).
+    pub limits: Limits,
+}
+
+/// The totals [`read_records`] and [`read_assets`] allow.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Limits {
+    /// Records of one plugin.
+    pub records_per_plugin: usize,
+    /// Records of all plugins.
+    pub records_total: usize,
+    /// Archive files, by the rule in the module documentation.
+    pub assets_total: usize,
+}
+
+impl Limits {
+    /// The crate's limits: [`MAX_RECORDS_PER_PLUGIN`], [`MAX_RECORDS_TOTAL`], [`MAX_ASSETS_TOTAL`].
+    pub const DEFAULT: Self = Self {
+        records_per_plugin: MAX_RECORDS_PER_PLUGIN,
+        records_total: MAX_RECORDS_TOTAL,
+        assets_total: MAX_ASSETS_TOTAL,
+    };
 }
 
 impl Hooks<'_> {
@@ -212,7 +234,7 @@ pub fn read_records(
         .filter(|&index| found[index].is_none() && jobs[index].path.is_some())
         .collect();
     let read = |threads: usize, chunk: usize, indices: &[usize]| {
-        let budget = SharedBudget::new(MAX_RECORDS_TOTAL, chunk);
+        let budget = SharedBudget::new(hooks.limits.records_total, chunk);
         parallel::map(indices, threads, |&index| {
             if hooks.cancelled() {
                 return Err(RecordsError::Io(interrupted()));
@@ -271,8 +293,8 @@ pub fn read_records(
         .iter()
         .flatten()
         .filter_map(|result| result.as_ref().ok())
-        .any(|records| records.keys.len() > MAX_RECORDS_PER_PLUGIN);
-    if total > MAX_RECORDS_TOTAL || too_large {
+        .any(|records| records.keys.len() > hooks.limits.records_per_plugin);
+    if total > hooks.limits.records_total || too_large {
         return Err(Stop::OverLimit);
     }
     if let Some(cache) = cache {
@@ -355,7 +377,7 @@ pub fn read_assets(
     let misses: Vec<usize> = (0..distinct.len())
         .filter(|&at| hits[at].is_none())
         .collect();
-    let budget = SharedBudget::new(MAX_ASSETS_TOTAL, 1 << 12);
+    let budget = SharedBudget::new(hooks.limits.assets_total, 1 << 12);
     for _ in 0..distinct.len() - misses.len() {
         (hooks.done)();
     }
@@ -380,7 +402,7 @@ pub fn read_assets(
         .iter()
         .any(|result| matches!(result, Err(ArchiveError::TooMuch)))
     {
-        return read_assets_exactly(names, archives, warnings);
+        return read_assets_exactly(names, archives, hooks.limits, warnings);
     }
     let mut results: Vec<Option<ArchiveRead>> = hits.into_iter().map(|hit| hit.map(Ok)).collect();
     let mut fresh = Vec::new();
@@ -412,7 +434,7 @@ pub fn read_assets(
                 None => {}
             }
         }
-        if before.saturating_add(raw) > MAX_ASSETS_TOTAL {
+        if before.saturating_add(raw) > hooks.limits.assets_total {
             return Err(Stop::OverLimit);
         }
         keys.sort_unstable();
@@ -443,10 +465,11 @@ impl Drop for Finally<'_> {
 fn read_assets_exactly(
     names: &[&str],
     archives: &[Vec<PathBuf>],
+    limits: Limits,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<PluginAssets>, Stop> {
     let ids = PathIds::default();
-    let budget = SharedBudget::new(MAX_ASSETS_TOTAL, 1);
+    let budget = SharedBudget::new(limits.assets_total, 1);
     let mut all = Vec::with_capacity(names.len());
     for (name, found) in names.iter().zip(archives) {
         let mut skipped = Vec::new();
@@ -463,3 +486,7 @@ fn read_assets_exactly(
     }
     Ok(all)
 }
+
+#[cfg(test)]
+#[path = "load_tests.rs"]
+mod tests;

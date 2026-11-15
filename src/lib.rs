@@ -5,7 +5,8 @@
 //! * [`metadata`]: masterlist YAML reader for the subset that matters for New Vegas.
 //! * [`condition`]: parser and evaluator for LOOT condition strings.
 //! * [`env`]: the file system and load order a condition is evaluated against.
-//! * `exe_version` (cargo feature `executable-versions`): `version()` and `product_version()` on executables.
+//! * [`exe_version`]: the bounded PE reader; `is_executable()`, and with the cargo feature `executable-versions`
+//!   `version()` and `product_version()` on executables.
 //! * [`version`]: a plugin's version from its description, and LOOT's comparison of versions.
 //! * [`check`]: applies the metadata to a load order and produces a [`check::Report`].
 //! * [`cli`]: argument parsing and the `check` command.
@@ -23,7 +24,6 @@ pub mod check;
 pub mod cli;
 pub mod condition;
 pub mod env;
-#[cfg(feature = "executable-versions")]
 pub mod exe_version;
 pub mod explain;
 mod load;

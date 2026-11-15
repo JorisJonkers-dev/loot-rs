@@ -364,7 +364,7 @@ fn every_unsupported_function_name_is_listed_and_unknown_ones_are_not() {
             Err(ConditionError::Unsupported(name.to_string()))
         );
     }
-    assert_eq!(UNSUPPORTED_FUNCTIONS.len(), 5);
+    assert_eq!(UNSUPPORTED_FUNCTIONS.len(), 2);
     assert!(matches!(eval("versions()"), Err(ConditionError::Syntax(_))));
 }
 

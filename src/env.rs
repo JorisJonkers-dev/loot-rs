@@ -480,6 +480,36 @@ impl Env for FsEnv {
         self.crc_of(&path)
     }
 
+    fn file_names(&self, dir: &str) -> Result<Vec<String>, ConditionError> {
+        let mut names = Vec::new();
+        for root in self.roots() {
+            let Some(dir) = self.resolve_in(root, dir) else {
+                continue;
+            };
+            names.extend(
+                self.listing(&dir)?
+                    .iter()
+                    .map(|name| unghosted(name).to_string()),
+            );
+        }
+        Ok(names)
+    }
+
+    fn description(&self, path: &str) -> Result<Option<String>, ConditionError> {
+        // As the interpreter: a file that is missing or not a plugin has no description.
+        Ok(self
+            .resolve(path)
+            .filter(|resolved| resolved.is_file())
+            .and_then(|resolved| plugin::read_header(&resolved).ok())
+            .and_then(|header| header.description))
+    }
+
+    fn is_executable(&self, path: &str) -> Result<bool, ConditionError> {
+        Ok(self
+            .resolve(path)
+            .is_some_and(|resolved| crate::exe_version::is_executable(&resolved)))
+    }
+
     fn remembered(&self, text: &str) -> Option<Result<bool, ConditionError>> {
         self.results.borrow().get(text).cloned()
     }
