@@ -71,6 +71,25 @@ within the same second to the same size is not noticed: use a new cache after su
 `Masterlist`, `SortOptions` and `SortCache` are `Send` and `Sync`: one masterlist can be shared by sorts on several
 threads. Speed measurements and the decisions behind them are in [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md).
 
+## The masterlist: identity, prelude and updates
+
+* `Masterlist::digest()`: the git blob id of the masterlist text as read (`sha1("blob <length>\0" + bytes)`, what
+  `git hash-object` prints), before any prelude replacement. It is the value LOOT stores as `blob_sha1`.
+* `Masterlist::from_file` also reads LOOT's `<masterlist>.metadata.toml` next to the file when there is one:
+  `source()` gives its `blob_sha1` and `update_timestamp`, and `matches_source()` says whether the text read is the one
+  it names. A caller that shows "messages are LOOT's own" labels them with `digest()` (and the timestamp).
+* `Masterlist::from_file_with_prelude(masterlist, prelude)` and `parse_with_prelude(text, prelude)`: the masterlist's
+  block-style `prelude:` section is replaced by the prelude file's text, indented by two spaces, as libloot's
+  `replace_prelude` does (the section ends at the first line that starts with neither a space, `#` nor a line break;
+  a masterlist without such a key is read as it is). `prelude_digest()` is the prelude's blob id. On the command
+  line: `--prelude <file>` for `check` and `sort`.
+
+Update policy: loot-rs never touches the network. The caller downloads the masterlist from
+`https://raw.githubusercontent.com/loot/falloutnv/v0.29/masterlist.yaml` (the branch whose metadata syntax libloot 0.29
+reads) and the prelude from `https://raw.githubusercontent.com/loot/prelude/v0.29/prelude.yaml`, verifies them (for
+example against the blob ids of the files in that branch, which `digest()` and `prelude_digest()` compute), stores them
+and gives loot-rs the paths.
+
 ## Why plugins moved
 
 `SortOutput::explanations` lists every installed plugin whose place in the result differs from its place in the given

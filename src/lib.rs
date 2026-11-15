@@ -33,6 +33,7 @@ pub mod parallel;
 pub mod plugin;
 pub mod records;
 pub mod render;
+pub mod sha1;
 pub mod sort;
 pub mod validate;
 pub mod version;

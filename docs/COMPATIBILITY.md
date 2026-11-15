@@ -12,11 +12,12 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | `globals` | supported | Messages shown with their conditions evaluated |
 | `groups` | supported | Merged by name (descriptions replaced, `after` unioned). `sort` uses libloot's group graph; `check` checks pairwise, see Groups |
 | `bash_tags` | partial | Read; not used for anything |
-| `prelude` | partial | It is a normal YAML node, so aliases into it work. Replacement from a separate prelude file is unsupported |
+| `prelude` | supported | A normal YAML node, so aliases into it work; `Masterlist::from_file_with_prelude` and `--prelude` replace it with a separate prelude file as libloot does (port of `replace_prelude`, libloot's tests translated) |
 | YAML anchors, aliases | supported | |
 | YAML merge keys `<<` | supported | Used heavily by the real masterlist |
 | Userlist, metadata merging of several files | unsupported | One file is read |
 | Unknown top-level keys | supported | Ignored, as LOOT does |
+| Masterlist identity (`blob_sha1`, `update_timestamp`) | supported | `Masterlist::digest()` (git blob id, as LOOT computes it) and `source()` from LOOT's `.metadata.toml`; checked on a real LOOT copy, where `digest()` equals the stored `blob_sha1` |
 
 ## Plugin entry
 

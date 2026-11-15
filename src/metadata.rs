@@ -669,6 +669,61 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
     Ok(metadata)
 }
 
+/// The masterlist text with its `prelude:` section replaced by `prelude` (the separate prelude file), as libloot's
+/// `replace_prelude` does it: the section runs from the line after `prelude:` (at the start of the text or of a line)
+/// to the first line that starts with neither a space, `#`, nor a line break; the new prelude is indented by two
+/// spaces. A masterlist without a block-style `prelude:` key is returned unchanged.
+///
+/// Ported from libloot (`src/metadata/metadata_document.rs`, GPL-3.0-or-later, Copyright (C) the libloot authors);
+/// see NOTICE.md.
+#[must_use]
+pub fn replace_prelude(masterlist: &str, prelude: &str) -> String {
+    let Some((before, after)) = split_on_prelude(masterlist) else {
+        return masterlist.to_string();
+    };
+    let prelude = indent_prelude(prelude);
+    if after.is_empty() {
+        format!("{before}\n{prelude}")
+    } else {
+        format!("{before}\n{prelude}\n{after}")
+    }
+}
+
+/// The text up to and including `prelude:`, and the text after the prelude section (empty when it runs to the end).
+fn split_on_prelude(masterlist: &str) -> Option<(&str, &str)> {
+    const KEY: &str = "prelude:";
+    let prefix_end = if masterlist.starts_with(KEY) {
+        KEY.len()
+    } else {
+        masterlist.find("\nprelude:")? + 1 + KEY.len()
+    };
+    let (prefix, remainder) = masterlist.split_at(prefix_end);
+    let bytes = remainder.as_bytes();
+    for (index, &byte) in bytes.iter().enumerate() {
+        if byte != b'\n' {
+            continue;
+        }
+        if let Some(&next) = bytes.get(index + 1)
+            && !matches!(next, b' ' | b'#' | b'\n' | b'\r')
+        {
+            return Some((prefix, &remainder[index + 1..]));
+        }
+    }
+    Some((prefix, ""))
+}
+
+/// Every line indented by two spaces, blank lines left blank, and no indentation left after a final line break.
+fn indent_prelude(prelude: &str) -> String {
+    let indented = ("  ".to_owned() + &prelude.replace('\n', "\n  "))
+        .replace("  \r\n", "\r\n")
+        .replace("  \n", "\n");
+    if indented.ends_with("\n  ") {
+        indented.trim_end_matches(' ').to_owned()
+    } else {
+        indented
+    }
+}
+
 #[cfg(test)]
 #[path = "metadata_tests.rs"]
 mod tests;

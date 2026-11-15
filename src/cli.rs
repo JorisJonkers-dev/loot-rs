@@ -24,7 +24,7 @@ pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
 pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
+pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> [--prelude <file>] --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
        loot-rs contracts --json
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
@@ -53,6 +53,8 @@ pub struct Args {
     pub command: Command,
     /// The masterlist YAML file.
     pub masterlist: PathBuf,
+    /// A prelude file that replaces the masterlist's `prelude:` section (`--prelude`).
+    pub prelude: Option<PathBuf>,
     /// The `plugins.txt` that gives the load order.
     pub plugins: PathBuf,
     /// The game's `Data` directory.
@@ -82,7 +84,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         None => return Err("missing command".into()),
     };
     let (mut masterlist, mut plugins, mut data) = (None, None, None);
-    let (mut game_dir, mut extra_data) = (None, Vec::new());
+    let (mut game_dir, mut extra_data, mut prelude) = (None, Vec::new(), None);
     let mut options = Options::default();
     let mut json = false;
     let mut mode = SortMode::Full;
@@ -94,6 +96,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         };
         match flag.as_str() {
             "--masterlist" => masterlist = Some(value("--masterlist")?),
+            "--prelude" => prelude = Some(value("--prelude")?),
             "--plugins" => plugins = Some(value("--plugins")?),
             "--data" => data = Some(value("--data")?),
             "--game-dir" => game_dir = Some(value("--game-dir")?),
@@ -113,6 +116,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
     Ok(Args {
         command,
         masterlist: masterlist.ok_or("--masterlist is required")?,
+        prelude,
         plugins: plugins.ok_or("--plugins is required")?,
         data: data.ok_or("--data is required")?,
         game_dir,
@@ -145,13 +149,14 @@ fn read_limited(path: &std::path::Path, limit: u64) -> Result<Vec<u8>, String> {
 /// # Errors
 /// A message for an unreadable or invalid input; the caller prints it and exits with [`EXIT_ERROR`].
 pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
-    let yaml =
-        String::from_utf8(read_limited(&args.masterlist, MAX_MASTERLIST_FILE)?).map_err(|_| {
-            format!(
-                "{}: stream did not contain valid UTF-8",
-                args.masterlist.display()
-            )
-        })?;
+    let read_text = |path: &std::path::Path| {
+        String::from_utf8(read_limited(path, MAX_MASTERLIST_FILE)?)
+            .map_err(|_| format!("{}: stream did not contain valid UTF-8", path.display()))
+    };
+    let mut yaml = read_text(&args.masterlist)?;
+    if let Some(prelude) = &args.prelude {
+        yaml = metadata::replace_prelude(&yaml, &read_text(prelude)?);
+    }
     let metadata = metadata::parse(&yaml).map_err(|error| format!("masterlist: {error}"))?;
     let list = read_limited(&args.plugins, MAX_PLUGINS_FILE)?;
     if !args.data.is_dir() {

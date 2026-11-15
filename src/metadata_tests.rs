@@ -469,3 +469,88 @@ fn the_entries_for_a_name_are_the_entries_whose_pattern_matches_it_in_file_order
         );
     }
 }
+
+// libloot's tests of `replace_prelude` (src/metadata/metadata_document.rs), translated.
+
+const NOTE_PRELUDE: &str = "globals:\n  - type: note\n    content: A message.\n";
+const REPLACED: &str = "prelude:\n  globals:\n    - type: note\n      content: A message.\n\nplugins:\n  - name: a.esp\n";
+
+#[test]
+fn replacing_the_prelude_of_empty_text_gives_empty_text() {
+    assert_eq!(replace_prelude("", ""), "");
+}
+
+#[test]
+fn a_masterlist_without_a_prelude_is_not_changed() {
+    let masterlist = "plugins:\n  - name: a.esp\n";
+    assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), masterlist);
+}
+
+#[test]
+fn a_flow_style_masterlist_is_not_changed() {
+    let masterlist = "{prelude: {}, plugins: [{name: a.esp}]}";
+    assert_eq!(
+        replace_prelude(masterlist, "globals: [{type: note, content: A message.}]"),
+        masterlist
+    );
+}
+
+#[test]
+fn a_prelude_at_the_start_of_the_masterlist_is_replaced() {
+    let masterlist = "prelude:\n  a: b\n\nplugins:\n  - name: a.esp\n";
+    assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), REPLACED);
+}
+
+#[test]
+fn a_prelude_followed_directly_by_the_next_key_is_replaced() {
+    let masterlist = "prelude:\n  a: b\nplugins:\n  - name: a.esp\n";
+    assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), REPLACED);
+}
+
+#[test]
+fn a_new_prelude_without_a_final_line_break_is_joined_to_the_next_key() {
+    let prelude = "globals:\n  - type: note\n    content: A message.";
+    let expected = "prelude:\n  globals:\n    - type: note\n      content: A message.\nplugins:\n  - name: a.esp\n";
+    for masterlist in [
+        "prelude:\n  a: b\n\nplugins:\n  - name: a.esp\n",
+        "prelude:\n  a: b\nplugins:\n  - name: a.esp\n",
+    ] {
+        assert_eq!(replace_prelude(masterlist, prelude), expected);
+    }
+}
+
+#[test]
+fn a_prelude_at_the_end_of_the_masterlist_is_replaced() {
+    let masterlist = "plugins:\n  - name: a.esp\nprelude:\n  a: b\n\n";
+    let expected = "plugins:\n  - name: a.esp\nprelude:\n  globals:\n    - type: note\n      content: A message.\n";
+    assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), expected);
+}
+
+#[test]
+fn only_the_prelude_section_is_replaced() {
+    let prelude = "\n\nglobals:\n  - type: note\n    content: A message.\n\n";
+    let masterlist = "\ncommon:\n  key: value\nprelude:\n  a: b\nplugins:\n  - name: a.esp\n";
+    let expected = "\ncommon:\n  key: value\nprelude:\n\n\n  globals:\n    - type: note\n      content: A message.\n\n\nplugins:\n  - name: a.esp\n";
+    assert_eq!(replace_prelude(masterlist, prelude), expected);
+}
+
+#[test]
+fn a_flow_style_prelude_replaces_a_block_style_one() {
+    let masterlist = "prelude:\n  a: b\n\nplugins:\n  - name: a.esp\n";
+    let expected =
+        "prelude:\n  globals: [{type: note, content: A message.}]\nplugins:\n  - name: a.esp\n";
+    assert_eq!(
+        replace_prelude(masterlist, "globals: [{type: note, content: A message.}]"),
+        expected
+    );
+}
+
+#[test]
+fn comments_and_blank_lines_do_not_end_the_prelude() {
+    for masterlist in [
+        "prelude:\n  a: b\n# Comment line\n  c: d\n\nplugins:\n  - name: a.esp\n",
+        "prelude:\n  a: b\n\n\nplugins:\n  - name: a.esp\n",
+    ] {
+        assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), REPLACED);
+    }
+}
