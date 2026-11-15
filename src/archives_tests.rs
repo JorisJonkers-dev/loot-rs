@@ -4,18 +4,10 @@ use super::*;
 use std::io::Cursor;
 
 fn read(bytes: &[u8]) -> Result<Vec<u64>, ArchiveError> {
-    read_with(
-        bytes,
-        &mut PathIds::default(),
-        &mut MAX_ASSETS_TOTAL.clone(),
-    )
+    read_with(bytes, &PathIds::default(), &mut MAX_ASSETS_TOTAL.clone())
 }
 
-fn read_with(
-    bytes: &[u8],
-    ids: &mut PathIds,
-    budget: &mut usize,
-) -> Result<Vec<u64>, ArchiveError> {
+fn read_with(bytes: &[u8], ids: &PathIds, budget: &mut usize) -> Result<Vec<u64>, ArchiveError> {
     let mut keys = Vec::new();
     read_archive_from(
         Cursor::new(bytes),
@@ -49,23 +41,23 @@ fn the_files_of_every_supported_version_are_read() {
 
 #[test]
 fn the_same_file_has_the_same_key_whatever_the_case_or_slashes_and_another_folder_does_not() {
-    let mut ids = PathIds::default();
+    let ids = PathIds::default();
     let budget = &mut MAX_ASSETS_TOTAL.clone();
     let one = read_with(
         &synthetic_bsa(104, &[("Textures/Armor", &["Hat.DDS"])]),
-        &mut ids,
+        &ids,
         budget,
     )
     .expect("reads");
     let two = read_with(
         &synthetic_bsa(104, &[("\\textures\\armor\\", &["hat.dds"])]),
-        &mut ids,
+        &ids,
         budget,
     )
     .expect("reads");
     let elsewhere = read_with(
         &synthetic_bsa(104, &[("textures", &["hat.dds"])]),
-        &mut ids,
+        &ids,
         budget,
     )
     .expect("reads");
@@ -155,7 +147,7 @@ fn tables_over_the_limit_are_refused_before_anything_is_allocated_by_them() {
     let result = read_archive_from(
         Cursor::new(&bytes),
         u64::MAX / 4,
-        &mut PathIds::default(),
+        &PathIds::default(),
         &mut keys,
         &mut MAX_ASSETS_TOTAL.clone(),
     );
@@ -169,14 +161,14 @@ fn more_files_than_the_budget_leaves_is_an_error_and_adds_nothing() {
     let result = read_archive_from(
         Cursor::new(&bytes),
         bytes.len() as u64,
-        &mut PathIds::default(),
+        &PathIds::default(),
         &mut keys,
         &mut 3,
     );
     assert!(matches!(result, Err(ArchiveError::TooMuch)));
     assert_eq!(keys, [42]);
     assert_eq!(
-        read_with(&bytes, &mut PathIds::default(), &mut 4)
+        read_with(&bytes, &PathIds::default(), &mut 4)
             .expect("fits")
             .len(),
         3
@@ -261,7 +253,7 @@ fn the_archives_of_a_plugin_are_merged_and_one_that_cannot_be_read_is_skipped() 
     let mut budget = 100;
     let assets = read_plugin_assets(
         &[one.clone(), bad, two, missing],
-        &mut PathIds::default(),
+        &PathIds::default(),
         &mut budget,
         &mut skipped,
     )
@@ -275,7 +267,7 @@ fn the_archives_of_a_plugin_are_merged_and_one_that_cannot_be_read_is_skipped() 
             .iter()
             .all(|(_, error)| !error.to_string().is_empty())
     );
-    let result = read_plugin_assets(&[one], &mut PathIds::default(), &mut 1, &mut skipped);
+    let result = read_plugin_assets(&[one], &PathIds::default(), &mut 1, &mut skipped);
     assert!(matches!(result, Err(ArchiveError::TooMuch)));
     std::fs::remove_dir_all(&dir).expect("remove");
 }
@@ -290,4 +282,27 @@ fn errors_read_as_sentences() {
     ] {
         assert_ne!(error.to_string(), "");
     }
+}
+
+#[test]
+fn an_index_of_several_directories_lists_each_directory_s_archives_in_order() {
+    let first = crate::support_tests::TempDir::new();
+    let second = crate::support_tests::TempDir::new();
+    std::fs::write(first.path().join("Mod - Main.bsa"), b"").expect("write");
+    std::fs::write(second.path().join("mod.bsa"), b"").expect("write");
+    std::fs::write(second.path().join("Other.bsa"), b"").expect("write");
+    std::fs::write(second.path().join("Mod.txt"), b"").expect("write");
+    let index = ArchiveIndex::new(&[first.path(), second.path()]);
+    let found = index.archives_of("Mod.esp");
+    assert_eq!(
+        found,
+        [
+            first.path().join("Mod - Main.bsa"),
+            second.path().join("mod.bsa")
+        ]
+    );
+    assert_eq!(
+        associated_archives(second.path(), "Mod.esp"),
+        [second.path().join("mod.bsa")]
+    );
 }

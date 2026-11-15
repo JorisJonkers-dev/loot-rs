@@ -13,6 +13,7 @@
 use regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use std::fmt;
+use std::sync::OnceLock;
 use yaml_rust2::parser::{Event, MarkedEventReceiver, Parser};
 use yaml_rust2::scanner::Marker;
 use yaml_rust2::yaml::Hash;
@@ -206,6 +207,49 @@ pub struct Metadata {
     pub plugins: Vec<PluginEntry>,
     /// Entries that could not be used (for example a regex this engine cannot compile).
     pub warnings: Vec<String>,
+    /// `plugins` by lower-case exact name, and the regex entries, built on first use.
+    index: OnceLock<EntryIndex>,
+}
+
+/// Which entries of `plugins` can match a name: exact entries by lower-case name, and every regex entry.
+#[derive(Debug, Clone, Default)]
+struct EntryIndex {
+    exact: HashMap<String, Vec<usize>>,
+    regex: Vec<usize>,
+}
+
+impl Metadata {
+    /// The entries of `plugins` that match `file_name`, in file order. The same as filtering `plugins` with
+    /// [`NamePattern::matches`], through an index built on first use.
+    #[must_use]
+    pub fn entries_for(&self, file_name: &str) -> Vec<&PluginEntry> {
+        let index = self.index.get_or_init(|| {
+            let mut index = EntryIndex::default();
+            for (at, entry) in self.plugins.iter().enumerate() {
+                match &entry.pattern {
+                    NamePattern::Exact(name) => {
+                        index.exact.entry(name.to_lowercase()).or_default().push(at);
+                    }
+                    NamePattern::Regex(_) => index.regex.push(at),
+                }
+            }
+            index
+        });
+        let mut found: Vec<usize> = index
+            .exact
+            .get(&file_name.to_lowercase())
+            .cloned()
+            .unwrap_or_default();
+        found.extend(
+            index
+                .regex
+                .iter()
+                .copied()
+                .filter(|&at| self.plugins[at].pattern.matches(file_name)),
+        );
+        found.sort_unstable();
+        found.into_iter().map(|at| &self.plugins[at]).collect()
+    }
 }
 
 /// Counts the nodes of the document with every alias counted as the node it stands for.

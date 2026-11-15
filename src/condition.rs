@@ -188,6 +188,17 @@ pub trait Env {
         let _ = args;
         Err(ConditionError::Unsupported(name.to_string()))
     }
+    /// The result of a whole condition evaluated before against this environment, if it keeps one. A condition's
+    /// value depends only on the files and the active plugins, never on the order, so an environment may keep
+    /// results for as long as it lives. The default keeps nothing.
+    fn remembered(&self, text: &str) -> Option<Result<bool, ConditionError>> {
+        let _ = text;
+        None
+    }
+    /// Keep the result of a condition for [`Env::remembered`]. The default keeps nothing.
+    fn remember(&self, text: &str, result: &Result<bool, ConditionError>) {
+        let _ = (text, result);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -503,7 +514,12 @@ pub fn eval_str(text: &str, env: &dyn Env) -> Result<bool, ConditionError> {
     if text.trim().is_empty() {
         return Ok(true);
     }
-    evaluate(&parse(text)?, env)
+    if let Some(result) = env.remembered(text) {
+        return result;
+    }
+    let result = parse(text).and_then(|expr| evaluate(&expr, env));
+    env.remember(text, &result);
+    result
 }
 
 #[cfg(test)]

@@ -98,7 +98,7 @@ checked against libloot's own unit tests and its documentation.
 | `description_contains(path, regex)` | unsupported | Same |
 | `is_executable(path)` | unsupported | Same |
 | Version comparison grammar | supported | LOOT's own (Pseudosem as the interpreter implements it), ported in `src/version.rs`; no dependency. `filename_version` is still unsupported |
-| Evaluation caching | unsupported | Directory listings are cached; results are not |
+| Evaluation caching | supported | Per sort: condition results by their text (as libloot caches them), compiled regular expressions, directory listings and checksums |
 
 ## Messages and output
 

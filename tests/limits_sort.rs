@@ -187,7 +187,7 @@ fn an_archive_that_announces_millions_of_folders_is_refused_without_reading_them
         read_archive_from(
             io::Cursor::new(&bytes),
             u64::MAX / 4,
-            &mut PathIds::default(),
+            &PathIds::default(),
             &mut keys,
             &mut usize::MAX.clone(),
         )

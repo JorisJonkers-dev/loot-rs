@@ -50,6 +50,17 @@ tasks:
           prlimit --as=536870912 -- "$binary" --test-threads=1
         done < target/limits-binary.txt
 
+  bench:
+    desc: Sort time and peak memory for 133, 255 and 1024 synthetic plugins of realistic size (generated under target/bench; no game data)
+    cmds:
+      - cargo build --locked --release --example bench
+      - |
+        for n in 133 255 1024; do
+          [ -f "target/bench/$n/plugins.txt" ] || target/release/examples/bench generate "$n" "target/bench/$n"
+          target/release/examples/bench run "target/bench/$n" --runs 5
+          target/release/examples/bench run "target/bench/$n" --runs 5 --cache
+        done
+
   build:
     desc: Release build of the CLI
     cmd: cargo build --locked --release
