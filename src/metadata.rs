@@ -192,6 +192,8 @@ pub struct PluginEntry {
     pub dirty: Vec<Cleaning>,
     /// Clean plugin data.
     pub clean: Vec<Cleaning>,
+    /// True when the entry comes from a userlist (see [`merge`]).
+    pub user: bool,
 }
 
 /// The parsed metadata file.
@@ -664,9 +666,48 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
                 .collect::<Result<_, _>>()?,
             dirty: list(&node["dirty"]).iter().map(parse_cleaning).collect(),
             clean: list(&node["clean"]).iter().map(parse_cleaning).collect(),
+            user: false,
         });
     }
     Ok(metadata)
+}
+
+/// A userlist merged over a masterlist, as libloot merges them for a plugin's metadata
+/// (`Database::plugin_metadata` with user metadata): the userlist's plugin entries come first (marked
+/// [`PluginEntry::user`]), so a group the userlist sets wins and its lists and messages come before the masterlist's;
+/// groups are merged by name (the masterlist's first, `after` lists joined); general messages and known Bash Tags are
+/// the masterlist's followed by the userlist's.
+#[must_use]
+pub fn merge(userlist: &Metadata, masterlist: &Metadata) -> Metadata {
+    let mut merged = Metadata {
+        bash_tags: masterlist.bash_tags.clone(),
+        globals: masterlist.globals.clone(),
+        groups: masterlist.groups.clone(),
+        plugins: userlist
+            .plugins
+            .iter()
+            .cloned()
+            .map(|mut entry| {
+                entry.user = true;
+                entry
+            })
+            .collect(),
+        warnings: masterlist.warnings.clone(),
+        index: OnceLock::new(),
+    };
+    merged.plugins.extend(masterlist.plugins.iter().cloned());
+    merged.globals.extend(userlist.globals.iter().cloned());
+    merged.bash_tags.extend(userlist.bash_tags.iter().cloned());
+    for group in &userlist.groups {
+        merge_group(&mut merged.groups, group.clone());
+    }
+    merged.warnings.extend(
+        userlist
+            .warnings
+            .iter()
+            .map(|warning| format!("userlist: {warning}")),
+    );
+    merged
 }
 
 /// The masterlist text with its `prelude:` section replaced by `prelude` (the separate prelude file), as libloot's

@@ -1,7 +1,7 @@
 //! The command line: argument parsing and the `check` and `sort` commands. `main` only forwards here, so everything
 //! is testable without spawning the binary.
 
-use crate::api::{Masterlist, PluginSlot, SortMode, SortOptions, sort};
+use crate::api::{Masterlist, PluginSlot, SortMode, SortOptions, Userlist, sort_with};
 use crate::check::{Options, run};
 use crate::env::{FsEnv, Slot, parse_plugins_txt};
 use crate::{metadata, render};
@@ -24,7 +24,7 @@ pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
 pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> [--prelude <file>] --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
+pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> [--prelude <file>] [--userlist <file>] --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
        loot-rs contracts --json
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
@@ -55,6 +55,8 @@ pub struct Args {
     pub masterlist: PathBuf,
     /// A prelude file that replaces the masterlist's `prelude:` section (`--prelude`).
     pub prelude: Option<PathBuf>,
+    /// A userlist merged over the masterlist (`--userlist`).
+    pub userlist: Option<PathBuf>,
     /// The `plugins.txt` that gives the load order.
     pub plugins: PathBuf,
     /// The game's `Data` directory.
@@ -84,7 +86,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         None => return Err("missing command".into()),
     };
     let (mut masterlist, mut plugins, mut data) = (None, None, None);
-    let (mut game_dir, mut extra_data, mut prelude) = (None, Vec::new(), None);
+    let (mut game_dir, mut extra_data, mut prelude, mut userlist) = (None, Vec::new(), None, None);
     let mut options = Options::default();
     let mut json = false;
     let mut mode = SortMode::Full;
@@ -97,6 +99,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         match flag.as_str() {
             "--masterlist" => masterlist = Some(value("--masterlist")?),
             "--prelude" => prelude = Some(value("--prelude")?),
+            "--userlist" => userlist = Some(value("--userlist")?),
             "--plugins" => plugins = Some(value("--plugins")?),
             "--data" => data = Some(value("--data")?),
             "--game-dir" => game_dir = Some(value("--game-dir")?),
@@ -117,6 +120,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         command,
         masterlist: masterlist.ok_or("--masterlist is required")?,
         prelude,
+        userlist,
         plugins: plugins.ok_or("--plugins is required")?,
         data: data.ok_or("--data is required")?,
         game_dir,
@@ -157,14 +161,22 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
     if let Some(prelude) = &args.prelude {
         yaml = metadata::replace_prelude(&yaml, &read_text(prelude)?);
     }
-    let metadata = metadata::parse(&yaml).map_err(|error| format!("masterlist: {error}"))?;
+    let mut metadata = metadata::parse(&yaml).map_err(|error| format!("masterlist: {error}"))?;
+    let user_yaml = match &args.userlist {
+        Some(path) => Some(read_text(path)?),
+        None => None,
+    };
+    if let Some(text) = &user_yaml {
+        let user = metadata::parse(text).map_err(|error| format!("userlist: {error}"))?;
+        metadata = metadata::merge(&user, &metadata);
+    }
     let list = read_limited(&args.plugins, MAX_PLUGINS_FILE)?;
     if !args.data.is_dir() {
         return Err(format!("{}: not a directory", args.data.display()));
     }
     let slots = parse_plugins_txt(&String::from_utf8_lossy(&list));
     if args.command == Command::Sort {
-        return execute_sort(args, &yaml, &slots, out);
+        return execute_sort(args, &yaml, user_yaml.as_deref(), &slots, out);
     }
     let env = FsEnv::new(&args.data, slots)
         .with_game_dir(args.game_dir.as_deref())
@@ -188,10 +200,15 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
 fn execute_sort(
     args: &Args,
     yaml: &str,
+    user_yaml: Option<&str>,
     slots: &[Slot],
     out: &mut dyn Write,
 ) -> Result<u8, String> {
     let masterlist = Masterlist::parse(yaml).map_err(|error| error.to_string())?;
+    let userlist = user_yaml
+        .map(Userlist::parse)
+        .transpose()
+        .map_err(|error| format!("userlist: {error}"))?;
     let load_order: Vec<PluginSlot> = slots
         .iter()
         .map(|slot| PluginSlot::new(slot.name.clone(), slot.active))
@@ -201,8 +218,14 @@ fn execute_sort(
         .with_mode(args.mode)
         .with_additional_data_dirs(args.extra_data.iter());
     options.game_dir.clone_from(&args.game_dir);
-    let result = sort(&load_order, &masterlist, &args.data, &options)
-        .map_err(|error| format!("cannot sort: {error}"))?;
+    let result = sort_with(
+        &load_order,
+        &masterlist,
+        userlist.as_ref(),
+        &args.data,
+        &options,
+    )
+    .map_err(|error| format!("cannot sort: {error}"))?;
     let text = if args.json {
         render::render_sort_json(&result)
     } else {

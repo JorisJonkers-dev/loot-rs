@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 //
 // Ported to Rust from libloot (https://github.com/loot/libloot, `src/sorting/plugins.rs`, GPL-3.0-or-later,
-// Copyright (C) the libloot authors). See NOTICE.md. The user metadata (userlist) edge types and blueprint masters of
-// libloot are left out: this crate reads one masterlist and sorts Fallout: New Vegas.
+// Copyright (C) the libloot authors). See NOTICE.md. Blueprint masters are left out: this crate sorts Fallout: New
+// Vegas.
 
 //! The plugin graph of one partition (the masters, or the other plugins) and the edges libloot adds to it, in the
 //! order it adds them.
@@ -29,6 +29,10 @@ pub(super) struct Vertex {
     pub(super) masters: Vec<usize>,
     pub(super) requirements: Vec<usize>,
     pub(super) load_after: Vec<usize>,
+    /// The group was set by the userlist.
+    pub(super) group_is_user: bool,
+    pub(super) user_requirements: Vec<usize>,
+    pub(super) user_load_after: Vec<usize>,
 }
 
 /// A bit matrix of `n * n` entries.
@@ -199,17 +203,19 @@ impl<'a> PluginGraph<'a> {
     /// master flags differ here; the partitions make that a no-op.)
     pub(super) fn add_specific_edges(&mut self) {
         for node in 0..self.len() {
-            let masters = self.vertices[node].masters.clone();
-            let requirements = self.vertices[node].requirements.clone();
-            let load_after = self.vertices[node].load_after.clone();
-            for other in masters {
-                self.add_edge(other, node, EdgeType::Master);
-            }
-            for other in requirements {
-                self.add_edge(other, node, EdgeType::MasterlistRequirement);
-            }
-            for other in load_after {
-                self.add_edge(other, node, EdgeType::MasterlistLoadAfter);
+            let vertex = &self.vertices[node];
+            // In libloot's order: masters, masterlist then user requirements, masterlist then user load-after.
+            let lists = [
+                (vertex.masters.clone(), EdgeType::Master),
+                (vertex.requirements.clone(), EdgeType::MasterlistRequirement),
+                (vertex.user_requirements.clone(), EdgeType::UserRequirement),
+                (vertex.load_after.clone(), EdgeType::MasterlistLoadAfter),
+                (vertex.user_load_after.clone(), EdgeType::UserLoadAfter),
+            ];
+            for (others, kind) in lists {
+                for other in others {
+                    self.add_edge(other, node, kind);
+                }
             }
         }
     }
@@ -482,19 +488,29 @@ impl DfsVisitor for GroupsPathVisitor<'_, '_> {
         if targets.is_empty() {
             return;
         }
-        for &(_, from_plugins) in &self.stack {
+        for (at, &(_, from_plugins)) in self.stack.iter().enumerate() {
+            // As libloot: the rest of the path from this group on involves a userlist group edge.
+            let path_is_user = self.stack[at..]
+                .iter()
+                .any(|(stacked, _)| stacked.kind == EdgeType::UserLoadAfter);
             for &from in from_plugins {
                 for &to in targets {
                     if self.graph.out_of_budget() {
                         return;
                     }
                     if !self.graph.paths.get(from, to) {
-                        if self.graph.path_exists(to, from) {
-                            self.graph
-                                .skipped
-                                .push((from, to, EdgeType::MasterlistGroup));
+                        let kind = if path_is_user
+                            || self.graph.vertices[from].group_is_user
+                            || self.graph.vertices[to].group_is_user
+                        {
+                            EdgeType::UserGroup
                         } else {
-                            self.graph.add_edge(from, to, EdgeType::MasterlistGroup);
+                            EdgeType::MasterlistGroup
+                        };
+                        if self.graph.path_exists(to, from) {
+                            self.graph.skipped.push((from, to, kind));
+                        } else {
+                            self.graph.add_edge(from, to, kind);
                         }
                     }
                 }

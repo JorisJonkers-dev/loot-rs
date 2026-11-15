@@ -48,6 +48,7 @@ impl Input {
                 group: format!("g{}", u.arbitrary::<u8>()? % 6),
                 override_records: usize::from(u.arbitrary::<u8>()? % 5),
                 assets: usize::from(u.arbitrary::<u8>()? % 5),
+                ..PluginInput::default()
             });
         }
         let groups = (0..5)

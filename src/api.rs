@@ -247,6 +247,51 @@ impl Masterlist {
     }
 }
 
+/// A userlist (LOOT's `userlist.yaml`): the user's own plugin metadata, groups, general messages and known Bash
+/// Tags, merged over the masterlist by [`sort_with`] as libloot merges them. Read with the same limits and alias
+/// rules as a masterlist. loot-rs does not write userlists: a caller writes the YAML itself, in the masterlist's
+/// shape (`plugins`, `groups`, `globals`, `bash_tags`; see `docs/API.md`).
+#[derive(Debug, Clone)]
+pub struct Userlist {
+    metadata: Metadata,
+    digest: String,
+}
+
+impl Userlist {
+    /// Read a userlist from YAML text.
+    ///
+    /// # Errors
+    /// [`MasterlistError::Invalid`] for text that is not metadata or is over a limit.
+    pub fn parse(text: &str) -> Result<Self, MasterlistError> {
+        let metadata = metadata::parse(text).map_err(|error| MasterlistError::Invalid(error.0))?;
+        Ok(Self {
+            metadata,
+            digest: crate::sha1::git_blob_sha1(text.as_bytes()),
+        })
+    }
+
+    /// Read a userlist from a file.
+    ///
+    /// # Errors
+    /// [`MasterlistError::Io`] when the file cannot be read as UTF-8 text or is over the size limit, otherwise as
+    /// [`Userlist::parse`].
+    pub fn from_file(path: &Path) -> Result<Self, MasterlistError> {
+        Self::parse(&read_text(path)?)
+    }
+
+    /// Entries that were skipped while reading.
+    #[must_use]
+    pub fn warnings(&self) -> &[String] {
+        &self.metadata.warnings
+    }
+
+    /// The git blob id of the text read (see [`Masterlist::digest`]).
+    #[must_use]
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+}
+
 /// One plugin of the load order.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -316,11 +361,17 @@ pub enum MoveReason {
     /// The edge the sort adds to keep the given order where nothing else decides (full sort only; it is a reason
     /// only on a path, never on its own).
     TieBreak,
+    /// The userlist's `after` entry.
+    UserAfter,
+    /// The userlist's `req` entry.
+    UserReq,
+    /// The group rules, where the userlist defines a group on the path or sets the group of one of the plugins.
+    UserGroup,
 }
 
 impl MoveReason {
     /// A short word for output: `master-flag`, `hardcoded`, `header-master`, `req`, `after`, `group`,
-    /// `record-overlap`, `asset-overlap` or `tie-break`.
+    /// `record-overlap`, `asset-overlap`, `tie-break`, `user-after`, `user-req` or `user-group`.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -333,6 +384,9 @@ impl MoveReason {
             Self::RecordOverlap => "record-overlap",
             Self::AssetOverlap => "asset-overlap",
             Self::TieBreak => "tie-break",
+            Self::UserAfter => "user-after",
+            Self::UserReq => "user-req",
+            Self::UserGroup => "user-group",
         }
     }
 }
@@ -816,10 +870,16 @@ pub enum RuleSource {
     Req,
     /// The groups of the two plugins.
     Group,
+    /// The userlist's `after` entry.
+    UserAfter,
+    /// The userlist's `req` entry.
+    UserReq,
+    /// The groups of the two plugins, where the userlist set one of the groups.
+    UserGroup,
 }
 
 impl RuleSource {
-    /// A short word for output: `header-master`, `after`, `req` or `group`.
+    /// A short word for output: `header-master`, `after`, `req`, `group`, `user-after`, `user-req` or `user-group`.
     #[must_use]
     pub const fn label(self) -> &'static str {
         match self {
@@ -827,6 +887,9 @@ impl RuleSource {
             Self::After => "after",
             Self::Req => "req",
             Self::Group => "group",
+            Self::UserAfter => "user-after",
+            Self::UserReq => "user-req",
+            Self::UserGroup => "user-group",
         }
     }
 }
@@ -995,11 +1058,26 @@ pub enum SortError {
     Internal(String),
     /// The caller cancelled the sort ([`SortOptions::cancel`]).
     Cancelled,
+    /// Rules that cannot all hold, at least one of them from the userlist: each plugin of the cycle with the rule that
+    /// makes it load before the next one (the last before the first). A cycle among masterlist rules and header
+    /// masters only is [`SortError::Conflict`].
+    RuleCycle(Vec<CycleLink>),
+}
+
+/// One link of a [`SortError::RuleCycle`]: `plugin` has to load before the next plugin of the cycle because of `rule`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CycleLink {
+    /// The plugin.
+    pub plugin: String,
+    /// The class of the rule (for example [`MoveReason::UserAfter`]).
+    pub rule: MoveReason,
 }
 
 impl SortError {
     /// A stable code for the variant, for programs and translations: `data-directory`, `too-many-plugins`,
-    /// `conflict`, `master-order`, `group-cycle`, `too-much-work`, `internal` or `cancelled`. A code never changes
+    /// `conflict`, `master-order`, `group-cycle`, `too-much-work`, `internal`, `cancelled` or
+    /// `rule-cycle`. A code never changes
     /// meaning; a new variant gets a new code.
     #[must_use]
     pub const fn code(&self) -> &'static str {
@@ -1012,6 +1090,7 @@ impl SortError {
             Self::TooMuchWork => "too-much-work",
             Self::Internal(_) => "internal",
             Self::Cancelled => "cancelled",
+            Self::RuleCycle(_) => "rule-cycle",
         }
     }
 }
@@ -1043,6 +1122,16 @@ impl fmt::Display for SortError {
             }
             Self::Internal(text) => write!(f, "internal error in the sorter: {text}"),
             Self::Cancelled => f.write_str("the sort was cancelled"),
+            Self::RuleCycle(links) => {
+                f.write_str("rules that cannot all hold:")?;
+                for link in links {
+                    write!(f, " {} ({}) before", link.plugin, link.rule.label())?;
+                }
+                match links.first() {
+                    Some(first) => write!(f, " {}", first.plugin),
+                    None => Ok(()),
+                }
+            }
         }
     }
 }
@@ -1111,28 +1200,42 @@ pub fn sort(
     data_dir: &Path,
     options: &SortOptions,
 ) -> Result<SortOutput, SortError> {
+    sort_with(load_order, masterlist, None, data_dir, options)
+}
+
+/// [`sort`] with a userlist merged over the masterlist, as libloot does with its userlist loaded: for each plugin the
+/// userlist's entries come first (a group it sets wins; its `after`, `req`, `inc`, messages, tags and cleaning data
+/// come before the masterlist's), its groups are added to the group graph after the masterlist's (a userlist group may
+/// load after a masterlist group), its `after` and `req` give sorting edges of their own, and its general messages
+/// and Bash Tags follow the masterlist's. Rules from the userlist have the sources [`RuleSource::UserAfter`],
+/// [`RuleSource::UserReq`] and [`RuleSource::UserGroup`]; a cycle through one is [`SortError::RuleCycle`].
+///
+/// # Errors
+/// As [`sort`].
+pub fn sort_with(
+    load_order: &[PluginSlot],
+    masterlist: &Masterlist,
+    userlist: Option<&Userlist>,
+    data_dir: &Path,
+    options: &SortOptions,
+) -> Result<SortOutput, SortError> {
     if !data_dir.is_dir() {
         return Err(SortError::DataDirectory(data_dir.to_path_buf()));
     }
     if load_order.len() > MAX_PLUGINS * 4 {
         return Err(SortError::TooManyPlugins(load_order.len()));
     }
-    let metadata = &masterlist.metadata;
+    let merged = userlist.map(|userlist| metadata::merge(&userlist.metadata, &masterlist.metadata));
+    let metadata = merged.as_ref().unwrap_or(&masterlist.metadata);
     let mut output = SortOutput::default();
     let slots = distinct_slots(load_order, &mut output.warnings);
     let env = search_env(data_dir, slots, options);
     check_directories(&env, options, &mut output.warnings);
-    let installed: Vec<&Slot> = env
+    let (installed, not_installed): (Vec<&Slot>, Vec<&Slot>) = env
         .slots()
         .iter()
-        .filter(|slot| env.installed(&slot.name))
-        .collect();
-    output.not_installed = env
-        .slots()
-        .iter()
-        .filter(|slot| !env.installed(&slot.name))
-        .map(|slot| slot.name.clone())
-        .collect();
+        .partition(|slot| env.installed(&slot.name));
+    output.not_installed = not_installed.iter().map(|slot| slot.name.clone()).collect();
     if installed.len() > MAX_PLUGINS {
         return Err(SortError::TooManyPlugins(installed.len()));
     }
@@ -1177,9 +1280,11 @@ pub fn sort(
         .collect();
     let comparing = Reporter::start(hook, Stage::ComparingPlugins, inputs.len());
     let overlaps = overlaps_of(&inputs, records, assets, threads, options, &comparing)?;
-    let groups = group_inputs(metadata);
+    let groups = group_inputs(&masterlist.metadata);
+    let user_groups = userlist.map_or_else(Vec::new, |userlist| group_inputs(&userlist.metadata));
     let sorting = Reporter::start(hook, Stage::Sorting, 1);
-    let (order, moves) = order_plugins(&inputs, &groups, &overlaps, options, &name_of)?;
+    let (order, moves) =
+        order_plugins(&inputs, &groups, &user_groups, &overlaps, options, &name_of)?;
     sorting.tick();
     let checking = Reporter::start(hook, Stage::Checking, 1);
     output.set_moves(options.mode, moves);
@@ -1551,10 +1656,13 @@ fn plugin_input(fact: &Facts, rules: &Rules, index: usize) -> PluginInput {
         match source {
             RuleSource::After => input.load_after.push(rules.names[before].clone()),
             RuleSource::Req => input.requirements.push(rules.names[before].clone()),
+            RuleSource::UserAfter => input.user_load_after.push(rules.names[before].clone()),
+            RuleSource::UserReq => input.user_requirements.push(rules.names[before].clone()),
             // Header masters come from the plugin itself; group rules from the group graph.
-            RuleSource::HeaderMaster | RuleSource::Group => {}
+            RuleSource::HeaderMaster | RuleSource::Group | RuleSource::UserGroup => {}
         }
     }
+    input.group_is_user = rules.user_group[index];
     input
 }
 
@@ -1562,6 +1670,7 @@ fn plugin_input(fact: &Facts, rules: &Rules, index: usize) -> PluginInput {
 fn order_plugins(
     inputs: &[PluginInput],
     groups: &[GroupInput],
+    user_groups: &[GroupInput],
     overlaps: &PluginOverlaps,
     options: &SortOptions,
     name_of: &dyn Fn(usize) -> String,
@@ -1569,15 +1678,21 @@ fn order_plugins(
     let early = [EARLY_LOADER.to_string()];
     match options.mode {
         SortMode::Full => {
-            let sorted = sort::sort(inputs, groups, &early, overlaps)
+            let sorted = sort::sort_with_user_groups(inputs, groups, user_groups, &early, overlaps)
                 .map_err(|error| sort_error(&error, name_of))?;
             let moves = explained_moves(inputs, &sorted, name_of);
             Ok((sorted.order, moves))
         }
         SortMode::MinimalChange => {
-            let repaired =
-                sort::sort_minimal(inputs, groups, &early, overlaps, options.strict_groups)
-                    .map_err(|error| sort_error(&error, name_of))?;
+            let repaired = sort::sort_minimal_with_user_groups(
+                inputs,
+                groups,
+                user_groups,
+                &early,
+                overlaps,
+                options.strict_groups,
+            )
+            .map_err(|error| sort_error(&error, name_of))?;
             let moves = repaired
                 .moves
                 .iter()
@@ -1617,6 +1732,9 @@ fn move_reason(class: sort::EdgeType) -> MoveReason {
         sort::EdgeType::RecordOverlap => MoveReason::RecordOverlap,
         sort::EdgeType::AssetOverlap => MoveReason::AssetOverlap,
         sort::EdgeType::TieBreak => MoveReason::TieBreak,
+        sort::EdgeType::UserRequirement => MoveReason::UserReq,
+        sort::EdgeType::UserLoadAfter => MoveReason::UserAfter,
+        sort::EdgeType::UserGroup => MoveReason::UserGroup,
         _ => MoveReason::MasterFlag,
     }
 }
@@ -1668,7 +1786,7 @@ fn move_explanation(
     } else {
         (plugin, reason.other)
     });
-    let groups = (class == MoveReason::Group)
+    let groups = matches!(class, MoveReason::Group | MoveReason::UserGroup)
         .then(|| (inputs[first].group.clone(), inputs[second].group.clone()));
     let counts = match class {
         MoveReason::RecordOverlap => Some((
@@ -1691,6 +1809,26 @@ fn move_explanation(
 
 fn sort_error(error: &GraphError, name_of: &dyn Fn(usize) -> String) -> SortError {
     match error {
+        GraphError::Cycle(cycle)
+            if cycle.iter().any(|&(_, kind)| {
+                matches!(
+                    kind,
+                    sort::EdgeType::UserLoadAfter
+                        | sort::EdgeType::UserRequirement
+                        | sort::EdgeType::UserGroup
+                )
+            }) =>
+        {
+            SortError::RuleCycle(
+                cycle
+                    .iter()
+                    .map(|&(plugin, kind)| CycleLink {
+                        plugin: name_of(plugin),
+                        rule: move_reason(kind),
+                    })
+                    .collect(),
+            )
+        }
         GraphError::Cycle(cycle) => {
             let first = cycle.first().map_or(0, |&(plugin, _)| plugin);
             let second = cycle.get(1).map_or(first, |&(plugin, _)| plugin);
@@ -1722,7 +1860,18 @@ fn ordering_rules(
         .soft
         .iter()
         .filter(|edge| !dropped.contains(edge))
-        .map(|&(a, b)| (a, b, RuleSource::Group));
+        .map(|&(a, b)| {
+            let user = rules.user_group[a] || rules.user_group[b];
+            (
+                a,
+                b,
+                if user {
+                    RuleSource::UserGroup
+                } else {
+                    RuleSource::Group
+                },
+            )
+        });
     let mut seen = HashSet::new();
     rules
         .hard
@@ -1826,6 +1975,8 @@ struct Rules {
     soft: Edges,
     /// Names of the installed plugins, by index.
     names: Vec<String>,
+    /// Whether the userlist set the group of each installed plugin.
+    user_group: Vec<bool>,
 }
 
 /// The edges `(earlier, later)` over the indices of `facts`: those that must hold (masters, `after`, `req`) and
@@ -1845,8 +1996,13 @@ fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<S
             }
         }
         let wanted = fact.entries.iter().flat_map(|entry| {
-            let after = entry.after.iter().map(|file| (file, RuleSource::After));
-            after.chain(entry.req.iter().map(|file| (file, RuleSource::Req)))
+            let (after, req) = if entry.user {
+                (RuleSource::UserAfter, RuleSource::UserReq)
+            } else {
+                (RuleSource::After, RuleSource::Req)
+            };
+            let afters = entry.after.iter().map(move |file| (file, after));
+            afters.chain(entry.req.iter().map(move |file| (file, req)))
         });
         for (file, source) in wanted {
             let Some(&before) = index_of.get(&file.name.to_lowercase()) else {
@@ -1912,6 +2068,15 @@ fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<S
         hard,
         soft,
         names: facts.iter().map(|fact| fact.name.to_string()).collect(),
+        user_group: facts
+            .iter()
+            .map(|fact| {
+                fact.entries
+                    .iter()
+                    .find(|entry| entry.group.is_some())
+                    .is_some_and(|entry| entry.user)
+            })
+            .collect(),
     }
 }
 
