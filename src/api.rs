@@ -74,6 +74,20 @@ use std::path::{Path, PathBuf};
 #[derive(Debug, Clone)]
 pub struct Masterlist {
     metadata: Metadata,
+    digest: String,
+    prelude_digest: Option<String>,
+    source: Option<MasterlistSource>,
+}
+
+/// What LOOT recorded about where a masterlist came from, read from the `<masterlist>.metadata.toml` file next to it
+/// (LOOT writes `masterlist.yaml.metadata.toml` when it updates the masterlist).
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MasterlistSource {
+    /// `blob_sha1`: the git blob id of the masterlist file LOOT downloaded (compare with [`Masterlist::digest`]).
+    pub blob_sha1: String,
+    /// `update_timestamp`, as LOOT wrote it (a date), when present.
+    pub update_timestamp: Option<String>,
 }
 
 /// A masterlist that could not be read.
@@ -97,42 +111,139 @@ impl fmt::Display for MasterlistError {
 
 impl std::error::Error for MasterlistError {}
 
+/// Most bytes read from a `.metadata.toml` file.
+const MAX_SOURCE_FILE: u64 = 64 * 1024;
+
+/// A UTF-8 text file of at most [`metadata::MAX_MASTERLIST_BYTES`] bytes.
+fn read_text(path: &Path) -> Result<String, MasterlistError> {
+    let io = |error: &dyn fmt::Display| MasterlistError::Io(format!("{}: {error}", path.display()));
+    let limit = metadata::MAX_MASTERLIST_BYTES as u64;
+    let file = fs::File::open(path).map_err(|error| io(&error))?;
+    let mut bytes = Vec::new();
+    file.take(limit + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|error| io(&error))?;
+    if bytes.len() as u64 > limit {
+        return Err(io(&format!("larger than the limit of {limit} bytes")));
+    }
+    String::from_utf8(bytes).map_err(|_| io(&"not valid UTF-8"))
+}
+
+/// `key = "value"` lines of LOOT's `.metadata.toml` file next to `masterlist`; `None` when there is no such file or
+/// it names no `blob_sha1`.
+fn read_source(masterlist: &Path) -> Option<MasterlistSource> {
+    let mut name = masterlist.file_name()?.to_os_string();
+    name.push(".metadata.toml");
+    let file = fs::File::open(masterlist.with_file_name(name)).ok()?;
+    let mut text = String::new();
+    file.take(MAX_SOURCE_FILE).read_to_string(&mut text).ok()?;
+    let value = |key: &str| {
+        text.lines().find_map(|line| {
+            let (name, value) = line.split_once('=')?;
+            (name.trim() == key).then(|| {
+                let value = value.trim();
+                value
+                    .strip_prefix('"')
+                    .and_then(|v| v.strip_suffix('"'))
+                    .or_else(|| value.strip_prefix('\'').and_then(|v| v.strip_suffix('\'')))
+                    .unwrap_or(value)
+                    .to_string()
+            })
+        })
+    };
+    Some(MasterlistSource {
+        blob_sha1: value("blob_sha1")?.to_ascii_lowercase(),
+        update_timestamp: value("update_timestamp"),
+    })
+}
+
 impl Masterlist {
     /// Read a masterlist from YAML text.
     ///
     /// # Errors
     /// [`MasterlistError::Invalid`] for text that is not a masterlist or is over a limit.
     pub fn parse(text: &str) -> Result<Self, MasterlistError> {
-        metadata::parse(text)
-            .map(|metadata| Self { metadata })
-            .map_err(|error| MasterlistError::Invalid(error.0))
+        Self::build(text, None)
     }
 
-    /// Read a masterlist from a file.
+    /// Read a masterlist from YAML text, with its `prelude:` section replaced by `prelude` (the text of LOOT's
+    /// separate prelude file) as libloot does it (see `docs/API.md`). A masterlist without a block-style `prelude:`
+    /// key is read as it is.
+    ///
+    /// # Errors
+    /// As [`Masterlist::parse`], for the text after the replacement.
+    pub fn parse_with_prelude(text: &str, prelude: &str) -> Result<Self, MasterlistError> {
+        Self::build(text, Some(prelude))
+    }
+
+    fn build(text: &str, prelude: Option<&str>) -> Result<Self, MasterlistError> {
+        let digest = crate::sha1::git_blob_sha1(text.as_bytes());
+        let replaced = prelude.map(|prelude| metadata::replace_prelude(text, prelude));
+        let metadata = metadata::parse(replaced.as_deref().unwrap_or(text))
+            .map_err(|error| MasterlistError::Invalid(error.0))?;
+        Ok(Self {
+            metadata,
+            digest,
+            prelude_digest: prelude.map(|prelude| crate::sha1::git_blob_sha1(prelude.as_bytes())),
+            source: None,
+        })
+    }
+
+    /// Read a masterlist from a file, and the `.metadata.toml` file next to it if there is one (see
+    /// [`Masterlist::source`]).
     ///
     /// # Errors
     /// [`MasterlistError::Io`] when the file cannot be read as UTF-8 text or is over the size limit,
     /// [`MasterlistError::Invalid`] as for [`Masterlist::parse`].
     pub fn from_file(path: &Path) -> Result<Self, MasterlistError> {
-        let io =
-            |error: &dyn fmt::Display| MasterlistError::Io(format!("{}: {error}", path.display()));
-        let limit = metadata::MAX_MASTERLIST_BYTES as u64;
-        let file = fs::File::open(path).map_err(|error| io(&error))?;
-        let mut bytes = Vec::new();
-        file.take(limit + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| io(&error))?;
-        if bytes.len() as u64 > limit {
-            return Err(io(&format!("larger than the limit of {limit} bytes")));
-        }
-        let text = String::from_utf8(bytes).map_err(|_| io(&"not valid UTF-8"))?;
-        Self::parse(&text)
+        let mut masterlist = Self::parse(&read_text(path)?)?;
+        masterlist.source = read_source(path);
+        Ok(masterlist)
+    }
+
+    /// [`Masterlist::from_file`] with the prelude replaced by the file at `prelude` (see
+    /// [`Masterlist::parse_with_prelude`]).
+    ///
+    /// # Errors
+    /// As [`Masterlist::from_file`], for either file.
+    pub fn from_file_with_prelude(path: &Path, prelude: &Path) -> Result<Self, MasterlistError> {
+        let prelude = read_text(prelude)?;
+        let mut masterlist = Self::parse_with_prelude(&read_text(path)?, &prelude)?;
+        masterlist.source = read_source(path);
+        Ok(masterlist)
     }
 
     /// Entries that were skipped while reading (for example a regular expression with look-around).
     #[must_use]
     pub fn warnings(&self) -> &[String] {
         &self.metadata.warnings
+    }
+
+    /// The git blob id (`sha1("blob <length>\0" + bytes)`, what `git hash-object` prints) of the masterlist text as
+    /// read, before any prelude replacement: the value LOOT keeps as `blob_sha1`.
+    #[must_use]
+    pub fn digest(&self) -> &str {
+        &self.digest
+    }
+
+    /// The git blob id of the prelude text, when one replaced the masterlist's.
+    #[must_use]
+    pub fn prelude_digest(&self) -> Option<&str> {
+        self.prelude_digest.as_deref()
+    }
+
+    /// What LOOT's `.metadata.toml` file next to the masterlist says, when [`Masterlist::from_file`] found one.
+    #[must_use]
+    pub const fn source(&self) -> Option<&MasterlistSource> {
+        self.source.as_ref()
+    }
+
+    /// Whether the text read is the one the `.metadata.toml` file names (`None` without such a file).
+    #[must_use]
+    pub fn matches_source(&self) -> Option<bool> {
+        self.source
+            .as_ref()
+            .map(|source| source.blob_sha1 == self.digest)
     }
 }
 

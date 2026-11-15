@@ -365,3 +365,40 @@ fn sort_json_without_a_mode_has_neither_mode_nor_moves_and_a_bad_mode_is_refused
     assert_eq!(code, 2);
     assert!(error.contains("--mode needs full or minimal"), "{error}");
 }
+
+#[test]
+fn a_prelude_file_replaces_the_masterlist_s_prelude_for_check_and_sort() {
+    let fixture = Fixture::new();
+    fixture.plugin("A.esp", &[]);
+    let masterlist = fixture.masterlist(
+        "prelude:\n  common: &old\n    - Delev\nplugins:\n  - name: A.esp\n    tag: *new\n",
+    );
+    let prelude = fixture.root.join("prelude.yaml");
+    std::fs::write(&prelude, "common: &new\n  - Relev\n").expect("write prelude");
+    let plugins = fixture.plugins_txt("*A.esp\n");
+    let data = fixture.data();
+    for command in ["check", "sort"] {
+        let base = [
+            command,
+            "--masterlist",
+            masterlist.to_str().expect("utf-8"),
+            "--plugins",
+            plugins.to_str().expect("utf-8"),
+            "--data",
+            data.to_str().expect("utf-8"),
+        ];
+        assert_eq!(
+            run(&base).status.code(),
+            Some(2),
+            "{command} without the prelude"
+        );
+        let mut with = base.to_vec();
+        with.extend(["--prelude", prelude.to_str().expect("utf-8")]);
+        let output = run(&with);
+        assert_eq!(output.status.code(), Some(0), "{command} with the prelude");
+        assert!(
+            String::from_utf8_lossy(&output.stdout).contains("Relev"),
+            "{command}"
+        );
+    }
+}

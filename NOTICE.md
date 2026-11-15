@@ -79,3 +79,11 @@ GPL-3.0-or-later, Copyright (C) the libloot authors): the expressions and their 
 `Version` in `loot-condition-interpreter` (version 6.0.0, `src/function/version.rs`, MIT, Copyright (C) the LOOT
 authors), whose type is private to that crate. The tests in `src/version_tests.rs` are libloot's own tests of
 `extract_version` and cases of the interpreter's, translated. Neither crate is a dependency of the default build.
+
+## `replace_prelude` in `src/metadata.rs` (GPL-3.0-or-later, ported from libloot)
+
+`metadata::replace_prelude` and its helpers are a port of `replace_prelude`, `split_on_prelude`,
+`split_on_prelude_start` and `indent_prelude` in libloot 0.29.7 (`src/metadata/metadata_document.rs`,
+https://github.com/loot/libloot, GPL-3.0-or-later, Copyright (C) the libloot authors), without the line-number
+bookkeeping libloot keeps for its error messages. Its tests are libloot's, translated. `src/sha1.rs` is written for
+this crate from FIPS 180-4.
