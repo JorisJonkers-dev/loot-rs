@@ -417,7 +417,8 @@ pub struct Progress {
 }
 
 /// A function [`sort`] calls with its [`Progress`] (see [`SortOptions::with_progress`]). It is called from the
-/// sort's threads, so it must be `Send + Sync` and quick; it must not call [`sort`] itself.
+/// sort's threads, one call at a time and with the counts of a stage in order, so it must be `Send + Sync` and quick;
+/// it must not call [`sort`] itself.
 #[derive(Clone)]
 pub struct ProgressHook(std::sync::Arc<dyn Fn(Progress) + Send + Sync>);
 
@@ -448,7 +449,9 @@ struct Reporter<'a> {
     hook: Option<&'a ProgressHook>,
     stage: Stage,
     total: usize,
-    done: std::sync::atomic::AtomicUsize,
+    /// Items done; the lock is held while the hook is called, so the hook sees the counts in order, one call at a
+    /// time, even when the items are finished on several threads.
+    done: std::sync::Mutex<usize>,
 }
 
 impl<'a> Reporter<'a> {
@@ -458,7 +461,7 @@ impl<'a> Reporter<'a> {
             hook,
             stage,
             total,
-            done: std::sync::atomic::AtomicUsize::new(0),
+            done: std::sync::Mutex::new(0),
         };
         reporter.call(0);
         reporter
@@ -467,8 +470,12 @@ impl<'a> Reporter<'a> {
     /// One more item done.
     fn tick(&self) {
         if self.hook.is_some() {
-            let done = self.done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
-            self.call(done.min(self.total));
+            let mut done = self
+                .done
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            *done += 1;
+            self.call((*done).min(self.total));
         }
     }
 
