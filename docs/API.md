@@ -31,7 +31,7 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | `load_order: &[PluginSlot]` | The current order, each plugin with its file name and whether it is active |
 | `masterlist: &Masterlist` | A masterlist read once with `Masterlist::parse(text)` or `Masterlist::from_file(path)` (8 MiB limit, aliases bounded), reusable |
 | `data_dir: &Path` | The game's `Data` directory (or a mod manager's staging `data` folder); condition paths are relative to it |
-| `options: &SortOptions` | `strict_groups` (see [GROUPS.md](GROUPS.md)); default is soft. `game_dir` and `additional_data_dirs` (below). `mode`: `SortMode::Full` (default) or `SortMode::MinimalChange` (see Minimal-change sort) |
+| `options: &SortOptions` | `strict_groups` (see [GROUPS.md](GROUPS.md)); default is soft. `game_dir` and `additional_data_dirs` (below). `mode`: `SortMode::Full` (default) or `SortMode::MinimalChange` (see Minimal-change sort). `threads` (`with_threads`): 0, the default, is one per core up to 16. `cache` (`with_cache`): a `SortCache` (below) |
 
 `SortOutput`:
 
@@ -54,6 +54,21 @@ rules that cannot both hold: the first two plugins of the cycle), `MasterOrder {
 the master flag that has to load before one with it), `GroupCycle(groups)` (groups that load after each other),
 `TooMuchWork`, `Internal(text)` (a check inside the sorter failed: a bug). A masterlist condition that cannot be evaluated is not an error: the item is left
 out and reported.
+
+## Threads and the cache
+
+`sort` reads plugin headers, records, archive tables and checksums, and compares the plugins' records and archive
+files, on `SortOptions::threads` threads (0: one per available core, at most 16). The result is the same for every
+thread count; the limits are decided from complete counts, never by which thread ran first.
+
+`SortCache` (`SortCache::new()`, `SortOptions::with_cache(cache.clone())`) keeps the record ids and archive files that a
+sort read, by path, size, modification time and inode, and the next sort with the same cache reads only what changed.
+Clones share the data, and several sorts can use one cache at once from several threads. `clear()` forgets everything;
+`len()` returns the plugins and archives held. The result is the same with or without a cache. A file rewritten in place
+within the same second to the same size is not noticed: use a new cache after such a change.
+
+`Masterlist`, `SortOptions` and `SortCache` are `Send` and `Sync`: one masterlist can be shared by sorts on several
+threads. Speed measurements and the decisions behind them are in [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md).
 
 ## Game directory and additional data directories
 
@@ -148,8 +163,11 @@ for this mode. New optional keys do not raise `schema_version`, which stays 1, a
 * Read only: nothing under `Data` or anywhere else is written.
 * Deterministic: the same arguments and files give the same result; which group rules are dropped does not depend on
   the order given.
-* Bounded: see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md) (at most 1024 installed plugins, bit-matrix work limited to
-  400 million steps, no whole plugin file held in memory for a checksum). Limits are errors, never panics.
+* Bounded: see [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md) (at most 1024 installed plugins, graph search limited to 1
+  billion steps and record comparison to 8 billion, no whole plugin file held in memory for a checksum). Limits are
+  errors, never panics.
+* Independent of threads and cache: `SortOptions::threads` and `SortOptions::cache` change only how fast the result
+  comes.
 * Honest about gaps: an unimplemented condition function leaves its item out and is reported, never guessed.
 
 ## Versioning

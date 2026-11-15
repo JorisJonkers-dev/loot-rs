@@ -17,8 +17,12 @@
 use std::collections::HashMap;
 use std::fmt;
 use std::fs::File;
+use std::hash::{BuildHasherDefault, Hasher};
 use std::io::{self, BufReader, Read};
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+use crate::parallel::{Holder, SharedBudget};
 
 /// Most bytes of tables read from one archive (a BSA with 300,000 files has about 10 MiB of tables).
 pub const MAX_ARCHIVE_TABLES: u64 = 64 * 1024 * 1024;
@@ -58,24 +62,84 @@ impl fmt::Display for ArchiveError {
 
 impl std::error::Error for ArchiveError {}
 
-/// Folder names and file names as small numbers, so that a file is one `u64`.
+/// Folder names and file names as small numbers, so that a file is one `u64`. Shared by threads: the tables are
+/// split into shards, each behind its own lock. Which number a name gets depends on which thread reads it first,
+/// but two files have the same key exactly when their names are the same, which is all the sorter asks.
 #[derive(Debug, Default)]
 pub struct PathIds {
-    folders: HashMap<Box<[u8]>, u32>,
-    files: HashMap<Box<[u8]>, u32>,
+    folders: Interner,
+    files: Interner,
+}
+
+const SHARDS: usize = 64;
+
+/// Names of one shard and their numbers.
+type Shard = HashMap<Box<[u8]>, u32, BuildHasherDefault<NameHasher>>;
+
+#[derive(Debug)]
+struct Interner {
+    shards: Vec<Mutex<Shard>>,
+}
+
+impl Default for Interner {
+    fn default() -> Self {
+        Self {
+            shards: (0..SHARDS).map(|_| Mutex::default()).collect(),
+        }
+    }
+}
+
+impl Interner {
+    fn id(&self, name: &[u8]) -> u32 {
+        let mut hasher = NameHasher::default();
+        hasher.write(name);
+        // `SHARDS` is a power of two; the low bits of the hash pick the shard.
+        #[allow(clippy::cast_possible_truncation)]
+        let shard = (hasher.finish() as usize) & (SHARDS - 1);
+        let mut map = self.shards[shard]
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(&id) = map.get(name) {
+            return id;
+        }
+        // The shard in the low bits keeps ids of different shards apart; a shard holds far fewer than 2^26 names
+        // under `MAX_ASSETS_TOTAL`.
+        let local = u32::try_from(map.len()).unwrap_or(u32::MAX >> 6);
+        #[allow(clippy::cast_possible_truncation)]
+        let id = local << 6 | shard as u32;
+        map.insert(name.into(), id);
+        id
+    }
+}
+
+/// A fast hash for path bytes (`FxHash`'s multiply-rotate on eight bytes at a time). The input is the user's own
+/// archive tables, bounded in size, so no protection against crafted collisions is needed beyond the size limits.
+#[derive(Debug, Default)]
+struct NameHasher(u64);
+
+impl Hasher for NameHasher {
+    fn write(&mut self, bytes: &[u8]) {
+        const SEED: u64 = 0x51_7c_c1_b7_27_22_0a_95;
+        let (chunks, rest) = bytes.as_chunks::<8>();
+        for chunk in chunks {
+            let word = u64::from_le_bytes(*chunk);
+            self.0 = (self.0.rotate_left(5) ^ word).wrapping_mul(SEED);
+        }
+        for &byte in rest {
+            self.0 = (self.0.rotate_left(5) ^ u64::from(byte)).wrapping_mul(SEED);
+        }
+        self.0 = (self.0.rotate_left(5) ^ bytes.len() as u64).wrapping_mul(SEED);
+    }
+
+    fn finish(&self) -> u64 {
+        // Mix the high bits down: the shard is taken from the low ones.
+        self.0 ^ (self.0 >> 29)
+    }
 }
 
 impl PathIds {
-    fn key(&mut self, folder: &[u8], file: &[u8]) -> u64 {
-        fn id(map: &mut HashMap<Box<[u8]>, u32>, name: &[u8]) -> u32 {
-            if let Some(&id) = map.get(name) {
-                return id;
-            }
-            let id = u32::try_from(map.len()).unwrap_or(u32::MAX);
-            map.insert(name.into(), id);
-            id
-        }
-        u64::from(id(&mut self.folders, folder)) << 32 | u64::from(id(&mut self.files, file))
+    fn key(&self, folder: &[u8], file: &[u8]) -> u64 {
+        u64::from(self.folders.id(folder)) << 32 | u64::from(self.files.id(file))
     }
 }
 
@@ -84,35 +148,68 @@ impl PathIds {
 /// libloot.) Sorted by name.
 #[must_use]
 pub fn associated_archives(data_dir: &Path, plugin_name: &str) -> Vec<PathBuf> {
-    let stem = Path::new(plugin_name)
-        .file_stem()
-        .and_then(|stem| stem.to_str())
-        .unwrap_or_default()
-        .to_lowercase();
-    if stem.is_empty() {
-        return Vec::new();
+    ArchiveIndex::new(&[data_dir]).archives_of(plugin_name)
+}
+
+/// The BSA files of some directories, listed once, so that finding the archives of each plugin of a load order does
+/// not list a directory per plugin.
+#[derive(Debug, Clone, Default)]
+pub struct ArchiveIndex {
+    /// Per directory, in the order given: the lower-case file name and the path of each BSA, sorted by path.
+    dirs: Vec<Vec<(String, PathBuf)>>,
+}
+
+impl ArchiveIndex {
+    /// List the BSA files directly in each of `dirs` (a directory that cannot be listed has none).
+    #[must_use]
+    pub fn new(dirs: &[&Path]) -> Self {
+        let dirs = dirs
+            .iter()
+            .map(|dir| {
+                let Ok(entries) = std::fs::read_dir(dir) else {
+                    return Vec::new();
+                };
+                let mut found: Vec<(String, PathBuf)> = entries
+                    .filter_map(Result::ok)
+                    .filter(|entry| {
+                        entry
+                            .file_type()
+                            .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
+                    })
+                    .filter_map(|entry| {
+                        let name = entry.file_name().to_string_lossy().to_lowercase();
+                        Path::new(&name)
+                            .extension()
+                            .is_some_and(|extension| extension.eq_ignore_ascii_case("bsa"))
+                            .then(|| (name, entry.path()))
+                    })
+                    .collect();
+                found.sort_by(|a, b| a.1.cmp(&b.1));
+                found
+            })
+            .collect();
+        Self { dirs }
     }
-    let Ok(entries) = std::fs::read_dir(data_dir) else {
-        return Vec::new();
-    };
-    let mut found: Vec<PathBuf> = entries
-        .filter_map(Result::ok)
-        .filter(|entry| {
-            entry
-                .file_type()
-                .is_ok_and(|kind| kind.is_file() || kind.is_symlink())
-        })
-        .filter(|entry| {
-            let name = entry.file_name().to_string_lossy().to_lowercase();
-            Path::new(&name)
-                .extension()
-                .is_some_and(|extension| extension.eq_ignore_ascii_case("bsa"))
-                && name.starts_with(&stem)
-        })
-        .map(|entry| entry.path())
-        .collect();
-    found.sort();
-    found
+
+    /// The archives `plugin_name` loads, as [`associated_archives`] finds them, directory by directory in the order
+    /// given.
+    #[must_use]
+    pub fn archives_of(&self, plugin_name: &str) -> Vec<PathBuf> {
+        let stem = Path::new(plugin_name)
+            .file_stem()
+            .and_then(|stem| stem.to_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        if stem.is_empty() {
+            return Vec::new();
+        }
+        self.dirs
+            .iter()
+            .flatten()
+            .filter(|(name, _)| name.starts_with(&stem))
+            .map(|(_, path)| path.clone())
+            .collect()
+    }
 }
 
 /// The files of the archive at `path`, as keys of `ids`, appended to `keys` (not sorted, may repeat).
@@ -121,13 +218,37 @@ pub fn associated_archives(data_dir: &Path, plugin_name: &str) -> Vec<PathBuf> {
 /// [`ArchiveError`] for an unreadable or unsupported archive, or one over a limit. Nothing is appended then.
 pub fn read_archive(
     path: &Path,
-    ids: &mut PathIds,
+    ids: &PathIds,
     keys: &mut Vec<u64>,
     budget: &mut usize,
 ) -> Result<(), ArchiveError> {
+    let shared = SharedBudget::new(budget.saturating_sub(keys.len()), 1);
+    let mut holder = shared.holder();
+    read_archive_at(path, ids, keys, &mut holder)
+}
+
+/// Read the archive at `path` into `keys` (not sorted, may repeat), taking each file from `holder`.
+///
+/// # Errors
+/// As [`read_archive`]; on an error nothing is appended.
+pub fn read_archive_with(
+    path: &Path,
+    ids: &PathIds,
+    keys: &mut Vec<u64>,
+    holder: &mut Holder,
+) -> Result<(), ArchiveError> {
+    read_archive_at(path, ids, keys, holder)
+}
+
+fn read_archive_at(
+    path: &Path,
+    ids: &PathIds,
+    keys: &mut Vec<u64>,
+    holder: &mut Holder,
+) -> Result<(), ArchiveError> {
     let file = File::open(path).map_err(ArchiveError::Io)?;
     let length = file.metadata().map_err(ArchiveError::Io)?.len();
-    read_archive_from(BufReader::new(file), length, ids, keys, budget)
+    read_archive_holder(BufReader::new(file), length, ids, keys, holder)
 }
 
 /// The header of a BSA, checked.
@@ -228,11 +349,23 @@ fn folder_names(
 /// # Errors
 /// As [`read_archive`].
 pub fn read_archive_from<R: Read>(
-    mut reader: R,
+    reader: R,
     length: u64,
-    ids: &mut PathIds,
+    ids: &PathIds,
     keys: &mut Vec<u64>,
     budget: &mut usize,
+) -> Result<(), ArchiveError> {
+    let shared = SharedBudget::new(budget.saturating_sub(keys.len()), 1);
+    let mut holder = shared.holder();
+    read_archive_holder(reader, length, ids, keys, &mut holder)
+}
+
+fn read_archive_holder<R: Read>(
+    mut reader: R,
+    length: u64,
+    ids: &PathIds,
+    keys: &mut Vec<u64>,
+    holder: &mut Holder,
 ) -> Result<(), ArchiveError> {
     let header = read_header(&mut reader)?;
     let folders_size = header.folder_count * header.folder_record_size;
@@ -256,16 +389,18 @@ pub fn read_archive_from<R: Read>(
     // file count. A count that promises more names than there are is stopped by the names.
     let mut file_names = names.split(|&byte| byte == 0);
     let before = keys.len();
+    let mut file = Vec::new();
     'folders: for (folder, count) in &folder_names {
         for _ in 0..*count {
-            let Some(file) = file_names.next() else {
+            let Some(name) = file_names.next() else {
                 break 'folders;
             };
-            if keys.len() >= *budget {
+            if !holder.take() {
                 keys.truncate(before);
                 return Err(ArchiveError::TooMuch);
             }
-            keys.push(ids.key(folder, &normalise(file)));
+            normalise_into(name, &mut file);
+            keys.push(ids.key(folder, &file));
         }
     }
     Ok(())
@@ -274,6 +409,14 @@ pub fn read_archive_from<R: Read>(
 /// libloot's `trim_and_normalise`: no slashes at either end, `/` as `\`, ASCII letters in lower case, other bytes
 /// as they are.
 fn normalise(path: &[u8]) -> Vec<u8> {
+    let mut out = Vec::new();
+    normalise_into(path, &mut out);
+    out
+}
+
+/// [`normalise`] into `out`, which is cleared first (so one buffer serves every file of an archive).
+fn normalise_into(path: &[u8], out: &mut Vec<u8>) {
+    out.clear();
     let is_slash = |byte: &u8| *byte == b'\\' || *byte == b'/';
     let start = path
         .iter()
@@ -283,13 +426,10 @@ fn normalise(path: &[u8]) -> Vec<u8> {
         .iter()
         .rposition(|byte| !is_slash(byte))
         .map_or(start, |at| at + 1);
-    path[start..end.max(start)]
-        .iter()
-        .map(|&byte| match byte {
-            b'/' => b'\\',
-            other => other.to_ascii_lowercase(),
-        })
-        .collect()
+    out.extend(path[start..end.max(start)].iter().map(|&byte| match byte {
+        b'/' => b'\\',
+        other => other.to_ascii_lowercase(),
+    }));
 }
 
 /// The files of the archives a plugin loads: sorted, each once, folders and files compared by their names.
@@ -306,13 +446,31 @@ pub struct PluginAssets {
 /// [`ArchiveError::TooMuch`] when the files pass what is left of `budget`.
 pub fn read_plugin_assets(
     archives: &[PathBuf],
-    ids: &mut PathIds,
+    ids: &PathIds,
     budget: &mut usize,
     skipped: &mut Vec<(PathBuf, ArchiveError)>,
 ) -> Result<PluginAssets, ArchiveError> {
+    let shared = SharedBudget::new(*budget, 1);
+    let assets = read_plugin_assets_shared(archives, ids, &shared, skipped)?;
+    *budget = budget.saturating_sub(assets.keys.len());
+    Ok(assets)
+}
+
+/// [`read_plugin_assets`] with a budget shared by every plugin of the load order (and the threads that read them):
+/// the plugin keeps as many files of it as it has distinct files.
+///
+/// # Errors
+/// [`ArchiveError::TooMuch`] when the files pass what is left of `budget`.
+pub fn read_plugin_assets_shared(
+    archives: &[PathBuf],
+    ids: &PathIds,
+    budget: &SharedBudget,
+    skipped: &mut Vec<(PathBuf, ArchiveError)>,
+) -> Result<PluginAssets, ArchiveError> {
+    let mut holder = budget.holder();
     let mut keys = Vec::new();
     for path in archives {
-        match read_archive(path, ids, &mut keys, budget) {
+        match read_archive_at(path, ids, &mut keys, &mut holder) {
             Ok(()) => {}
             Err(ArchiveError::TooMuch) => return Err(ArchiveError::TooMuch),
             Err(error) => skipped.push((path.clone(), error)),
@@ -320,7 +478,7 @@ pub fn read_plugin_assets(
     }
     keys.sort_unstable();
     keys.dedup();
-    *budget = budget.saturating_sub(keys.len());
+    holder.keep(keys.len());
     Ok(PluginAssets { keys })
 }
 

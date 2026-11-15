@@ -42,8 +42,9 @@ use plugins::{PluginGraph, Vertex};
 pub const DEFAULT_GROUP: &str = "default";
 /// Most plugins that are sorted at once (the game loads 255).
 pub const MAX_PLUGINS: usize = 1024;
-/// Most elementary steps of graph searches (and record comparisons) before the sort gives up.
-pub const WORK_BUDGET: u64 = 400_000_000;
+/// Most elementary steps of graph searches before the sort gives up. Record and archive comparisons have their own
+/// budget ([`crate::overlap::OVERLAP_WORK_BUDGET`]).
+pub const WORK_BUDGET: u64 = 1_000_000_000;
 
 /// Why an edge is in the graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]

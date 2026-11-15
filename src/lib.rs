@@ -11,6 +11,7 @@
 //! * [`cli`]: argument parsing and the `check` command.
 //! * [`archives`]: the BSA archives a plugin loads and the files they hold, for the overlap between plugins.
 //! * [`overlap`]: sorted lists of ids and which plugins share one.
+//! * [`parallel`]: work spread over threads, with results in input order.
 //! * [`records`]: the records of a plugin, for the overlap between plugins.
 //! * [`render`]: plain-text output of a report.
 
@@ -22,8 +23,10 @@ pub mod condition;
 pub mod env;
 #[cfg(feature = "executable-versions")]
 pub mod exe_version;
+mod load;
 pub mod metadata;
 pub mod overlap;
+pub mod parallel;
 pub mod plugin;
 pub mod records;
 pub mod render;

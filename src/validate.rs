@@ -69,8 +69,9 @@ pub fn description_tags(description: &str) -> Vec<String> {
     description
         .split_once("{{BASH:")
         .and_then(|(_, rest)| rest.split_once("}}"))
-        .map(|(tags, _)| tags.split(',').map(|tag| tag.trim().to_string()).collect())
-        .unwrap_or_default()
+        .map_or_else(Vec::new, |(tags, _)| {
+            tags.split(',').map(|tag| tag.trim().to_string()).collect()
+        })
 }
 
 /// What the checks need to know about one plugin.

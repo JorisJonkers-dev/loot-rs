@@ -445,3 +445,27 @@ fn the_merge_key_expansion_refuses_to_recurse_past_the_depth_limit() {
     assert!(error.0.contains("nested too deeply"));
     // Dropping the 260-deep tree is fine; a deeper one never gets built by the loader.
 }
+
+#[test]
+fn the_entries_for_a_name_are_the_entries_whose_pattern_matches_it_in_file_order() {
+    let metadata = parse(
+        "plugins:\n  - name: 'A.esp'\n    group: g\n  - name: 'A.*\\.esp'\n  - name: 'a.ESP'\n  - name: 'B.esp'\n",
+    )
+    .expect("parses");
+    for name in ["A.esp", "a.esp", "AB.esp", "B.esp", "C.esp"] {
+        let expected: Vec<&PluginEntry> = metadata
+            .plugins
+            .iter()
+            .filter(|entry| entry.pattern.matches(name))
+            .collect();
+        let found = metadata.entries_for(name);
+        assert_eq!(found.len(), expected.len(), "{name}");
+        assert!(
+            found
+                .iter()
+                .zip(&expected)
+                .all(|(x, y)| std::ptr::eq(*x, *y)),
+            "{name}"
+        );
+    }
+}

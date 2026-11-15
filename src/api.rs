@@ -45,17 +45,20 @@
 //! `records`, `render`, `sort`, `validate`) are the implementation and are not covered by that promise. See
 //! `docs/API.md`.
 
-use crate::archives::{self, ArchiveError, MAX_ASSETS_TOTAL, PathIds, PluginAssets};
+use crate::archives::{ArchiveIndex, PluginAssets};
 use crate::check::{self, FindingKind as InnerKind};
 use crate::condition::{ConditionError, eval_str};
 use crate::env::{FsEnv, Slot, crc32_file};
+use crate::load;
+pub use crate::load::SortCache;
 use crate::metadata::{
     self, Cleaning, DEFAULT_GROUP, MessageKind as InnerMessageKind, Metadata, PluginEntry,
 };
-use crate::overlap::PluginOverlaps;
+use crate::overlap::{PairNeeds, PluginOverlaps};
+use crate::parallel;
 use crate::plugin;
 pub use crate::plugin::{PluginError, PluginHeader};
-use crate::records::{self, MAX_RECORDS_TOTAL, NameIds, PluginRecords, RecordsError};
+use crate::records::PluginRecords;
 pub use crate::render::{CHECK_CONTRACT, CONTRACTS, SCHEMA_VERSION, SORT_CONTRACT, contracts_json};
 use crate::sort::{self, GraphError, GroupInput, MAX_PLUGINS, PluginInput};
 use crate::validate;
@@ -245,6 +248,12 @@ pub struct SortOptions {
     pub additional_data_dirs: Vec<PathBuf>,
     /// How to order the plugins (default [`SortMode::Full`]).
     pub mode: SortMode,
+    /// Threads used to read plugins and archives and to compare them: 0 (the default) is one per available core, at
+    /// most [`crate::parallel::MAX_THREADS`]. The result is the same for every value.
+    pub threads: usize,
+    /// What earlier sorts read, reused when the files are unchanged (see [`SortCache`]). The result is the same with
+    /// or without it.
+    pub cache: Option<SortCache>,
 }
 
 impl SortOptions {
@@ -252,6 +261,20 @@ impl SortOptions {
     #[must_use]
     pub const fn with_mode(mut self, mode: SortMode) -> Self {
         self.mode = mode;
+        self
+    }
+
+    /// Reuse what earlier sorts with the same cache read; see [`SortCache`].
+    #[must_use]
+    pub fn with_cache(mut self, cache: SortCache) -> Self {
+        self.cache = Some(cache);
+        self
+    }
+
+    /// Use this many threads (0: one per available core); see [`SortOptions::threads`].
+    #[must_use]
+    pub const fn with_threads(mut self, threads: usize) -> Self {
+        self.threads = threads;
         self
     }
 
@@ -642,11 +665,7 @@ impl fmt::Display for SortError {
 impl std::error::Error for SortError {}
 
 fn matching<'a>(metadata: &'a Metadata, name: &str) -> Vec<&'a PluginEntry> {
-    metadata
-        .plugins
-        .iter()
-        .filter(|entry| entry.pattern.matches(name))
-        .collect()
+    metadata.entries_for(name)
 }
 
 fn group_of(entries: &[&PluginEntry]) -> String {
@@ -677,6 +696,8 @@ fn messages(applied: &[check::AppliedMessage]) -> Vec<Message> {
 /// What each installed plugin is, from its header and the masterlist, in load order.
 struct Facts<'a> {
     name: &'a str,
+    /// Where the plugin was found.
+    path: Option<PathBuf>,
     /// Whether the header could be read (the plugin's records are only read then).
     readable: bool,
     header: Option<plugin::PluginHeader>,
@@ -731,15 +752,25 @@ pub fn sort(
         return Err(SortError::TooManyPlugins(installed.len()));
     }
 
-    let facts: Vec<Facts> = installed
-        .iter()
-        .map(|slot| facts_of(&env, metadata, slot, &mut output.warnings))
-        .collect();
+    let threads = parallel::threads(options.threads);
+    let facts = all_facts(&env, metadata, &installed, threads, &mut output.warnings);
     let rules = rules(&env, metadata, &facts, &mut output.warnings);
 
     let name_of = |index: usize| facts[index].name.to_string();
-    let records = read_all_records(&env, &facts, &mut output.warnings)?;
-    let assets = read_all_assets(&env, data_dir, &facts, &mut output.warnings)?;
+    let records = read_all_records(
+        &facts,
+        threads,
+        options.cache.as_ref(),
+        &mut output.warnings,
+    )?;
+    let assets = read_all_assets(
+        &env,
+        data_dir,
+        &facts,
+        threads,
+        options.cache.as_ref(),
+        &mut output.warnings,
+    )?;
     let inputs: Vec<PluginInput> = facts
         .iter()
         .enumerate()
@@ -750,18 +781,8 @@ pub fn sort(
             input
         })
         .collect();
-    let overlaps = PluginOverlaps::new(
-        records.into_iter().map(|plugin| plugin.keys).collect(),
-        assets.into_iter().map(|plugin| plugin.keys).collect(),
-    );
-    let groups: Vec<GroupInput> = metadata
-        .groups
-        .iter()
-        .map(|group| GroupInput {
-            name: group.name.clone(),
-            after: group.after.clone(),
-        })
-        .collect();
+    let overlaps = overlaps_of(&inputs, records, assets, threads)?;
+    let groups = group_inputs(metadata);
     let (order, moves) = order_plugins(&inputs, &groups, &overlaps, options, &name_of)?;
     output.mode = options.mode;
     output.moves = moves;
@@ -793,6 +814,8 @@ pub fn sort(
         .map(|&index| installed[index].clone())
         .collect();
     let sorted_env = search_env(data_dir, sorted_slots, options);
+    // The checksums the cleaning data needs; the check below and `describe` reuse them.
+    prefetch_checksums(&facts, &sorted_env, threads);
     let report = check::run(
         metadata,
         &sorted_env,
@@ -802,6 +825,56 @@ pub fn sort(
     );
     describe(&mut output, metadata, &facts, &order, &sorted_env, &report);
     Ok(output)
+}
+
+fn group_inputs(metadata: &Metadata) -> Vec<GroupInput> {
+    metadata
+        .groups
+        .iter()
+        .map(|group| GroupInput {
+            name: group.name.clone(),
+            after: group.after.clone(),
+        })
+        .collect()
+}
+
+/// The overlap data of the installed plugins, with every pair the sorter can ask about compared on `threads`
+/// threads.
+fn overlaps_of(
+    inputs: &[PluginInput],
+    records: Vec<PluginRecords>,
+    assets: Vec<PluginAssets>,
+    threads: usize,
+) -> Result<PluginOverlaps, SortError> {
+    let mut overlaps = PluginOverlaps::new(
+        records.into_iter().map(|plugin| plugin.keys).collect(),
+        assets.into_iter().map(|plugin| plugin.keys).collect(),
+    );
+    let is_master: Vec<bool> = inputs.iter().map(|input| input.is_master).collect();
+    let override_records: Vec<usize> = inputs.iter().map(|input| input.override_records).collect();
+    let asset_counts: Vec<usize> = inputs.iter().map(|input| input.assets).collect();
+    overlaps
+        .precompute(
+            PairNeeds {
+                is_master: &is_master,
+                override_records: &override_records,
+                assets: &asset_counts,
+            },
+            threads,
+        )
+        .map_err(|()| SortError::TooMuchWork)?;
+    Ok(overlaps)
+}
+
+/// Read, on `threads` threads, the CRC-32 of every plugin whose cleaning data needs it, and give them to `env`.
+fn prefetch_checksums(facts: &[Facts], env: &FsEnv, threads: usize) {
+    let wanted: Vec<PathBuf> = facts
+        .iter()
+        .filter(|fact| needs_checksum(fact))
+        .filter_map(|fact| fact.path.clone())
+        .collect();
+    let crcs = parallel::map(&wanted, threads, |path| crc32_file(path).ok());
+    env.remember_crcs(wanted.into_iter().zip(crcs));
 }
 
 /// The environment over `data_dir` and the directories of `options`.
@@ -868,8 +941,7 @@ fn describe(
                 .header
                 .as_ref()
                 .and_then(|header| header.description.as_deref())
-                .map(validate::description_tags)
-                .unwrap_or_default();
+                .map_or_else(Vec::new, validate::description_tags);
             plugin_result(plugin, &generated, bash_tags)
         })
         .collect();
@@ -882,75 +954,46 @@ fn describe(
     );
 }
 
-/// The record ids of every installed plugin whose header could be read. A file that cannot be read as records is
-/// noted and counts as one without; a limit is an error.
+/// The record ids of every installed plugin whose header could be read (see `load::read_records`).
 fn read_all_records(
-    env: &FsEnv,
     facts: &[Facts],
+    threads: usize,
+    cache: Option<&SortCache>,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<PluginRecords>, SortError> {
-    let mut names = NameIds::default();
-    let mut budget = MAX_RECORDS_TOTAL;
-    let mut all = Vec::with_capacity(facts.len());
-    for fact in facts {
-        let path = env.resolve(fact.name).filter(|_| fact.readable);
-        let Some(path) = path else {
-            all.push(PluginRecords::default());
-            continue;
-        };
-        match records::read_records(&path, fact.name, &fact.masters, &mut names, &mut budget) {
-            Ok(records) => all.push(records),
-            Err(RecordsError::TooMany) => return Err(SortError::TooMuchWork),
-            Err(error) => {
-                warnings.push(format!(
-                    "{}: records not readable ({error}); it is treated as having none",
-                    fact.name
-                ));
-                all.push(PluginRecords::default());
-            }
-        }
-    }
-    Ok(all)
+    let jobs: Vec<load::RecordJob> = facts
+        .iter()
+        .map(|fact| load::RecordJob {
+            name: fact.name,
+            path: fact.path.as_deref().filter(|_| fact.readable),
+            masters: &fact.masters,
+        })
+        .collect();
+    load::read_records(&jobs, threads, cache, warnings)
+        .map_err(|load::OverLimit| SortError::TooMuchWork)
 }
 
-/// The files of the archives each installed plugin loads. An archive that cannot be read is noted and skipped; a
-/// limit is an error.
+/// The files of the archives each installed plugin loads (see `load::read_assets`). As libloot does, archives are
+/// taken from every directory searched, the additional ones first.
 fn read_all_assets(
     env: &FsEnv,
     data_dir: &Path,
     facts: &[Facts],
+    threads: usize,
+    cache: Option<&SortCache>,
     warnings: &mut Vec<String>,
 ) -> Result<Vec<PluginAssets>, SortError> {
-    let mut ids = PathIds::default();
-    let mut budget = MAX_ASSETS_TOTAL;
-    let mut all = Vec::with_capacity(facts.len());
-    for fact in facts {
-        // As libloot does, archives are taken from every directory searched, the additional ones first.
-        let found: Vec<PathBuf> = env
-            .additional_data_dirs()
-            .iter()
-            .map(PathBuf::as_path)
-            .chain(std::iter::once(data_dir))
-            .flat_map(|dir| archives::associated_archives(dir, fact.name))
-            .collect();
-        let mut skipped = Vec::new();
-        match archives::read_plugin_assets(&found, &mut ids, &mut budget, &mut skipped) {
-            Ok(assets) => all.push(assets),
-            Err(ArchiveError::TooMuch) => return Err(SortError::TooMuchWork),
-            Err(error) => {
-                // Not produced by `read_plugin_assets`, which reports everything else through `skipped`.
-                warnings.push(format!("{}: archives not read ({error})", fact.name));
-                all.push(PluginAssets::default());
-            }
-        }
-        for (path, error) in skipped {
-            let file = path
-                .file_name()
-                .map_or_else(String::new, |name| name.to_string_lossy().into_owned());
-            warnings.push(format!("{}: archive {file} not read ({error})", fact.name));
-        }
-    }
-    Ok(all)
+    let dirs: Vec<&Path> = env
+        .additional_data_dirs()
+        .iter()
+        .map(PathBuf::as_path)
+        .chain(std::iter::once(data_dir))
+        .collect();
+    let index = ArchiveIndex::new(&dirs);
+    let names: Vec<&str> = facts.iter().map(|fact| fact.name).collect();
+    let found: Vec<Vec<PathBuf>> = names.iter().map(|name| index.archives_of(name)).collect();
+    load::read_assets(&names, &found, threads, cache, warnings)
+        .map_err(|load::OverLimit| SortError::TooMuchWork)
 }
 
 /// The plugin that Fallout: New Vegas always loads first.
@@ -1050,6 +1093,7 @@ fn ordering_rules(
     dropped: &[(usize, usize)],
     name_of: &dyn Fn(usize) -> String,
 ) -> Vec<OrderingRule> {
+    let dropped: HashSet<(usize, usize)> = dropped.iter().copied().collect();
     let soft = rules
         .soft
         .iter()
@@ -1090,17 +1134,38 @@ fn distinct_slots(load_order: &[PluginSlot], warnings: &mut Vec<String>) -> Vec<
     slots
 }
 
-/// The header and the masterlist entries of one installed plugin.
-fn facts_of<'a>(
+/// The facts of every installed plugin, with the headers read on `threads` threads.
+fn all_facts<'a>(
     env: &FsEnv,
     metadata: &'a Metadata,
+    installed: &[&'a Slot],
+    threads: usize,
+    warnings: &mut Vec<String>,
+) -> Vec<Facts<'a>> {
+    let paths: Vec<Option<PathBuf>> = installed
+        .iter()
+        .map(|slot| env.resolve(&slot.name))
+        .collect();
+    let headers = parallel::map(&paths, threads, |path| match path {
+        Some(path) => plugin::read_header(path),
+        None => Err(io_error("not found")),
+    });
+    installed
+        .iter()
+        .zip(paths)
+        .zip(headers)
+        .map(|((slot, path), header)| facts_of(metadata, slot, path, header, warnings))
+        .collect()
+}
+
+/// The header and the masterlist entries of one installed plugin.
+fn facts_of<'a>(
+    metadata: &'a Metadata,
     slot: &'a Slot,
+    path: Option<PathBuf>,
+    header: std::io::Result<plugin::PluginHeader>,
     warnings: &mut Vec<String>,
 ) -> Facts<'a> {
-    let header = env
-        .resolve(&slot.name)
-        .ok_or_else(|| io_error("not found"))
-        .and_then(|path| plugin::read_header(&path));
     let readable = header.is_ok();
     let (is_master, masters) = match &header {
         Ok(header) => (header.is_master(), header.masters.clone()),
@@ -1116,6 +1181,7 @@ fn facts_of<'a>(
     let group = group_of(&entries);
     Facts {
         name: &slot.name,
+        path,
         readable,
         header: header.ok(),
         is_master,
@@ -1177,19 +1243,41 @@ fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<S
         .collect();
     let mut by_name: Vec<usize> = (0..facts.len()).collect();
     by_name.sort_by_key(|&index| facts[index].name.to_lowercase());
+    // The groups of the plugins as small numbers, and for each pair of them whether the first loads after the
+    // second (and not the reverse), so the loop over pairs of plugins does no string lookups.
+    let mut group_number: HashMap<&str, usize> = HashMap::new();
+    let numbers: Vec<usize> = facts
+        .iter()
+        .map(|fact| {
+            let next = group_number.len();
+            *group_number.entry(fact.group.as_str()).or_insert(next)
+        })
+        .collect();
+    let mut names: Vec<&str> = vec![""; group_number.len()];
+    for (&name, &number) in &group_number {
+        names[number] = name;
+    }
+    let loads_after: Vec<Vec<bool>> = names
+        .iter()
+        .map(|&group| {
+            let after = closure.get(group).filter(|_| defined.contains(group));
+            names
+                .iter()
+                .map(|&other| {
+                    let reverse = closure.get(other).is_some_and(|set| set.contains(group));
+                    after.is_some_and(|after| after.contains(other)) && !reverse
+                })
+                .collect()
+        })
+        .collect();
     let mut soft: Vec<(usize, usize)> = Vec::new();
     for &later in &by_name {
-        let group = &facts[later].group;
-        let Some(after) = closure
-            .get(group)
-            .filter(|_| defined.contains(group.as_str()))
-        else {
+        let row = &loads_after[numbers[later]];
+        if !row.iter().any(|&after| after) {
             continue;
-        };
+        }
         for &earlier in &by_name {
-            let other = &facts[earlier].group;
-            let reverse = closure.get(other).is_some_and(|set| set.contains(group));
-            if earlier != later && after.contains(other) && !reverse {
+            if earlier != later && row[numbers[earlier]] {
                 soft.push((earlier, later));
             }
         }
@@ -1256,6 +1344,14 @@ fn dirty_info(
     found
 }
 
+/// True when the masterlist has cleaning data with a checksum for the plugin, so its CRC-32 is needed.
+fn needs_checksum(fact: &Facts) -> bool {
+    fact.entries
+        .iter()
+        .flat_map(|entry| entry.dirty.iter().chain(&entry.clean))
+        .any(|data| data.crc.is_some())
+}
+
 /// The cleaning data of the masterlist (dirty and clean) whose checksum is the installed file's. Only files that
 /// have such data are read.
 fn cleaning_matches<'a>(fact: &Facts<'a>, env: &FsEnv) -> Vec<(CleaningStatus, &'a Cleaning)> {
@@ -1275,10 +1371,7 @@ fn cleaning_matches<'a>(fact: &Facts<'a>, env: &FsEnv) -> Vec<(CleaningStatus, &
     if all.is_empty() {
         return Vec::new();
     }
-    let Some(crc) = env
-        .resolve(fact.name)
-        .and_then(|path| crc32_file(&path).ok())
-    else {
+    let Some(crc) = fact.path.as_deref().and_then(|path| env.crc_of(path)) else {
         return Vec::new();
     };
     all.into_iter()

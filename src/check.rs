@@ -264,7 +264,8 @@ struct Run<'a> {
     closure: HashMap<String, HashSet<String>>,
     defined: HashSet<&'a str>,
     installed: Vec<(usize, &'a str)>,
-    groups_of: HashMap<usize, String>,
+    /// The group of each slot of the load order (by position; slots that are not installed have `default`).
+    groups_of: Vec<String>,
 }
 
 impl Run<'_> {
@@ -328,7 +329,7 @@ impl Run<'_> {
     }
 
     fn group_rules(&self, ev: &mut Evaluator, index: usize) {
-        let group = &self.groups_of[&index];
+        let group = &self.groups_of[index];
         if !self.defined.contains(group.as_str()) {
             ev.findings.push(Finding {
                 kind: FindingKind::UndefinedGroup,
@@ -340,13 +341,18 @@ impl Run<'_> {
         let Some(after) = self.closure.get(group) else {
             return;
         };
+        // Whether `group` loads after each other group (and not the reverse), once per group name.
+        let mut verdicts: HashMap<&str, bool> = HashMap::new();
         for &(other_index, other_name) in self.installed.iter().filter(|(at, _)| *at > index) {
-            let other_group = &self.groups_of[&other_index];
-            let reverse = self
-                .closure
-                .get(other_group)
-                .is_some_and(|set| set.contains(group));
-            if after.contains(other_group) && !reverse {
+            let other_group = &self.groups_of[other_index];
+            let violated = *verdicts.entry(other_group.as_str()).or_insert_with(|| {
+                let reverse = self
+                    .closure
+                    .get(other_group)
+                    .is_some_and(|set| set.contains(group));
+                after.contains(other_group) && !reverse
+            });
+            if violated {
                 ev.findings.push(Finding {
                     kind: FindingKind::GroupOrder,
                     text: format!(
@@ -388,7 +394,7 @@ impl Run<'_> {
             name: name.to_string(),
             position: index,
             active: self.env.slots()[index].active,
-            group: self.groups_of[&index].clone(),
+            group: self.groups_of[index].clone(),
             messages,
             tags_add: added,
             tags_remove: removed,
@@ -426,19 +432,15 @@ pub fn run(metadata: &Metadata, env: &FsEnv, options: Options) -> Report {
         .filter(|(_, slot)| env.installed(&slot.name))
         .map(|(index, slot)| (index, slot.name.as_str()))
         .collect();
-    let mut groups_of = HashMap::new();
+    let mut groups_of = vec![DEFAULT_GROUP.to_string(); env.slots().len()];
     let mut matched: HashMap<usize, Vec<&PluginEntry>> = HashMap::new();
     for &(index, name) in &installed {
-        let entries: Vec<&PluginEntry> = metadata
-            .plugins
-            .iter()
-            .filter(|entry| entry.pattern.matches(name))
-            .collect();
+        let entries: Vec<&PluginEntry> = metadata.entries_for(name);
         let group = entries
             .iter()
             .find_map(|entry| entry.group.clone())
             .unwrap_or_else(|| DEFAULT_GROUP.to_string());
-        groups_of.insert(index, group);
+        groups_of[index] = group;
         matched.insert(index, entries);
     }
     let run = Run {

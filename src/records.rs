@@ -20,6 +20,7 @@ use std::fs::File;
 use std::io::{self, BufReader, Read, Seek};
 use std::path::Path;
 
+use crate::parallel::SharedBudget;
 use crate::plugin::{RECORD_HEADER_SIZE, header_data_size};
 
 /// Most records read from one plugin (`FalloutNV.esm` has about 400,000).
@@ -115,6 +116,56 @@ pub fn read_records_from<R: Read + Seek>(
     names: &mut NameIds,
     budget: &mut usize,
 ) -> Result<PluginRecords, RecordsError> {
+    let ids = OwnerIds::new(own_name, masters, names);
+    let shared = SharedBudget::new(*budget, 1);
+    let records = read_records_shared(reader, length, &ids, &shared)?;
+    *budget -= records.keys.len();
+    Ok(records)
+}
+
+/// The numbers of a plugin and of its masters, taken from [`NameIds`] before the records are read, so that plugins
+/// can be read on several threads.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OwnerIds {
+    own: u32,
+    /// Indices past the list (and past 255) mean the plugin itself.
+    masters: Vec<u32>,
+}
+
+impl OwnerIds {
+    /// The numbers of `own_name` and of the first 256 `masters`.
+    pub fn new(own_name: &str, masters: &[String], names: &mut NameIds) -> Self {
+        let own = names.id(own_name);
+        let masters = masters
+            .iter()
+            .take(256)
+            .map(|name| names.id(name))
+            .collect();
+        Self { own, masters }
+    }
+}
+
+/// Read the record ids of the plugin at `path`, taking what it keeps from `budget` (shared by every plugin of the
+/// load order). On an error nothing stays taken.
+///
+/// # Errors
+/// [`RecordsError`] for an unreadable or malformed file, or when a limit is passed.
+pub fn read_records_at(
+    path: &Path,
+    ids: &OwnerIds,
+    budget: &SharedBudget,
+) -> Result<PluginRecords, RecordsError> {
+    let file = File::open(path).map_err(RecordsError::Io)?;
+    let length = file.metadata().map_err(RecordsError::Io)?.len();
+    read_records_shared(file, length, ids, budget)
+}
+
+fn read_records_shared<R: Read + Seek>(
+    reader: R,
+    length: u64,
+    ids: &OwnerIds,
+    budget: &SharedBudget,
+) -> Result<PluginRecords, RecordsError> {
     let mut reader = BufReader::with_capacity(1 << 16, reader);
     let mut header = [0u8; RECORD_HEADER_SIZE];
     match read_header_bytes(&mut reader, &mut header)? {
@@ -129,14 +180,7 @@ pub fn read_records_from<R: Read + Seek>(
     }
     skip(&mut reader, size as u64)?;
 
-    let own = names.id(own_name);
-    // Indices past the list (and past 255) mean the plugin itself.
-    let master_ids: Vec<u32> = masters
-        .iter()
-        .take(256)
-        .map(|name| names.id(name))
-        .collect();
-    let limit = MAX_RECORDS_PER_PLUGIN.min(*budget);
+    let mut holder = budget.holder();
     let mut keys: Vec<u64> = Vec::new();
     let mut overridden = 0;
     while read_header_bytes(&mut reader, &mut header)?.is_some() {
@@ -157,21 +201,21 @@ pub fn read_records_from<R: Read + Seek>(
         if form_id == 0 {
             continue;
         }
-        if keys.len() >= limit {
+        if keys.len() >= MAX_RECORDS_PER_PLUGIN || !holder.take() {
             return Err(RecordsError::TooMany);
         }
         let object = u64::from(form_id & 0x00FF_FFFF);
-        let owner = match master_ids.get((form_id >> 24) as usize) {
+        let owner = match ids.masters.get((form_id >> 24) as usize) {
             Some(&master) => {
                 overridden += 1;
                 master
             }
-            None => own,
+            None => ids.own,
         };
         keys.push(object << 32 | u64::from(owner));
     }
     keys.sort_unstable();
-    *budget -= keys.len();
+    holder.keep(keys.len());
     Ok(PluginRecords { keys, overridden })
 }
 

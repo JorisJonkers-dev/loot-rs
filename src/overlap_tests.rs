@@ -52,3 +52,51 @@ fn records_and_assets_are_answered_apart_and_the_work_is_added() {
     assert!(overlaps.work() > 0);
     assert!(!PluginOverlaps::default().records(0, 0) && !PluginOverlaps::default().assets(0, 0));
 }
+
+#[test]
+fn precomputed_answers_are_the_answers_of_comparing_one_pair_at_a_time() {
+    // Small deterministic sets with some overlaps, different counts, and both partitions.
+    let records: Vec<Vec<u64>> = (0..12u64)
+        .map(|i| {
+            (0..i % 5)
+                .map(|k| (i * 3 + k * 7) % 17)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        })
+        .collect();
+    let assets: Vec<Vec<u64>> = (0..12u64)
+        .map(|i| {
+            (0..(i % 4))
+                .map(|k| (i + k * 5) % 9)
+                .collect::<std::collections::BTreeSet<_>>()
+                .into_iter()
+                .collect()
+        })
+        .collect();
+    let is_master: Vec<bool> = (0..12).map(|i| i % 3 == 0).collect();
+    let override_records: Vec<usize> = (0..12).map(|i| i % 4).collect();
+    let asset_counts: Vec<usize> = assets.iter().map(Vec::len).collect();
+    let fresh = PluginOverlaps::new(records.clone(), assets.clone());
+    let mut table = PluginOverlaps::new(records, assets);
+    let needs = PairNeeds {
+        is_master: &is_master,
+        override_records: &override_records,
+        assets: &asset_counts,
+    };
+    table.precompute(needs, 4).expect("within the budget");
+    for a in 0..12 {
+        for b in 0..12 {
+            assert_eq!(table.records(a, b), fresh.records(a, b), "records {a} {b}");
+            assert_eq!(table.assets(a, b), fresh.assets(a, b), "assets {a} {b}");
+        }
+    }
+}
+
+#[test]
+fn intersect_counts_the_same_steps_in_either_order() {
+    let a = [1, 4, 9, 12];
+    let b = [2, 4, 7];
+    assert_eq!(intersect(&a, &b), intersect(&b, &a));
+    assert!(intersect(&a, &b).0);
+}

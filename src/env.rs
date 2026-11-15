@@ -18,6 +18,7 @@
 use crate::condition::{Arg, ConditionError, Env};
 use crate::metadata::{compile_whole_name, looks_like_regex};
 use crate::plugin;
+use regex::Regex;
 use std::cell::RefCell;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs;
@@ -80,14 +81,53 @@ const fn crc_table() -> [u32; 256] {
     table
 }
 
-static CRC_TABLE: [u32; 256] = crc_table();
+/// Slicing-by-8 tables: `CRC_TABLES[k][b]` is the CRC of byte `b` followed by `k` zero bytes.
+const fn crc_tables() -> [[u32; 256]; 8] {
+    let mut tables = [[0u32; 256]; 8];
+    tables[0] = crc_table();
+    let mut k = 1;
+    while k < 8 {
+        let mut index = 0;
+        while index < 256 {
+            let previous = tables[k - 1][index];
+            tables[k][index] = (previous >> 8) ^ tables[0][(previous & 0xFF) as usize];
+            index += 1;
+        }
+        k += 1;
+    }
+    tables
+}
+
+static CRC_TABLES: [[u32; 256]; 8] = crc_tables();
+
+/// Continue a CRC-32 (in its inverted running form) over `bytes`, eight bytes per step.
+fn crc32_update(mut crc: u32, bytes: &[u8]) -> u32 {
+    let t = &CRC_TABLES;
+    let (chunks, rest) = bytes.as_chunks::<8>();
+    for chunk in chunks {
+        let low = crc ^ u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        let high = u32::from_le_bytes([chunk[4], chunk[5], chunk[6], chunk[7]]);
+        let [l0, l1, l2, l3] = low.to_le_bytes();
+        let [h0, h1, h2, h3] = high.to_le_bytes();
+        crc = t[7][usize::from(l0)]
+            ^ t[6][usize::from(l1)]
+            ^ t[5][usize::from(l2)]
+            ^ t[4][usize::from(l3)]
+            ^ t[3][usize::from(h0)]
+            ^ t[2][usize::from(h1)]
+            ^ t[1][usize::from(h2)]
+            ^ t[0][usize::from(h3)];
+    }
+    for &byte in rest {
+        crc = t[0][usize::from(crc.to_le_bytes()[0] ^ byte)] ^ (crc >> 8);
+    }
+    crc
+}
 
 /// CRC-32 (IEEE, as used by zip and by LOOT's file checksums) of `bytes`.
 #[must_use]
 pub fn crc32(bytes: &[u8]) -> u32 {
-    !bytes.iter().fold(!0u32, |crc, &byte| {
-        CRC_TABLE[usize::from(crc.to_le_bytes()[0] ^ byte)] ^ (crc >> 8)
-    })
+    !crc32_update(!0, bytes)
 }
 
 /// CRC-32 of a file, read in blocks so that a large plugin is never held in memory.
@@ -97,16 +137,14 @@ pub fn crc32(bytes: &[u8]) -> u32 {
 pub fn crc32_file(path: &Path) -> io::Result<u32> {
     use std::io::Read;
     let mut file = fs::File::open(path)?;
-    let mut buffer = vec![0u8; 64 * 1024];
+    let mut buffer = vec![0u8; 256 * 1024];
     let mut crc = !0u32;
     loop {
         let read = file.read(&mut buffer)?;
         if read == 0 {
             return Ok(!crc);
         }
-        crc = buffer[..read].iter().fold(crc, |crc, &byte| {
-            CRC_TABLE[usize::from(crc.to_le_bytes()[0] ^ byte)] ^ (crc >> 8)
-        });
+        crc = crc32_update(crc, &buffer[..read]);
     }
 }
 
@@ -118,6 +156,12 @@ pub struct FsEnv {
     slots: Vec<Slot>,
     listings: RefCell<HashMap<PathBuf, Vec<String>>>,
     collisions: RefCell<BTreeSet<String>>,
+    /// CRC-32 of files already read (`None`: not readable), so a file is read once per environment.
+    crcs: RefCell<HashMap<PathBuf, Option<u32>>>,
+    /// Compiled file-name regular expressions by pattern.
+    regexes: RefCell<HashMap<String, Result<Regex, String>>>,
+    /// Results of whole conditions by their text (see [`Env::remembered`]).
+    results: RefCell<HashMap<String, Result<bool, ConditionError>>>,
 }
 
 const GHOST: &str = ".ghost";
@@ -149,6 +193,9 @@ impl FsEnv {
             slots,
             listings: RefCell::new(HashMap::new()),
             collisions: RefCell::new(BTreeSet::new()),
+            crcs: RefCell::new(HashMap::new()),
+            regexes: RefCell::new(HashMap::new()),
+            results: RefCell::new(HashMap::new()),
         }
     }
 
@@ -204,6 +251,21 @@ impl FsEnv {
     #[must_use]
     pub fn data_dir(&self) -> &Path {
         &self.data
+    }
+
+    /// The CRC-32 of the file at `path`, read once and then remembered.
+    pub fn crc_of(&self, path: &Path) -> Option<u32> {
+        if let Some(&crc) = self.crcs.borrow().get(path) {
+            return crc;
+        }
+        let crc = crc32_file(path).ok();
+        self.crcs.borrow_mut().insert(path.to_path_buf(), crc);
+        crc
+    }
+
+    /// Remember CRC-32s computed elsewhere (for example on several threads), so they are not read again.
+    pub fn remember_crcs(&self, crcs: impl IntoIterator<Item = (PathBuf, Option<u32>)>) {
+        self.crcs.borrow_mut().extend(crcs);
     }
 
     fn listing(&self, dir: &Path) -> Result<Vec<String>, ConditionError> {
@@ -328,6 +390,18 @@ impl FsEnv {
             .position(|slot| slot.name.to_lowercase() == lower)
     }
 
+    /// The whole-name regular expression of `pattern`, compiled once per environment.
+    fn whole_name(&self, pattern: &str) -> Result<Regex, ConditionError> {
+        if let Some(found) = self.regexes.borrow().get(pattern) {
+            return found.clone().map_err(ConditionError::Syntax);
+        }
+        let compiled = compile_whole_name(pattern);
+        self.regexes
+            .borrow_mut()
+            .insert(pattern.to_string(), compiled.clone());
+        compiled.map_err(ConditionError::Syntax)
+    }
+
     fn regex_parts(path: &str) -> (&str, &str) {
         path.rsplit_once('/').unwrap_or(("", path))
     }
@@ -339,7 +413,7 @@ impl Env for FsEnv {
             return Ok(usize::from(self.resolve(path).is_some_and(|p| p.exists())));
         }
         let (dir, pattern) = Self::regex_parts(path);
-        let regex = compile_whole_name(pattern).map_err(ConditionError::Syntax)?;
+        let regex = self.whole_name(pattern)?;
         let mut seen = HashSet::new();
         for root in self.roots() {
             let Some(dir) = self.resolve_in(root, dir) else {
@@ -363,7 +437,7 @@ impl Env for FsEnv {
         if !dir.is_empty() {
             return Ok(0);
         }
-        let regex = compile_whole_name(pattern).map_err(ConditionError::Syntax)?;
+        let regex = self.whole_name(pattern)?;
         Ok(self
             .slots
             .iter()
@@ -389,7 +463,20 @@ impl Env for FsEnv {
 
     fn checksum(&self, path: &str) -> Option<u32> {
         let path = self.resolve(path)?;
-        path.is_file().then(|| crc32_file(&path).ok()).flatten()
+        if !path.is_file() {
+            return None;
+        }
+        self.crc_of(&path)
+    }
+
+    fn remembered(&self, text: &str) -> Option<Result<bool, ConditionError>> {
+        self.results.borrow().get(text).cloned()
+    }
+
+    fn remember(&self, text: &str, result: &Result<bool, ConditionError>) {
+        self.results
+            .borrow_mut()
+            .insert(text.to_string(), result.clone());
     }
 
     fn version_call(&self, name: &str, args: &[Arg]) -> Result<bool, ConditionError> {

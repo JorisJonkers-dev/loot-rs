@@ -13,7 +13,7 @@ fuzz_target!(|data: &[u8]| {
     let result = read_archive_from(
         Cursor::new(data),
         data.len() as u64,
-        &mut PathIds::default(),
+        &PathIds::default(),
         &mut keys,
         &mut budget,
     );

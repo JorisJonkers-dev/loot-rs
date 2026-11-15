@@ -208,9 +208,8 @@ impl<'a> PluginGraph<'a> {
     pub(super) fn add_early_loading_edges(&mut self, early_loading: &[String]) {
         let mut early: Vec<(usize, usize)> = Vec::new();
         let mut others: Vec<usize> = Vec::new();
-        for node in 0..self.len() {
-            let name = &self.vertices[node].name;
-            match early_position(early_loading, name) {
+        for (node, vertex) in self.vertices.iter().enumerate() {
+            match early_position(early_loading, &vertex.name) {
                 Some(position) => early.push((position, node)),
                 None => others.push(node),
             }
@@ -240,8 +239,8 @@ impl<'a> PluginGraph<'a> {
 
     pub(super) fn add_group_edges(&mut self, groups: &GroupGraph) -> Result<(), GraphError> {
         let mut plugins_in_groups: HashMap<usize, Vec<usize>> = HashMap::new();
-        for node in 0..self.len() {
-            if let Some(group) = groups.node(&self.vertices[node].group) {
+        for (node, vertex) in self.vertices.iter().enumerate() {
+            if let Some(group) = groups.node(&vertex.group) {
                 plugins_in_groups.entry(group).or_default().push(node);
             }
         }

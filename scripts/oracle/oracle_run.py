@@ -3,6 +3,7 @@
 
     scripts/oracle/oracle_run.py --config ~/.config/nvmod/oracle.toml [--dataset NAME ...]
     scripts/oracle/oracle_run.py --esplugin --config ~/.config/nvmod/oracle.toml [--dataset NAME ...]
+    scripts/oracle/oracle_run.py --time --config ~/.config/nvmod/oracle.toml [--dataset NAME ...]
     scripts/oracle/oracle_run.py --selftest
 
 Local only. It reads plugin HEADERS (the TES4 record) and directory listings; it never reads the body of a plugin or
@@ -37,6 +38,10 @@ The config lives outside every repository (default ~/.config/nvmod/oracle.toml) 
     variant_of = "ttw"                                  # takes every key of [dataset.ttw]
     disable    = ["Some Plugin.esp"]                    # and/or: enabled_only = "/path/to/names.txt"
 
+`--time` (or `ORACLE_TIME_RUNS=N`, or `time_runs = N` under [oracle]) also runs `loot-rs sort` and the libloot driver's
+sort N times each (3 with `--time`) on the given order and writes, per dataset in L1, the median wall time in
+milliseconds, the peak resident memory in MiB and the ratio of the two times; numbers only, no names.
+
 Plugins that are in the load order but found nowhere are listed as missing and left out of both runs, so a partial
 install is compared on what is there (the counts say how partial). Nothing is compared when there is no driver.
 
@@ -63,6 +68,7 @@ import subprocess
 import struct
 import sys
 import tempfile
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -159,6 +165,47 @@ def stage(dataset: dict, names: list[str], out: Path) -> dict:
     (out / "plugins.txt").write_text("\n".join(found) + "\n")
     digests = {name: header_digest(data / name) for name in found}
     return {"found": found, "missing": missing, "archives": sorted(archives), "digests": digests}
+
+
+def measured_run(command: list[str]) -> tuple[subprocess.CompletedProcess, float, int]:
+    """Run `command` with its output captured; also return its wall time in milliseconds and its own peak resident
+    memory in KiB (from `wait4`, so only this child counts)."""
+    with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        started = time.perf_counter()
+        child = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=out, stderr=err)
+        _, status, usage = os.wait4(child.pid, 0)
+        elapsed = (time.perf_counter() - started) * 1000.0
+        child.returncode = os.waitstatus_to_exitcode(status)
+        out.seek(0)
+        err.seek(0)
+        done = subprocess.CompletedProcess(command, child.returncode, out.read().decode(errors="replace"),
+                                           err.read().decode(errors="replace"))
+    return done, elapsed, usage.ru_maxrss
+
+
+def timing_of(tools: dict, stage_root: Path, order: list[str], plugins: Path, work: Path, runs: int) -> dict:
+    """Median wall time and peak memory of `loot-rs sort` and of the libloot driver's sort over `runs` runs each.
+    Only numbers are returned (they go to L1); a tool that fails gives no numbers."""
+    masterlist = str(tools["masterlist"])
+    ours_command = [tools["loot_rs"], "sort", "--masterlist", masterlist, "--plugins", str(plugins), "--data",
+                    str(stage_root / "Data"), "--json"]
+    local = work / "local-timing"
+    local.mkdir(parents=True, exist_ok=True)
+    theirs_command = [*shlex.split(tools["libloot_driver"]), str(stage_root), str(local), masterlist, *order]
+    result: dict = {"runs": runs}
+    for key, command, accepted in (("loot_rs", ours_command, (0, 1)), ("libloot", theirs_command, (0,))):
+        times, peaks = [], []
+        for _ in range(runs):
+            done, elapsed, peak = measured_run(command)
+            if done.returncode not in accepted:
+                return {"runs": runs, "status": "error"}
+            times.append(elapsed)
+            peaks.append(peak)
+        result[f"{key}_ms"] = round(sorted(times)[len(times) // 2], 1)
+        result[f"{key}_peak_mib"] = round(max(peaks) / 1024, 1)
+    result["ratio"] = round(result["loot_rs_ms"] / result["libloot_ms"], 3) if result["libloot_ms"] else None
+    result["status"] = "pass"
+    return result
 
 
 def category(line: str) -> str:
@@ -303,7 +350,8 @@ def compare_order(tools: dict, stage_root: Path, order: list[str], found: list[s
     return outcome
 
 
-def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path, perturbations: int = 0, seed: int = DEFAULT_SEED) -> dict:
+def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path, perturbations: int = 0, seed: int = DEFAULT_SEED,
+                time_runs: int = 0) -> dict:
     l2 = run_dir / "l2" / label
     l2.mkdir(parents=True)
     names = variant_names(dataset, read_names(Path(dataset["plugins"])))
@@ -333,6 +381,8 @@ def one_dataset(label: str, dataset: dict, tools: dict, run_dir: Path, perturbat
     result["difference_ids"] = [short(line) for line in counted]
     result["status"] = base["status"]
     result["n_differences"] = len(counted)
+    if time_runs > 0 and tools.get("libloot_driver"):
+        result["timing"] = timing_of(tools, stage_root, facts["found"], stage_root / "plugins.txt", l2, time_runs)
     for line in base.get("metadata", []):  # counts per kind; the text stays in L2
         kind = metadata_category(line)
         result["metadata_differences"][kind] = result["metadata_differences"].get(kind, 0) + 1
@@ -441,7 +491,7 @@ def esplugin_status(results: list[dict]) -> dict:
             "n_record_differences": sum(r["n_record_differences"] for r in results)}
 
 
-def execute(config_path: Path, only: list[str], esplugin: bool = False) -> int:
+def execute(config_path: Path, only: list[str], esplugin: bool = False, time_runs: int = 0) -> int:
     import tomllib
     guard_write_location(config_path, "the config file")  # paths never belong in a repository
     config = tomllib.loads(config_path.read_text())
@@ -471,8 +521,9 @@ def execute(config_path: Path, only: list[str], esplugin: bool = False) -> int:
         return {"pass": 0, "fail": 1, "partial": 4}[public["status"]]
     seed = setting("ORACLE_SEED", config.get("oracle", {}).get("seed"), DEFAULT_SEED)
     default_count = config.get("oracle", {}).get("perturbations", 0)
+    time_runs = setting("ORACLE_TIME_RUNS", config.get("oracle", {}).get("time_runs"), time_runs)
     results = [one_dataset(label, dataset, tools, run_dir, setting("ORACLE_PERTURBATIONS", dataset.get("perturbations"),
-                                                                 default_count), seed)
+                                                                 default_count), seed, time_runs)
                for label, dataset in chosen.items()]
     version = os.environ.get("ORACLE_TOOL_SHA", "unknown")
     public = public_status(results, version)
@@ -487,10 +538,12 @@ def main(argv: list[str]) -> int:
     if argv == ["--selftest"]:
         selftest()
         return 0
-    config, only, args, esplugin = DEFAULT_CONFIG, [], iter(argv), False
+    config, only, args, esplugin, time_runs = DEFAULT_CONFIG, [], iter(argv), False, 0
     for arg in args:
         if arg == "--esplugin":
             esplugin = True
+        elif arg == "--time":
+            time_runs = 3
         elif arg == "--config":
             config = next(args, "")
         elif arg == "--dataset":
@@ -499,7 +552,7 @@ def main(argv: list[str]) -> int:
             print(__doc__, file=sys.stderr)
             return 2
     try:
-        return execute(Path(os.path.expanduser(config)), only, esplugin)
+        return execute(Path(os.path.expanduser(config)), only, esplugin, time_runs)
     except (Refused, OSError, KeyError, ValueError) as error:
         print(f"oracle-run: {error}", file=sys.stderr)
         return 2
@@ -525,6 +578,8 @@ def selftest() -> None:
                 assert order[:2] == ["Base.esm", "Two.esm"] and order != names  # masters stay, the rest rotates
         assert perturbed_orders(names, masters, 0, 3, "x") == []
         assert variant_names({"disable": ["p1.ESP"]}, ["P0.esp", "P1.esp"]) == ["P0.esp"]
+        done, elapsed, peak = measured_run(["/bin/sh", "-c", "echo measured; exit 1"])
+        assert (done.returncode, done.stdout, elapsed >= 0, peak > 0) == (1, "measured\n", True, True)
 
         def plugin(path: Path, extra: bytes = b"") -> None:
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -583,6 +638,11 @@ def selftest() -> None:
                 assert main(["--config", str(config(agree))]) == 4
                 assert main(["--config", str(config(None, native=native))]) == 4
                 assert main(["--config", str(config(None, native=native_differs))]) == 1
+                assert main(["--time", "--config", str(config(None, native=native))]) == 4
+                timing = json.loads((last_run() / "l1.json").read_text())["datasets"][0]["timing"]
+                assert timing["status"] == "pass" and timing["runs"] == 3, timing
+                assert set(timing) == {"runs", "status", "loot_rs_ms", "libloot_ms", "loot_rs_peak_mib",
+                                       "libloot_peak_mib", "ratio"}, timing
                 assert main(["--config", str(config(agree))]) == 4
             l0 = json.loads(out.getvalue().splitlines()[0])
             assert (l0["status"], l0["n_plugins"], l0["n_missing"], l0["n_differences"]) == ("partial", 3, 1, 0)
