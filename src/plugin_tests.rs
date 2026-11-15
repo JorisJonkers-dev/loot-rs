@@ -122,11 +122,15 @@ fn errors_read_as_sentences() {
 }
 
 #[test]
-fn strings_stop_at_the_first_zero_and_keep_latin_1_bytes() {
+fn strings_stop_at_the_first_zero_and_are_windows_1252() {
     assert_eq!(zstring(b"abc\0def"), "abc");
     assert_eq!(zstring(b"no terminator"), "no terminator");
     assert_eq!(zstring(b""), "");
     assert_eq!(zstring(&[b'c', b'a', b'f', 0xE9]), "caf\u{e9}");
+    assert_eq!(
+        zstring(&[0x80, 0x93, b'q', 0x94, 0x81]),
+        "\u{20ac}\u{201c}q\u{201d}\u{81}"
+    );
 }
 
 fn with_subrecords(subrecords: &[u8]) -> Vec<u8> {

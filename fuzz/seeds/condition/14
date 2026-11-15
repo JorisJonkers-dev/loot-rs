@@ -1,0 +1,1 @@
+description_contains("A.esp", "version") or is_executable("nvse.exe")

@@ -25,6 +25,15 @@ impl Env for Fixed {
     fn checksum(&self, path: &str) -> Option<u32> {
         (!path.is_empty()).then_some(0xDEAD_BEEF)
     }
+    fn file_names(&self, dir: &str) -> Result<Vec<String>, ConditionError> {
+        Ok(vec![format!("{dir}Mod 1.2.esp"), "Other v3.esm".to_string(), String::new()])
+    }
+    fn description(&self, path: &str) -> Result<Option<String>, ConditionError> {
+        Ok((path.len() % 2 == 1).then(|| format!("Version: {} of {path}", path.len())))
+    }
+    fn is_executable(&self, path: &str) -> Result<bool, ConditionError> {
+        Ok(path.ends_with(".exe"))
+    }
 }
 
 // Parsing and evaluating arbitrary text must return a value or an error, never panic or overflow the stack.

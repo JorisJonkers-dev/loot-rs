@@ -410,11 +410,10 @@ fn the_override_count_is_what_the_masters_say() {
     assert_eq!(both.esplugin.unwrap().count_override_records().unwrap(), 2);
 }
 
-/// A known difference, pinned: loot-rs reads description bytes as Latin-1, esplugin as Windows-1252, so the bytes
-/// 0x80 to 0x9f differ (a typographic quote is U+0093 for loot-rs and U+201C for esplugin). Only the `{{BASH:..}}`
-/// tags are read from a description, and they are ASCII, so no result of loot-rs depends on it.
+/// Descriptions are Windows-1252, decoded alike: the bytes 0x80 to 0x9f are typographic characters (0x93 is U+201C
+/// for both readers), which `description_contains()` compares.
 #[test]
-fn windows_1252_descriptions_are_a_known_difference() {
+fn windows_1252_descriptions_are_decoded_alike() {
     let mut bytes = plugin(0, &[], Some("XYZ"), 0, 1.34, &[]);
     let at = bytes
         .windows(3)
@@ -425,7 +424,6 @@ fn windows_1252_descriptions_are_a_known_difference() {
     std::fs::write(dir.join("Q.esp"), &bytes).unwrap();
     let (_, found) = compare_all(&dir, &["Q.esp".to_string()]);
     let _ = std::fs::remove_dir_all(&dir);
-    assert_eq!(found.header.len(), 1, "{:?}", found.header);
-    assert!(found.header[0].contains("description"));
+    assert!(found.header.is_empty(), "{:?}", found.header);
     assert!(found.records.is_empty());
 }

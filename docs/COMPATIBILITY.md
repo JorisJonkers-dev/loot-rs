@@ -95,10 +95,10 @@ checked against libloot's own unit tests and its documentation.
 | `checksum(path, crc)` | supported | CRC-32 of the whole file; `0x` prefix accepted |
 | `version(path, op, version)` and the older argument order | supported on plugins, partial otherwise | Plugins, in every build: the version is read from the description field (`src/version.rs`, libloot's `extract_version` and the interpreter's comparison, ported; a timestamp, `version:` and a pseudo-semver, a bare pseudo-semver, then `v` or `version:` and a number). A plugin that is not installed or not in the load order, or whose description has no version, makes the condition false, as in libloot; a plugin that cannot be read is a condition error. Executables and DLLs need the cargo feature `executable-versions` (fixed file version); without it they are parsed, evaluate to "unsupported" and the item is not applied |
 | `product_version(path, op, version)` | partial | Executables and DLLs with the feature (the `ProductVersion` string); otherwise unsupported |
-| `filename_version(regex, op, version)` | unsupported | Same |
-| `description_contains(path, regex)` | unsupported | Same |
-| `is_executable(path)` | unsupported | Same |
-| Version comparison grammar | supported | LOOT's own (Pseudosem as the interpreter implements it), ported in `src/version.rs`; no dependency. `filename_version` is still unsupported |
+| `filename_version(regex, op, version)` and the other argument order | supported | As `loot-condition-interpreter`: a file of the path's directory whose whole name (ghost extension removed, case ignored) matches and whose single capture group, as a version, compares true. Exactly one capture group, else a syntax error. Compared with libloot on random worlds |
+| `description_contains(path, regex)` | supported | The plugin's description (decoded as Windows-1252, as esplugin does), case-insensitive, unanchored; false for a missing file, a non-plugin or no description. Compared with libloot on random worlds |
+| `is_executable(path)` | supported | True when the file reads as a PE image by this crate's bounded reader (the interpreter's rule: headers, sections and the version resource, if any, read without an error); a file the interpreter would read with absurd sizes is false here instead of being read. Every build, no feature needed |
+| Version comparison grammar | supported | LOOT's own (Pseudosem as the interpreter implements it), ported in `src/version.rs`; no dependency. `filename_version` uses it too |
 | Evaluation caching | supported | Per sort: condition results by their text (as libloot caches them), compiled regular expressions, directory listings and checksums |
 
 ## Messages and output

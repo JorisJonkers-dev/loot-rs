@@ -214,10 +214,10 @@ fn a_condition_that_cannot_be_evaluated_says_why_with_a_code() {
     let slots = [PluginSlot::new("FalloutNV.esm", true)];
     let check =
         |condition: &str| evaluate(condition, &slots, &fixture.data(), &SortOptions::default());
-    let unsupported = check("is_executable(\"x.exe\")").expect_err("unsupported");
+    let unsupported = check("product_version(\"A.esp\", ==, \"1\")").expect_err("unsupported");
     assert_eq!(
         unsupported,
-        EvaluateError::Unsupported("is_executable".to_string())
+        EvaluateError::Unsupported("product_version".to_string())
     );
     assert_eq!(unsupported.code(), "unsupported");
     assert_eq!(check("file(").expect_err("invalid").code(), "invalid");

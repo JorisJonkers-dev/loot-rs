@@ -188,6 +188,35 @@ pub trait Env {
         let _ = args;
         Err(ConditionError::Unsupported(name.to_string()))
     }
+    /// The names of the files in the directory `dir` (relative, `/`-separated; empty for `Data` itself), ghost
+    /// extensions removed, for `filename_version()`. The default answers [`ConditionError::Unsupported`].
+    ///
+    /// # Errors
+    /// When the environment cannot list directories, or one cannot be read.
+    fn file_names(&self, dir: &str) -> Result<Vec<String>, ConditionError> {
+        let _ = dir;
+        Err(ConditionError::Unsupported("filename_version".to_string()))
+    }
+    /// The description field of the plugin at `path`, `Ok(None)` when it is missing, not a plugin or has none, for
+    /// `description_contains()`. The default answers [`ConditionError::Unsupported`].
+    ///
+    /// # Errors
+    /// When the environment cannot read plugins.
+    fn description(&self, path: &str) -> Result<Option<String>, ConditionError> {
+        let _ = path;
+        Err(ConditionError::Unsupported(
+            "description_contains".to_string(),
+        ))
+    }
+    /// Whether the file at `path` is a Windows executable, for `is_executable()`. The default answers
+    /// [`ConditionError::Unsupported`].
+    ///
+    /// # Errors
+    /// When the environment cannot read files.
+    fn is_executable(&self, path: &str) -> Result<bool, ConditionError> {
+        let _ = path;
+        Err(ConditionError::Unsupported("is_executable".to_string()))
+    }
     /// The result of a whole condition evaluated before against this environment, if it keeps one. A condition's
     /// value depends only on the files and the active plugins, never on the order, so an environment may keep
     /// results for as long as it lives. The default keeps nothing.
@@ -398,17 +427,10 @@ pub fn parse(text: &str) -> Result<Expr, ConditionError> {
     Ok(expr)
 }
 
-/// Functions that exist in LOOT but are not implemented here. `version` and `product_version` are the
-/// exception that the `executable-versions` feature makes for executables and DLLs. `version` on a plugin is
-/// evaluated from its description in every build ([`crate::version`]); `product_version` on a plugin stays
-/// unsupported.
-pub const UNSUPPORTED_FUNCTIONS: [&str; 5] = [
-    "version",
-    "product_version",
-    "filename_version",
-    "description_contains",
-    "is_executable",
-];
+/// Functions that exist in LOOT but are not implemented in every build: `version` and `product_version` on
+/// executables and DLLs need the `executable-versions` feature. `version` on a plugin is evaluated from its
+/// description in every build ([`crate::version`]); `product_version` on a plugin stays unsupported.
+pub const UNSUPPORTED_FUNCTIONS: [&str; 2] = ["version", "product_version"];
 
 fn string_arg<'a>(name: &str, args: &'a [Arg], index: usize) -> Result<&'a str, ConditionError> {
     match args.get(index) {
@@ -472,11 +494,69 @@ fn call(env: &dyn Env, name: &str, args: &[Arg]) -> Result<bool, ConditionError>
             Ok(env.checksum(string_arg(name, args, 0)?) == Some(expected))
         }
         "version" | "product_version" => env.version_call(name, args),
+        "filename_version" => filename_version(env, args),
+        "description_contains" => {
+            arity(name, args, 2)?;
+            let path = string_arg(name, args, 0)?;
+            let regex = regex::RegexBuilder::new(string_arg(name, args, 1)?)
+                .case_insensitive(true)
+                .size_limit(1 << 20)
+                .build()
+                .map_err(|error| ConditionError::Syntax(format!("{name}(): {error}")))?;
+            Ok(env
+                .description(path)?
+                .is_some_and(|description| regex.is_match(&description)))
+        }
+        "is_executable" => {
+            arity(name, args, 1)?;
+            env.is_executable(string_arg(name, args, 0)?)
+        }
         _ if UNSUPPORTED_FUNCTIONS.contains(&name) => {
             Err(ConditionError::Unsupported(name.to_string()))
         }
         _ => Err(ConditionError::Syntax(format!("unknown function {name}()"))),
     }
+}
+
+/// `filename_version("dir/regex", version, operator)` (or with the operator second), as
+/// `loot-condition-interpreter` evaluates it: true when some file in `dir` has a whole name (without a ghost
+/// extension) that the regular expression matches, case-insensitively, and whose first capture group, read as a
+/// version, compares with `version` as the operator says. The expression must have exactly one capture group.
+fn filename_version(env: &dyn Env, args: &[Arg]) -> Result<bool, ConditionError> {
+    const NAME: &str = "filename_version";
+    arity(NAME, args, 3)?;
+    let path = string_arg(NAME, args, 0)?;
+    let ((Arg::Str(version), Arg::Word(operator)) | (Arg::Word(operator), Arg::Str(version))) =
+        (&args[1], &args[2])
+    else {
+        return Err(ConditionError::Syntax(format!(
+            "{NAME}() needs a quoted version and a comparison operator"
+        )));
+    };
+    if crate::version::compare("0", operator, "0").is_none() {
+        return Err(ConditionError::Syntax(format!(
+            "{NAME}() has an unknown comparison operator"
+        )));
+    }
+    if path.ends_with('/') {
+        return Err(ConditionError::Syntax(format!(
+            "{NAME}() path ends in a directory separator"
+        )));
+    }
+    let (dir, pattern) = path.rsplit_once('/').unwrap_or(("", path));
+    let regex = crate::metadata::compile_whole_name(pattern).map_err(ConditionError::Syntax)?;
+    if regex.captures_len() != 2 {
+        return Err(ConditionError::Syntax(format!(
+            "{NAME}() needs a regular expression with exactly one capture group"
+        )));
+    }
+    Ok(env.file_names(dir)?.iter().any(|name| {
+        regex
+            .captures(name)
+            .and_then(|captures| captures.get(1))
+            .and_then(|found| crate::version::compare(found.as_str(), operator, version))
+            .unwrap_or(false)
+    }))
 }
 
 /// Evaluate a parsed condition.

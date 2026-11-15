@@ -253,7 +253,7 @@ fn cleaning_data_is_matched_by_the_checksum_of_the_installed_file() {
 #[test]
 fn a_condition_that_cannot_be_evaluated_leaves_its_ordering_rule_out_with_a_warning() {
     let dir = data(&["A.esp", "B.esp"]);
-    let yaml = "plugins:\n  - name: A.esp\n    after: [{name: B.esp, condition: 'is_executable(\"x.exe\")'}]\n  - name: B.esp\n    after: [{name: A.esp, condition: 'file(('}]\n";
+    let yaml = "plugins:\n  - name: A.esp\n    after: [{name: B.esp, condition: 'product_version(\"x.esp\", ==, \"1\")'}]\n  - name: B.esp\n    after: [{name: A.esp, condition: 'file(('}]\n";
     let output = run(yaml, &dir, &["A.esp", "B.esp"]).expect("sorts");
     assert_eq!(order(&output), ["A.esp", "B.esp"]);
     assert_eq!(output.warnings.len(), 2);

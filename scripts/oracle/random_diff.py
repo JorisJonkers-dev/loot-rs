@@ -47,7 +47,15 @@ def condition(rng: random.Random, names: list[str], depth: int = 0) -> str:
     world is written, and `{crc:?}` a CRC that matches nothing."""
     def atom() -> str:
         name = rng.choice(names + ["Missing.esp"])
-        kind = rng.choice(["file", "active", "is_master", "checksum", "many", "many_active"])
+        kind = rng.choice(["file", "active", "is_master", "checksum", "many", "many_active", "description_contains",
+                           "filename_version", "is_executable"])
+        if kind == "description_contains":
+            return f'description_contains("{name}", "{rng.choice(["version", "adds", "beta", "[0-9]+/", "rc"])}")'
+        if kind == "filename_version":
+            return (f'filename_version("P([0-9]+)\\.es[pm]", "{rng.randint(0, 6)}", '
+                    f'{rng.choice(VERSION_OPERATORS)})')
+        if kind == "is_executable":
+            return f'is_executable("{rng.choice([name, "Missing.exe"])}")'
         if kind == "checksum":
             return f'checksum("{name}", {{crc:{rng.choice([name, "?"])}}})'
         if kind in ("many", "many_active"):

@@ -1622,6 +1622,7 @@ fn read_all_records(
     let hooks = load::Hooks {
         cancel: options.cancel.as_ref(),
         done: &|| reporter.tick(),
+        limits: load::Limits::DEFAULT,
     };
     load::read_records(&jobs, threads, options.cache.as_ref(), hooks, warnings).map_err(stop_error)
 }
@@ -1656,6 +1657,7 @@ fn read_all_assets(
     let hooks = load::Hooks {
         cancel: options.cancel.as_ref(),
         done: &|| reporter.tick(),
+        limits: load::Limits::DEFAULT,
     };
     load::read_assets(
         &names,
