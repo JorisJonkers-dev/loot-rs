@@ -127,6 +127,7 @@ fn inputs(world: &World, ids: &[usize]) -> Vec<PluginInput> {
             group: group_name(world.group[id]).to_string(),
             override_records: world.records[id],
             assets: world.assets[id],
+            ..PluginInput::default()
         })
         .collect()
 }

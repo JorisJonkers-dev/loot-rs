@@ -13,7 +13,11 @@ and ordering they cannot).
 
 `scripts/oracle/random_diff.py` makes random worlds (2 to 12 or more invented plugins, some masters, header masters,
 records that overlap, BSA archives that overlap, groups with `after` lists, `group`, `after` and `req` entries, a random
-current load order), sorts each with `loot-rs sort` and with libloot, and requires the same order (or both refusing).
+current load order, and in about half of them a userlist with a group of its own, group overrides, `after` and `req`
+rules that can form cycles with the masterlist's, and messages), sorts each with `loot-rs sort` (`--userlist`) and with
+libloot (`load_userlist`, through `LIBLOOT_DRIVER_USERLIST`), and requires the same order (or both refusing). With user
+metadata: 600 worlds (seed 7) and 800 worlds of up to 16 plugins (seed 11), no order, metadata or minimal-change
+difference.
 The libloot side is `scripts/oracle/libloot-driver`, a small program on the libloot crate with its own workspace, built
 only by whoever runs the test:
 

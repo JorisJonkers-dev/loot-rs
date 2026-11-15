@@ -2,8 +2,8 @@
 //
 // The tests below are translated from libloot's own unit tests of its plugin graph
 // (https://github.com/loot/libloot, `src/sorting/plugins.rs`, GPL-3.0-or-later, Copyright (C) the libloot authors): the
-// same graphs, the same assertions, with the user-metadata and Starfield cases left out. They are what ties this
-// port to libloot's behaviour.
+// same graphs, the same assertions, with the Starfield cases left out. They are what ties this port to libloot's
+// behaviour.
 
 #![allow(
     clippy::many_single_char_names,
@@ -44,17 +44,21 @@ fn g(name: &str, after: &[&str]) -> GroupInput {
     }
 }
 
-/// libloot's fixture: A, B after A, C, default after C, E after default, F after E, and C after B (libloot has
-/// that last one as a userlist group, which this crate does not read).
+/// libloot's fixture: the masterlist's A, B after A, C, default after C, E after default, F after E, ...
 fn fixture_groups() -> Vec<GroupInput> {
     vec![
         g("A", &[]),
         g("B", &["A"]),
-        g("C", &["B"]),
+        g("C", &[]),
         g("default", &["C"]),
         g("E", &["default"]),
         g("F", &["E"]),
     ]
+}
+
+/// ... and the userlist's C after B.
+fn fixture_user_groups() -> Vec<GroupInput> {
+    vec![g("C", &["B"])]
 }
 
 fn node(nodes: &mut Vec<Vertex>, order: &[&str], name: &str, group: &str) -> usize {
@@ -67,6 +71,9 @@ fn node(nodes: &mut Vec<Vertex>, order: &[&str], name: &str, group: &str) -> usi
         masters: Vec::new(),
         requirements: Vec::new(),
         load_after: Vec::new(),
+        group_is_user: false,
+        user_requirements: Vec::new(),
+        user_load_after: Vec::new(),
     });
     nodes.len() - 1
 }
@@ -231,7 +238,7 @@ fn tie_break_of_one_plugin_is_fine() {
 fn should_add_no_edges_if_there_are_no_early_loading_plugins() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "default");
@@ -254,7 +261,7 @@ fn should_add_no_edges_if_there_are_no_early_loading_plugins() {
 fn should_add_edges_between_consecutive_early_loaders_skipping_missing_plugins() {
     let order = [PLUGIN_A, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "default");
@@ -281,7 +288,7 @@ fn should_add_edges_between_consecutive_early_loaders_skipping_missing_plugins()
 fn should_add_edges_from_only_the_last_installed_early_loader_to_all_non_early_loader_plugins() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_D, PLUGIN_E];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "default");
@@ -310,7 +317,7 @@ fn should_add_edges_from_only_the_last_installed_early_loader_to_all_non_early_l
 fn should_add_masterlist_group_edge_if_no_user_metadata_is_involved() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -332,7 +339,7 @@ fn should_add_edges_between_plugins_in_indirectly_connected_groups_when_an_inter
         PLUGIN_A1, PLUGIN_A2, PLUGIN_B1, PLUGIN_B2, PLUGIN_C1, PLUGIN_C2,
     ];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a1 = node(&mut nodes, &order, PLUGIN_A1, "A");
@@ -370,7 +377,7 @@ fn should_add_edges_between_plugins_in_indirectly_connected_groups_when_an_inter
 fn should_add_edges_across_empty_groups() {
     let order = [PLUGIN_A, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -390,7 +397,7 @@ fn should_add_edges_across_empty_groups() {
 fn should_add_edges_across_the_non_empty_default_group() {
     let order = [PLUGIN_A, PLUGIN_D, PLUGIN_E];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -414,7 +421,7 @@ fn should_add_edges_across_the_non_empty_default_group() {
 fn should_skip_an_edge_that_would_cause_a_cycle() {
     let order = [PLUGIN_A, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -436,7 +443,7 @@ fn should_skip_an_edge_that_would_cause_a_cycle() {
 fn should_skip_an_edge_that_would_cause_a_cycle_involving_other_non_default_groups() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -459,7 +466,7 @@ fn should_skip_an_edge_that_would_cause_a_cycle_involving_other_non_default_grou
 fn should_skip_only_edges_to_the_target_group_plugins_that_would_cause_a_cycle() {
     let order = [PLUGIN_A, PLUGIN_C1, PLUGIN_C2];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -483,7 +490,7 @@ fn should_skip_only_edges_to_the_target_group_plugins_that_would_cause_a_cycle()
 fn should_skip_only_edges_from_ancestors_to_the_target_group_plugins_that_would_cause_a_cycle() {
     let order = [PLUGIN_B, PLUGIN_C, PLUGIN_D1, PLUGIN_D2, PLUGIN_D3];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let b = node(&mut nodes, &order, PLUGIN_B, "B");
@@ -524,7 +531,7 @@ fn should_add_plugin_edges_across_a_successor_if_at_least_one_edge_to_the_succes
         PLUGIN_A1, PLUGIN_A2, PLUGIN_B1, PLUGIN_B2, PLUGIN_C1, PLUGIN_C2,
     ];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a1 = node(&mut nodes, &order, PLUGIN_A1, "A");
@@ -563,7 +570,7 @@ fn should_add_plugin_edges_across_a_successor_if_at_least_one_edge_to_the_succes
         PLUGIN_A1, PLUGIN_A2, PLUGIN_B1, PLUGIN_B2, PLUGIN_C1, PLUGIN_C2,
     ];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a1 = node(&mut nodes, &order, PLUGIN_A1, "A");
@@ -599,7 +606,7 @@ fn should_add_plugin_edges_across_a_successor_if_at_least_one_edge_to_the_succes
 fn should_add_edge_from_ancestor_to_successor_if_none_of_a_groups_plugins_can() {
     let order = [PLUGIN_A, PLUGIN_B1, PLUGIN_B2, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -634,7 +641,7 @@ fn should_add_edge_from_ancestor_to_successor_if_none_of_a_groups_plugins_can_wi
         PLUGIN_A1, PLUGIN_A2, PLUGIN_B1, PLUGIN_B2, PLUGIN_C1, PLUGIN_C2, PLUGIN_D1, PLUGIN_D2,
     ];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a1 = node(&mut nodes, &order, PLUGIN_A1, "A");
@@ -681,7 +688,7 @@ fn should_add_edge_from_ancestor_to_successor_if_none_of_a_groups_plugins_can_wi
 fn should_deprioritise_edges_from_default_group_plugins_with_default_last() {
     let order = [PLUGIN_B, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let b = node(&mut nodes, &order, PLUGIN_B, "B");
@@ -706,7 +713,7 @@ fn should_deprioritise_edges_from_default_group_plugins_with_default_last() {
 fn should_deprioritise_edges_from_default_group_plugins_with_default_first() {
     let order = [PLUGIN_D, PLUGIN_E, PLUGIN_F];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let d = node(&mut nodes, &order, PLUGIN_D, "default");
@@ -731,7 +738,7 @@ fn should_deprioritise_edges_from_default_group_plugins_with_default_first() {
 fn should_deprioritise_edges_from_default_group_plugins_across_skipped_intermediate_groups() {
     let order = [PLUGIN_D, PLUGIN_E, PLUGIN_F];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let d = node(&mut nodes, &order, PLUGIN_D, "default");
@@ -756,7 +763,7 @@ fn should_deprioritise_edges_from_default_group_plugins_across_skipped_intermedi
 fn should_deprioritise_edges_from_default_group_plugins_with_d1_first_d2_last() {
     let order = [PLUGIN_D1, PLUGIN_D2, PLUGIN_E, PLUGIN_F];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let d1 = node(&mut nodes, &order, PLUGIN_D1, "default");
@@ -783,7 +790,7 @@ fn should_deprioritise_edges_from_default_group_plugins_with_d1_first_d2_last() 
 fn should_deprioritise_edges_from_default_group_plugins_with_no_ideal_result() {
     let order = [PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E, PLUGIN_F];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let b = node(&mut nodes, &order, PLUGIN_B, "B");
@@ -813,7 +820,7 @@ fn should_deprioritise_edges_from_default_group_plugins_with_no_ideal_result() {
 fn should_deprioritise_edges_from_default_group_plugins_with_default_in_middle_and_d_bookends() {
     let order = [PLUGIN_B, PLUGIN_C, PLUGIN_D1, PLUGIN_D2, PLUGIN_E, PLUGIN_F];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let b = node(&mut nodes, &order, PLUGIN_B, "B");
@@ -848,7 +855,7 @@ fn should_deprioritise_edges_from_default_group_plugins_with_default_in_middle_a
         PLUGIN_B, PLUGIN_C, PLUGIN_D1, PLUGIN_D2, PLUGIN_D3, PLUGIN_D4, PLUGIN_E, PLUGIN_F,
     ];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let b = node(&mut nodes, &order, PLUGIN_B, "B");
@@ -890,7 +897,7 @@ fn should_deprioritise_edges_from_default_group_plugins_with_default_in_middle_a
 fn should_handle_asymmetric_branches_in_the_groups_graph() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -899,7 +906,7 @@ fn should_handle_asymmetric_branches_in_the_groups_graph() {
         g("D", &["A"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -928,7 +935,7 @@ fn should_handle_asymmetric_branches_in_the_groups_graph() {
 fn should_handle_asymmetric_branches_in_the_groups_graph_that_merge() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -938,7 +945,7 @@ fn should_handle_asymmetric_branches_in_the_groups_graph_that_merge() {
         g("E", &["C", "D"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -970,7 +977,7 @@ fn should_handle_asymmetric_branches_in_the_groups_graph_that_merge() {
 fn should_handle_branches_in_the_groups_graph_that_form_a_diamond_pattern() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -979,7 +986,7 @@ fn should_handle_branches_in_the_groups_graph_that_form_a_diamond_pattern() {
         g("D", &["B", "C"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1007,7 +1014,7 @@ fn should_handle_branches_in_the_groups_graph_that_form_a_diamond_pattern() {
 fn should_add_edges_across_the_merge_point_of_branches_in_the_groups_graph() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1017,7 +1024,7 @@ fn should_add_edges_across_the_merge_point_of_branches_in_the_groups_graph() {
         g("E", &["D"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1053,7 +1060,7 @@ fn should_handle_a_groups_graph_with_multiple_successive_branches() {
         PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E, PLUGIN_F, PLUGIN_G,
     ];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1065,7 +1072,7 @@ fn should_handle_a_groups_graph_with_multiple_successive_branches() {
         g("G", &["E", "F"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1103,7 +1110,7 @@ fn should_handle_a_groups_graph_with_multiple_successive_branches() {
 fn should_find_all_groups_in_all_paths_between_two_groups_when_ignoring_a_plugin() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1112,7 +1119,7 @@ fn should_find_all_groups_in_all_paths_between_two_groups_when_ignoring_a_plugin
         g("D", &["C"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1146,10 +1153,10 @@ fn should_find_all_groups_in_all_paths_between_two_groups_when_ignoring_a_plugin
 fn should_handle_isolated_groups() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![g("A", &[]), g("B", &["A"]), g("C", &[]), g("default", &[])];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1175,7 +1182,7 @@ fn should_handle_isolated_groups() {
 fn should_handle_disconnected_group_graphs() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1184,7 +1191,7 @@ fn should_handle_disconnected_group_graphs() {
         g("D", &["C"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1216,7 +1223,7 @@ fn should_handle_disconnected_group_graphs() {
 fn should_add_edges_across_the_merge_point_of_two_root_node_paths() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1225,7 +1232,7 @@ fn should_add_edges_across_the_merge_point_of_two_root_node_paths() {
         g("D", &["C"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1255,7 +1262,7 @@ fn should_add_edges_across_the_merge_point_of_two_root_node_paths() {
 fn should_not_depend_on_plugin_graph_node_order() {
     let order = [PLUGIN_A1, PLUGIN_A2, PLUGIN_B, PLUGIN_C];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1263,7 +1270,7 @@ fn should_not_depend_on_plugin_graph_node_order() {
         g("C", &["B"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let a1 = (PLUGIN_A1, "A");
     let a2 = (PLUGIN_A2, "A");
@@ -1333,7 +1340,7 @@ fn should_not_depend_on_plugin_graph_node_order() {
 fn should_start_searching_from_root_groups_before_going_in_lexicographical_order() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("D", &[]),
@@ -1342,7 +1349,7 @@ fn should_start_searching_from_root_groups_before_going_in_lexicographical_order
         g("C", &["B"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1378,7 +1385,7 @@ fn should_start_searching_from_root_groups_before_going_in_lexicographical_order
 fn should_start_searching_from_the_root_group_with_the_longest_path() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E, PLUGIN_F];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("D", &[]),
@@ -1389,7 +1396,7 @@ fn should_start_searching_from_the_root_group_with_the_longest_path() {
         g("F", &["E"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1422,7 +1429,7 @@ fn should_start_searching_from_the_root_group_with_the_longest_path() {
 fn does_not_start_searching_with_the_longest_path() {
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let groups = vec![
         g("A", &[]),
@@ -1432,7 +1439,7 @@ fn does_not_start_searching_with_the_longest_path() {
         g("E", &["B", "D"]),
         g("default", &[]),
     ];
-    let groups_graph = groups::build(&groups).unwrap();
+    let groups_graph = groups::build(&groups, &[]).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "A");
@@ -1460,7 +1467,7 @@ fn does_not_start_searching_with_the_longest_path() {
 fn should_not_add_edges_between_non_overlapping_plugins() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     let a = node(&mut nodes, &order, PLUGIN_A, "default");
@@ -1478,7 +1485,7 @@ fn should_not_add_edges_between_non_overlapping_plugins() {
 fn should_not_add_edges_between_overlapping_plugins_with_equal_override_counts() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.count(a, 1);
@@ -1503,7 +1510,7 @@ fn should_not_add_edges_between_overlapping_plugins_with_equal_override_counts()
 fn should_add_edge_between_overlapping_plugins_with_unequal_override_counts() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.count(a, 2);
@@ -1528,7 +1535,7 @@ fn should_add_edge_between_overlapping_plugins_with_unequal_override_counts() {
 fn should_not_add_edge_between_non_overlapping_plugins_with_unequal_override_counts() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.count(a, 2);
@@ -1552,7 +1559,7 @@ fn should_not_add_edge_between_non_overlapping_plugins_with_unequal_override_cou
 fn should_not_add_edge_between_plugins_with_asset_overlap_and_equal_asset_counts() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.asset_count(a, 1);
@@ -1577,7 +1584,7 @@ fn should_not_add_edge_between_plugins_with_asset_overlap_and_equal_asset_counts
 fn should_not_add_edge_between_plugins_with_no_asset_overlap_and_unequal_asset_counts() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.asset_count(a, 2);
@@ -1601,7 +1608,7 @@ fn should_not_add_edge_between_plugins_with_no_asset_overlap_and_unequal_asset_c
 fn should_add_edge_between_plugins_with_asset_overlap_and_unequal_asset_counts() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.asset_count(a, 2);
@@ -1627,7 +1634,7 @@ fn should_add_edge_between_overlapping_plugins_with_asset_overlap_and_equal_over
  {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.asset_count(a, 2);
@@ -1654,7 +1661,7 @@ fn should_add_edge_between_plugins_with_asset_overlap_and_unequal_override_count
  {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.count(a, 1);
@@ -1681,7 +1688,7 @@ fn should_add_edge_between_plugins_with_asset_overlap_and_unequal_override_count
 fn should_choose_record_overlap_over_asset_overlap() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let a = PLUGIN_A;
     over.count(a, 2);
@@ -1709,7 +1716,7 @@ fn should_choose_record_overlap_over_asset_overlap() {
 fn should_not_error_on_a_graph_with_one_node() {
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
-    let groups_graph = groups::build(&fixture_groups()).unwrap();
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
 
     let mut nodes: Vec<Vertex> = Vec::new();
     node(&mut nodes, &order, PLUGIN_A, "default");
@@ -1717,4 +1724,96 @@ fn should_not_error_on_a_graph_with_one_node() {
     let over = over.finish(&order, &mut nodes);
     let mut graph = PluginGraph::new(nodes, &over);
     assert!(graph.add_tie_break_edges().is_ok());
+}
+
+// libloot's tests of the user group edge type (`add_group_edges`).
+
+fn user_group_node(nodes: &mut Vec<Vertex>, order: &[&str], name: &str, group: &str) -> usize {
+    let index = node(nodes, order, name, group);
+    nodes[index].group_is_user = true;
+    index
+}
+
+fn group_edge_kind(
+    build: impl Fn(&mut Vec<Vertex>, &[&str]) -> (usize, usize),
+    order: &[&str],
+) -> EdgeType {
+    let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
+    let mut nodes = Vec::new();
+    let (from, to) = build(&mut nodes, order);
+    let over = TestOverlaps::default().finish(order, &mut nodes);
+    let mut graph = PluginGraph::new(nodes, &over);
+    graph.add_group_edges(&groups_graph).unwrap();
+    assert!(graph.check_for_cycles().is_ok());
+    graph
+        .added
+        .iter()
+        .find(|&&(a, b, _)| (a, b) == (from, to))
+        .map(|&(_, _, kind)| kind)
+        .expect("an edge was added")
+}
+
+#[test]
+fn should_add_user_group_edge_if_source_plugin_is_in_group_due_to_user_metadata() {
+    let kind = group_edge_kind(
+        |nodes, order| {
+            let a = user_group_node(nodes, order, PLUGIN_A, "A");
+            let b = node(nodes, order, PLUGIN_B, "B");
+            (a, b)
+        },
+        &[PLUGIN_A, PLUGIN_B],
+    );
+    assert_eq!(kind, EdgeType::UserGroup);
+}
+
+#[test]
+fn should_add_user_group_edge_if_target_plugin_is_in_group_due_to_user_metadata() {
+    let kind = group_edge_kind(
+        |nodes, order| {
+            let a = node(nodes, order, PLUGIN_A, "A");
+            let b = user_group_node(nodes, order, PLUGIN_B, "B");
+            (a, b)
+        },
+        &[PLUGIN_A, PLUGIN_B],
+    );
+    assert_eq!(kind, EdgeType::UserGroup);
+}
+
+#[test]
+fn should_add_user_group_edge_if_group_path_starts_with_user_metadata() {
+    let kind = group_edge_kind(
+        |nodes, order| {
+            let b = node(nodes, order, PLUGIN_B, "B");
+            let d = node(nodes, order, PLUGIN_D, "default");
+            (b, d)
+        },
+        &[PLUGIN_B, PLUGIN_D],
+    );
+    assert_eq!(kind, EdgeType::UserGroup);
+}
+
+#[test]
+fn should_add_user_group_edge_if_group_path_ends_with_user_metadata() {
+    let kind = group_edge_kind(
+        |nodes, order| {
+            let a = node(nodes, order, PLUGIN_A, "A");
+            let c = node(nodes, order, PLUGIN_C, "C");
+            (a, c)
+        },
+        &[PLUGIN_A, PLUGIN_C],
+    );
+    assert_eq!(kind, EdgeType::UserGroup);
+}
+
+#[test]
+fn should_add_user_group_edge_if_group_path_involves_user_metadata() {
+    let kind = group_edge_kind(
+        |nodes, order| {
+            let a = node(nodes, order, PLUGIN_A, "A");
+            let d = node(nodes, order, PLUGIN_D, "default");
+            (a, d)
+        },
+        &[PLUGIN_A, PLUGIN_D],
+    );
+    assert_eq!(kind, EdgeType::UserGroup);
 }

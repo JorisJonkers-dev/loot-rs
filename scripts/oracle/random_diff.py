@@ -176,7 +176,64 @@ def world(rng: random.Random, most: int = 12) -> dict:
     rng.shuffle(order)
     result = {"plugins": plugins, "group_after": group_after, "entries": entries, "order": order}
     add_metadata(random.Random(rng.random()), result)
+    if rng.random() < 0.5:
+        result["user"] = user_metadata(random.Random(rng.random()), plugins, list(group_after))
     return result
+
+
+def user_metadata(rng: random.Random, plugins: list[dict], groups: list[str]) -> dict:
+    """A userlist: a new group `u1` after a masterlist group (sometimes a masterlist group extended to load after
+    another), and entries that set groups, add `after` and `req` rules (on any plugin of the same kind, so cycles with
+    masterlist rules happen and must be refused by both) and messages."""
+    group_after = {"u1": [rng.choice(groups)]}
+    if rng.random() < 0.3:
+        group_after[rng.choice(groups)] = [rng.choice(groups)]
+    names = [plugin["name"] for plugin in plugins]
+    entries = []
+    for plugin in plugins:
+        if rng.random() > 0.4:
+            continue
+        entry: dict = {"name": plugin["name"]}
+        if rng.random() < 0.5:
+            entry["group"] = rng.choice([*groups, "u1"])
+        same_kind = [other for other in names if other != plugin["name"] and (other.endswith(".esm") or not plugin["esm"])]
+        for key in ("after", "req"):
+            if same_kind and rng.random() < 0.3:
+                entry[key] = [rng.choice(same_kind)]
+        if rng.random() < 0.3:
+            entry["msg"] = [{"type": "say", "content": f"user note on {plugin['name']}"}]
+        entries.append(entry)
+    globals_ = [{"type": "warn", "content": "user general"}] if rng.random() < 0.3 else []
+    return {"group_after": group_after, "entries": entries, "globals": globals_}
+
+
+def write_userlist(user: dict, path: Path) -> None:
+    lines = []
+    if user["globals"]:
+        lines.append("globals:")
+        lines.extend(f"  - type: {item['type']}\n    content: {json.dumps(item['content'])}" for item in user["globals"])
+    lines.append("groups:")
+    for group, after in user["group_after"].items():
+        lines.append(f"  - name: {group}\n    after: [{', '.join(after)}]")
+    lines.append("plugins:" if user["entries"] else "plugins: []")
+    for entry in user["entries"]:
+        lines.append(f"  - name: {json.dumps(entry['name'])}")
+        if "group" in entry:
+            lines.append(f"    group: {entry['group']}")
+        for key in ("after", "req"):
+            if key in entry:
+                lines.append(f"    {key}: [{', '.join(entry[key])}]")
+        for item in entry.get("msg", []):
+            lines.append(f"    msg:\n      - type: {item['type']}\n        content: {json.dumps(item['content'])}")
+    path.write_text("\n".join(lines) + "\n")
+
+
+def tool_env(root: Path) -> dict:
+    """The driver's environment: the additional data directory and, when the world has one, the userlist."""
+    env = {**os.environ, "LIBLOOT_DRIVER_EXTRA_DATA": str(root / "Extra")}
+    if (root / "userlist.yaml").exists():
+        env["LIBLOOT_DRIVER_USERLIST"] = str(root / "userlist.yaml")
+    return env
 
 
 def message_yaml(item: dict, own: str | None, scalar) -> str:
@@ -263,6 +320,8 @@ def write(w: dict, root: Path) -> list[str]:
                     lines.append("      - " + flow({k: (fill(v, own) if k == "crc" else json.dumps(v) if k == "util" else v)
                                                       for k, v in item.items()}, own))
     (root / "masterlist.yaml").write_text("\n".join(lines) + "\n")
+    if w.get("user"):
+        write_userlist(w["user"], root / "userlist.yaml")
     order = ["FalloutNV.esm"] + w["order"]
     (root / "plugins.txt").write_text("\n".join(order) + "\n")
     (root / "local").mkdir()
@@ -273,7 +332,8 @@ def run_ours_json(binary: str, root: Path, extra: list[str] | None = None) -> di
     """`loot-rs sort --json` of a world: the whole result, or `error: ...`."""
     done = subprocess.run(
         [binary, "sort", "--masterlist", str(root / "masterlist.yaml"), "--plugins", str(root / "plugins.txt"),
-         "--data", str(root / "Data"), "--extra-data", str(root / "Extra"), *(extra or []), "--json"],
+         "--data", str(root / "Data"), "--extra-data", str(root / "Extra"), *(extra or []), "--json",
+         *(["--userlist", str(root / "userlist.yaml")] if (root / "userlist.yaml").exists() else [])],
         capture_output=True, text=True, check=False,
     )
     if done.returncode in (0, 1):
@@ -291,7 +351,7 @@ def libloot_metadata(driver: str, root: Path, order: list[str]) -> dict | str:
     done = subprocess.run(
         [driver, "--metadata", str(root), str(root / "local"), str(root / "masterlist.yaml"), *order],
         capture_output=True, text=True, check=False,
-        env={**os.environ, "LIBLOOT_DRIVER_EXTRA_DATA": str(root / "Extra")},
+        env=tool_env(root),
     )
     try:
         return json.loads(done.stdout)
@@ -302,6 +362,8 @@ def libloot_metadata(driver: str, root: Path, order: list[str]) -> dict | str:
 def expected_groups(w: dict) -> list[dict]:
     """The groups of the world's masterlist plus the `default` group libloot always has, as the driver prints them."""
     groups = {name: sorted(after) for name, after in w["group_after"].items()}
+    for name, after in w.get("user", {}).get("group_after", {}).items():
+        groups[name] = sorted(set(groups.get(name, [])) | set(after))
     groups.setdefault("default", [])
     return [{"name": name, "after": after} for name, after in sorted(groups.items())]
 
@@ -321,7 +383,9 @@ def compare_metadata(w: dict, ours: dict, theirs: dict) -> list[str]:
         COVERED["tags"] += len(plugin["tags_add"]) + len(plugin["tags_remove"])
     for entry in theirs.get("dirty", []):
         COVERED[entry["status"]] += 1
-    seen = sorted(({"name": g["name"], "after": sorted(g["after"])} for g in theirs.get("groups", [])), key=lambda g: g["name"])
+    # libloot's merged groups can repeat a name in `after` when the userlist extends a group; compare them as sets.
+    seen = sorted(({"name": g["name"], "after": sorted(set(g["after"]))} for g in theirs.get("groups", [])),
+                  key=lambda g: g["name"])
     if seen != expected_groups(w):
         lines.append(f"groups: libloot has {seen}, the masterlist declares {expected_groups(w)}")
     return lines
@@ -331,7 +395,7 @@ def sort_libloot(driver: str, root: Path, order: list[str]) -> list[str] | str:
     done = subprocess.run(
         [driver, str(root), str(root / "local"), str(root / "masterlist.yaml"), *order],
         capture_output=True, text=True, check=False,
-        env={**os.environ, "LIBLOOT_DRIVER_EXTRA_DATA": str(root / "Extra")},
+        env=tool_env(root),
     )
     try:
         result = json.loads(done.stdout)
@@ -380,6 +444,9 @@ def hard_constraints(w: dict) -> list[tuple[str, str, str]]:
     for entry in w["entries"]:
         for key, label in (("after", "after"), ("req", "req")):
             found.extend((other, entry["name"], label) for other in entry.get(key, []) if entry["name"] in names)
+    for entry in w.get("user", {}).get("entries", []):
+        for key, label in (("after", "user-after"), ("req", "user-req")):
+            found.extend((other, entry["name"], label) for other in entry.get(key, []))
     esm = [plugin["name"] for plugin in w["plugins"] if plugin["esm"]]
     found.extend((first, other, "master-flag") for first in esm for other in names if other not in esm)
     return found
@@ -405,6 +472,11 @@ def check_minimal(w: dict, given: list[str], minimal: dict, libloot: list[str]) 
     """Differences between `loot-rs sort --mode minimal --json` of the world and what libloot's order satisfies."""
     lines = []
     constraints = hard_constraints(w)
+    # Conditional `after` rules (`version_after`) hold or not by their condition; the rules loot-rs reports as kept are
+    # the ones whose condition held.
+    conditional = {(entry["name"], item["name"]) for entry in w["entries"] for item in entry.get("version_after", [])}
+    constraints += [(rule["before"], rule["after"], rule["source"]) for rule in minimal.get("rules", [])
+                    if (rule["after"], rule["before"]) in conditional and rule["source"] == "after"]
     result = minimal["sorted"]
     if sorted(result) != sorted(given):
         return [f"minimal: not a permutation: {result}"]

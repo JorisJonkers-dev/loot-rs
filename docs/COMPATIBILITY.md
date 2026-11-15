@@ -15,7 +15,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | `prelude` | supported | A normal YAML node, so aliases into it work; `Masterlist::from_file_with_prelude` and `--prelude` replace it with a separate prelude file as libloot does (port of `replace_prelude`, libloot's tests translated) |
 | YAML anchors, aliases | supported | |
 | YAML merge keys `<<` | supported | Used heavily by the real masterlist |
-| Userlist, metadata merging of several files | unsupported | One file is read |
+| Userlist, metadata merging of several files | supported | `Userlist` and `api::sort_with`, `--userlist`: merged as libloot's `plugin_metadata` with user metadata (user entries first, user group wins, lists and messages concatenated, general messages and Bash Tags after the masterlist's, groups merged by name). Compared with libloot's `load_userlist` on random worlds. Writing a userlist is the caller's |
 | Unknown top-level keys | supported | Ignored, as LOOT does |
 | Masterlist identity (`blob_sha1`, `update_timestamp`) | supported | `Masterlist::digest()` (git blob id, as LOOT computes it) and `source()` from LOOT's `.metadata.toml`; checked on a real LOOT copy, where `digest()` equals the stored `blob_sha1` |
 
@@ -61,7 +61,7 @@ cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACL
 | Separate graphs for masters (master flag) and the others, joined masters first | supported | A rule that puts a plugin without the flag before one with it is an error (`MasterOrder`), as in libloot |
 | Blueprint masters (Starfield) | not applicable | Fallout: New Vegas has none |
 | Edges from header masters, `req` and `after` (masterlist) | supported | Conditions and constraints are evaluated first, as `filter_by_constraints` does. A name that is not installed adds nothing |
-| Edges from the userlist (`req`, `after`, `group`) | unsupported | One masterlist is read; there is no userlist |
+| Edges from the userlist (`req`, `after`, `group`) | supported | `UserRequirement`, `UserLoadAfter` and `UserGroup` edges in libloot's order; userlist groups appended to the group graph after the masterlist's; a group edge is a user one when the group path uses a userlist group edge or either plugin's group came from the userlist (libloot's tests translated). A cycle through a user rule is `SortError::RuleCycle`, naming every rule and its source |
 | Hard-coded early loader | supported | `FalloutNV.esm`, the one plugin libloadorder lists for this game |
 | Cycle among these edges is an error naming the cycle | supported | `SortError::Conflict` names the first two plugins of the cycle |
 | Group edges: depth-first searches of the group graph, roots first by longest path, skipped when they would close a cycle, the `default` group last | supported | Same code path as libloot, including which edges are skipped. A group `after` a group nobody defined has that edge ignored, a plugin in an undefined group gets no group edges (libloot refuses both with an error; the finding is in `check`) |

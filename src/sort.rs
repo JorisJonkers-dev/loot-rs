@@ -58,10 +58,16 @@ pub enum EdgeType {
     Master,
     /// The masterlist says the plugin requires the other (`req`).
     MasterlistRequirement,
+    /// The userlist says the plugin requires the other (`req`).
+    UserRequirement,
     /// The masterlist says the plugin loads after the other (`after`).
     MasterlistLoadAfter,
+    /// The userlist says the plugin loads after the other (`after`); between groups, a userlist group's `after`.
+    UserLoadAfter,
     /// The plugin's group loads after the other's.
     MasterlistGroup,
+    /// The same, where a userlist group or a group set by the userlist is involved.
+    UserGroup,
     /// The plugins change the same records and one changes more.
     RecordOverlap,
     /// The plugins load assets from archives with the same paths and one loads more.
@@ -79,8 +85,11 @@ impl EdgeType {
             Self::MasterFlag => "Master Flag",
             Self::Master => "Master",
             Self::MasterlistRequirement => "Masterlist Requirement",
+            Self::UserRequirement => "User Requirement",
             Self::MasterlistLoadAfter => "Masterlist Load After",
+            Self::UserLoadAfter => "User Load After",
             Self::MasterlistGroup => "Masterlist Group",
+            Self::UserGroup => "User Group",
             Self::RecordOverlap => "Record Overlap",
             Self::AssetOverlap => "Asset Overlap",
             Self::TieBreak => "Tie Break",
@@ -139,6 +148,12 @@ pub struct PluginInput {
     pub load_after: Vec<String>,
     /// Group name; `default` when the masterlist names none.
     pub group: String,
+    /// True when the group was set by the userlist.
+    pub group_is_user: bool,
+    /// Files the userlist says the plugin requires (conditions already applied).
+    pub user_requirements: Vec<String>,
+    /// Files the userlist says the plugin loads after (conditions already applied).
+    pub user_load_after: Vec<String>,
     /// Records of the plugin that are also in one of its masters.
     pub override_records: usize,
     /// Files the plugin's archives hold.
@@ -270,10 +285,27 @@ pub fn sort(
     early_loading: &[String],
     overlaps: &dyn Overlaps,
 ) -> Result<Sorted, GraphError> {
+    sort_with_user_groups(plugins, groups, &[], early_loading, overlaps)
+}
+
+/// [`sort`] with the groups of a userlist: they are added to the group graph after the masterlist's, as libloot adds
+/// them (a userlist group may load after a masterlist group, and a masterlist group cannot load after a group only
+/// the userlist defines), their edges are [`EdgeType::UserLoadAfter`], and the plugin edges a path through them gives
+/// are [`EdgeType::UserGroup`].
+///
+/// # Errors
+/// As [`sort`].
+pub fn sort_with_user_groups(
+    plugins: &[PluginInput],
+    groups: &[GroupInput],
+    user_groups: &[GroupInput],
+    early_loading: &[String],
+    overlaps: &dyn Overlaps,
+) -> Result<Sorted, GraphError> {
     if plugins.len() > MAX_PLUGINS {
         return Err(GraphError::TooMany(plugins.len()));
     }
-    let group_graph = groups::build(groups)?;
+    let group_graph = groups::build(groups, user_groups)?;
     if plugins.is_empty() {
         return Ok(Sorted {
             order: Vec::new(),
@@ -330,13 +362,28 @@ pub fn sort_minimal(
     overlaps: &dyn Overlaps,
     with_groups: bool,
 ) -> Result<Repaired, GraphError> {
-    let full = sort(plugins, groups, early_loading, overlaps)?;
+    sort_minimal_with_user_groups(plugins, groups, &[], early_loading, overlaps, with_groups)
+}
+
+/// [`sort_minimal`] with the groups of a userlist (see [`sort_with_user_groups`]).
+///
+/// # Errors
+/// The errors of [`sort`].
+pub fn sort_minimal_with_user_groups(
+    plugins: &[PluginInput],
+    groups: &[GroupInput],
+    user_groups: &[GroupInput],
+    early_loading: &[String],
+    overlaps: &dyn Overlaps,
+    with_groups: bool,
+) -> Result<Repaired, GraphError> {
+    let full = sort_with_user_groups(plugins, groups, user_groups, early_loading, overlaps)?;
     let mut constraints = direct_constraints(plugins, early_loading);
     if with_groups {
         constraints.extend(
             full.edges
                 .iter()
-                .filter(|edge| edge.kind == EdgeType::MasterlistGroup)
+                .filter(|edge| matches!(edge.kind, EdgeType::MasterlistGroup | EdgeType::UserGroup))
                 .copied(),
         );
     }
@@ -356,7 +403,9 @@ fn direct_constraints(plugins: &[PluginInput], early_loading: &[String]) -> Vec<
         let lists = [
             (&plugin.masters, EdgeType::Master),
             (&plugin.requirements, EdgeType::MasterlistRequirement),
+            (&plugin.user_requirements, EdgeType::UserRequirement),
             (&plugin.load_after, EdgeType::MasterlistLoadAfter),
+            (&plugin.user_load_after, EdgeType::UserLoadAfter),
         ];
         for (names, kind) in lists {
             for name in names {
@@ -423,7 +472,9 @@ fn validate(
         let lists = [
             (&plugin.masters, EdgeType::Master),
             (&plugin.requirements, EdgeType::MasterlistRequirement),
+            (&plugin.user_requirements, EdgeType::UserRequirement),
             (&plugin.load_after, EdgeType::MasterlistLoadAfter),
+            (&plugin.user_load_after, EdgeType::UserLoadAfter),
         ];
         for (names, kind) in lists {
             for name in names {
@@ -482,6 +533,9 @@ fn sort_partition(
                 masters: resolve(&plugin.masters),
                 requirements: resolve(&plugin.requirements),
                 load_after: resolve(&plugin.load_after),
+                group_is_user: plugin.group_is_user,
+                user_requirements: resolve(&plugin.user_requirements),
+                user_load_after: resolve(&plugin.user_load_after),
             }
         })
         .collect();

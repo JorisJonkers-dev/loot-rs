@@ -38,30 +38,65 @@ impl GroupGraph {
 /// Build the graph. Definitions of one name are merged (their `after` lists joined), the `default` group is added
 /// when missing, a group that loads after a group nobody defined is left without that edge (libloot refuses such a
 /// masterlist; the caller reports it), and a cycle is an error naming the groups on it.
-pub(super) fn build(groups: &[GroupInput]) -> Result<GroupGraph, GraphError> {
-    let mut merged: BTreeMap<&str, Vec<&str>> = BTreeMap::new();
-    merged.entry(DEFAULT_GROUP).or_default();
-    for group in groups {
+///
+/// As libloot's `build_groups_graph`: the masterlist's groups are the first vertices, in the byte order of their
+/// names, then the groups only the userlist defines, in the same order; the masterlist's edges come first
+/// ([`EdgeType::MasterlistLoadAfter`]), then the userlist's ([`EdgeType::UserLoadAfter`], which also retypes a
+/// masterlist edge between the same groups). A masterlist group cannot load after a group only the userlist defines.
+pub(super) fn build(
+    groups: &[GroupInput],
+    user_groups: &[GroupInput],
+) -> Result<GroupGraph, GraphError> {
+    let merge = |list: &[GroupInput]| {
+        let mut merged: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        for group in list {
+            merged
+                .entry(group.name.clone())
+                .or_default()
+                .extend(group.after.iter().cloned());
+        }
         merged
-            .entry(group.name.as_str())
-            .or_default()
-            .extend(group.after.iter().map(String::as_str));
-    }
+    };
+    let mut masterlist = merge(groups);
+    masterlist.entry(DEFAULT_GROUP.to_string()).or_default();
+    let userlist = merge(user_groups);
     // BTreeMap iterates in the byte order of the names, which is the order libloot sorts them in.
-    let names: Vec<String> = merged.keys().map(|name| (*name).to_string()).collect();
+    let mut names: Vec<String> = masterlist.keys().cloned().collect();
+    names.extend(
+        userlist
+            .keys()
+            .filter(|name| !masterlist.contains_key(*name))
+            .cloned(),
+    );
     let mut adjacency: Adjacency = vec![Vec::new(); names.len()];
     let mut has_incoming = vec![false; names.len()];
-    for (index, afters) in merged.values().enumerate() {
-        let mut afters = afters.clone();
-        afters.sort_unstable();
-        afters.dedup();
-        for other in afters {
-            let Ok(other_index) = names.binary_search_by(|name| name.as_str().cmp(other)) else {
+    let position =
+        |wanted: &str, known: usize| names[..known].iter().position(|name| name == wanted);
+    let master_count = masterlist.len();
+    for (definitions, kind, known) in [
+        (&masterlist, EdgeType::MasterlistLoadAfter, master_count),
+        (&userlist, EdgeType::UserLoadAfter, names.len()),
+    ] {
+        for (name, afters) in definitions {
+            let Some(index) = position(name, names.len()) else {
                 continue;
             };
-            if !adjacency[other_index].iter().any(|&(to, _)| to == index) {
-                adjacency[other_index].push((index, EdgeType::MasterlistLoadAfter));
-                has_incoming[index] = true;
+            let mut afters = afters.clone();
+            afters.sort_unstable();
+            afters.dedup();
+            for other in afters {
+                let Some(other_index) = position(&other, known) else {
+                    continue;
+                };
+                if let Some(edge) = adjacency[other_index]
+                    .iter_mut()
+                    .find(|(to, _)| *to == index)
+                {
+                    edge.1 = kind;
+                } else {
+                    adjacency[other_index].push((index, kind));
+                    has_incoming[index] = true;
+                }
             }
         }
     }

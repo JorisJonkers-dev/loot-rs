@@ -71,6 +71,42 @@ within the same second to the same size is not noticed: use a new cache after su
 `Masterlist`, `SortOptions` and `SortCache` are `Send` and `Sync`: one masterlist can be shared by sorts on several
 threads. Speed measurements and the decisions behind them are in [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md).
 
+## The userlist
+
+`api::sort_with(load_order, &masterlist, Some(&userlist), data_dir, &options)` merges a `Userlist`
+(`Userlist::parse(text)` or `Userlist::from_file(path)`, the same limits as a masterlist) over the masterlist, as
+libloot does with a loaded userlist; `sort` is `sort_with` without one. For each plugin the userlist's entries come
+first: a group it sets wins, and its `after`, `req`, `inc`, messages, tags and cleaning data come before the
+masterlist's. Its groups are merged by name for the checks and added to the group graph after the masterlist's (a
+userlist group may load after a masterlist group; a masterlist group cannot load after a group only the userlist
+defines). Its general messages and known Bash Tags follow the masterlist's.
+
+Rules from the userlist are reported with the sources `user-after`, `user-req` and `user-group` (`RuleSource`,
+`MoveReason`); a group rule is a user one when either plugin's group came from the userlist. A cycle through a user
+rule is `SortError::RuleCycle(links)` (code `rule-cycle`): each plugin with the rule that puts it before the next.
+
+loot-rs does not write userlists. A caller writes the YAML in the masterlist's shape:
+
+```yaml
+groups:
+  - name: my late group
+    after: [default]
+plugins:
+  - name: MyPatch.esp
+    group: my late group
+    after: [SomeMod.esp]
+    req: [SomeMod.esm]
+    msg:
+      - type: say
+        content: 'A note of my own.'
+globals:
+  - type: warn
+    content: 'Something about the whole load order.'
+```
+
+On the command line: `--userlist <file>` for `check` and `sort`. The JSON's `rules[].source` and the move reasons
+gain the values `user-after`, `user-req` and `user-group`, which appear only when a userlist is given.
+
 ## The masterlist: identity, prelude and updates
 
 * `Masterlist::digest()`: the git blob id of the masterlist text as read (`sha1("blob <length>\0" + bytes)`, what

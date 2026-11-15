@@ -26,6 +26,19 @@ fn quote(text: &str) -> String {
     out
 }
 
+/// The userlist named by `LIBLOOT_DRIVER_USERLIST`, loaded into the game's database; true when there is one.
+fn load_userlist(game: &Game) -> bool {
+    let Some(path) = std::env::var_os("LIBLOOT_DRIVER_USERLIST") else {
+        return false;
+    };
+    game.database()
+        .write()
+        .expect("the database lock")
+        .load_userlist(Path::new(&path))
+        .expect("the userlist");
+    true
+}
+
 fn list(items: Vec<String>) -> String {
     format!("[{}]", items.join(","))
 }
@@ -76,6 +89,11 @@ fn metadata(args: &[String]) {
         .expect("the database lock")
         .load_masterlist(Path::new(&args[2]))
         .expect("the masterlist");
+    let mode = if load_userlist(&game) {
+        MergeMode::WithUserMetadata
+    } else {
+        MergeMode::WithoutUserMetadata
+    };
     // A plugin in an additional directory is loaded by its full path; the first directory that has it wins.
     let paths: Vec<PathBuf> = names
         .iter()
@@ -92,10 +110,10 @@ fn metadata(args: &[String]) {
     let database = game.database();
     let database = database.read().expect("the database lock");
     let general = database
-        .general_messages(MergeMode::WithoutUserMetadata, EvalMode::Evaluate)
+        .general_messages(mode, EvalMode::Evaluate)
         .expect("general messages");
     let groups: Vec<String> = database
-        .groups(MergeMode::WithoutUserMetadata)
+        .groups(mode)
         .iter()
         .map(|group| {
             let after: Vec<String> = group
@@ -114,7 +132,7 @@ fn metadata(args: &[String]) {
     let mut dirty = Vec::new();
     for name in &names {
         let found = database
-            .plugin_metadata(name, MergeMode::WithoutUserMetadata, EvalMode::Evaluate)
+            .plugin_metadata(name, mode, EvalMode::Evaluate)
             .expect("plugin metadata");
         let (mut group, mut messages, mut add, mut remove) =
             ("default".to_string(), Vec::new(), Vec::new(), Vec::new());
@@ -185,6 +203,7 @@ fn main() {
         .expect("the database lock")
         .load_masterlist(Path::new(&args[3]))
         .expect("the masterlist");
+    load_userlist(&game);
     let extra: Vec<PathBuf> = std::env::var_os("LIBLOOT_DRIVER_EXTRA_DATA")
         .map(|value| std::env::split_paths(&value).collect())
         .unwrap_or_default();
