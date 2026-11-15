@@ -5,9 +5,14 @@
     scripts/oracle/oracle_run.py --esplugin --config ~/.config/nvmod/oracle.toml [--dataset NAME ...]
     scripts/oracle/oracle_run.py --selftest
 
-Local only. It reads plugin HEADERS (the TES4 record) and directory listings; it never reads the body of a plugin or
-of any other game file (`--esplugin` also has the esplugin-diff program read the record headers of each plugin, to
-compare record keys, but not the field data), never writes to the game or to an MO2 instance, and never writes into a git work tree.
+Local only. The script itself reads plugin HEADERS (the TES4 record, for the dataset digest) and directory listings.
+The programs it runs read more, on the owner's machine only: `loot-rs sort` reads the record headers of every installed
+plugin (record ids, not field data), the folder and file tables of the BSA archives the plugins load (not the file
+data), a whole plugin for its CRC-32 when the masterlist has cleaning data or a checksum() condition for it, and the
+files that conditions name (`Data/BashTags/<plugin>.txt`; with `executable-versions`, an executable's version
+resource); libloot loads every plugin in full. `--esplugin` has the esplugin-diff program read the record headers of
+each plugin, to compare record keys, but not the field data. Nothing of that leaves the machine except the L0 and L1
+summaries below. It never writes to the game or to an MO2 instance, and never writes into a git work tree.
 
 The config lives outside every repository (default ~/.config/nvmod/oracle.toml) and holds the paths:
 
@@ -51,7 +56,7 @@ refused output location), 3 nothing was compared (no driver or no libloot), 4 co
 load order were not found (status "partial": the counts say how many).
 
 The real libloot sorts by loading the plugins in full, in memory; it prints only the order, and that is all that is kept.
-loot-rs reads headers and file lists only.
+loot-rs reads what is listed above: headers, record ids, archive tables, and whole files only for a checksum.
 """
 import hashlib
 import json

@@ -211,8 +211,18 @@ together with the libloot version it came from (synthetic inputs only; never the
 load order and compares the two orders. It is local only: the paths live in `~/.config/nvmod/oracle.toml`, outside any
 repository (the script refuses a config inside a git work tree, and refuses to write its output inside one; the config
 name and the log folders are also in `.gitignore` as a second line of defence). The config format is in the script's
-docstring. It reads the TES4 header of each plugin for the dataset digest and lists the BSA files; it never reads other
-game files and never writes to the game or to an MO2 instance. Plugins are looked up through the enabled mods of an MO2
+docstring. The script reads the TES4 header of each plugin for the dataset digest and lists the BSA files. The
+programs it runs read more, on this machine only:
+
+* `loot-rs sort` reads the header and the record headers of every installed plugin (record ids and their count, never
+  the field data), the folder and file tables of the BSA archives the plugins load (never the file data), a whole plugin
+  for its CRC-32 only when the masterlist has cleaning data or a `checksum()` condition for it, `Data/BashTags/<plugin>.txt`,
+  and the files that conditions name (existence, size; with `executable-versions`, an executable's version resource).
+* libloot loads every plugin in full, in memory.
+* esplugin-diff (`--esplugin`) reads the record headers of each plugin, not the field data.
+
+Nothing read leaves the machine except the redacted L1 and the L0 status below. Nothing is ever written to the game or
+to an MO2 instance. Plugins are looked up through the enabled mods of an MO2
 `modlist.txt` (highest priority first) and then the game's `Data`, and are symlinked into a staging directory, so libloot
 never sees the real game directory.
 

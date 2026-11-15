@@ -166,8 +166,13 @@ for this mode. New optional keys do not raise `schema_version`, which stays 1, a
 
 ## Not in the API yet
 
-Writing `plugins.txt` or `loadorder.txt`, userlists, metadata for the user's own plugins, localised messages other than
-English, and the other things in [COMPATIBILITY.md](COMPATIBILITY.md).
+* Writing `plugins.txt` or `loadorder.txt` (the caller writes them).
+* Reading a userlist, and with it metadata for the user's own plugins and user rules in the sort.
+* Choosing the language of a message (English, or the first language, is used) and the `url` entries of plugins.
+* A replacement prelude, and the identity (digest, source) of the masterlist.
+* Cancellation and progress of a sort.
+
+Everything else that is missing is listed in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Semver
 

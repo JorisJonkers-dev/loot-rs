@@ -10,7 +10,7 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | --- | --- | --- |
 | `plugins` list | supported | Entries in file order; all matching entries are merged |
 | `globals` | supported | Messages shown with their conditions evaluated |
-| `groups` | partial | Merged by name (descriptions replaced, `after` unioned); checked pairwise, see Groups |
+| `groups` | supported | Merged by name (descriptions replaced, `after` unioned). `sort` uses libloot's group graph; `check` checks pairwise, see Groups |
 | `bash_tags` | partial | Read; not used for anything |
 | `prelude` | partial | It is a normal YAML node, so aliases into it work. Replacement from a separate prelude file is unsupported |
 | YAML anchors, aliases | supported | |
@@ -41,11 +41,11 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | --- | --- | --- |
 | Predefined `default` group | supported | |
 | Transitive "loads after" | supported | Closure over the merged definitions |
-| Cyclic group relations | partial | Both directions of a cycle are ignored; LOOT ignores the edge that would create the cycle |
-| Edge dropped when it clashes with master, `after` or `req` edges | unsupported | A note can appear that LOOT would not enforce |
+| Cyclic group relations | supported | `sort` refuses them with `SortError::GroupCycle`, as LOOT does. `check` ignores both directions of a cycle |
+| Edge dropped when it clashes with master, `after` or `req` edges | supported | In `sort`, as libloot does (`SortOutput::dropped_group_rules`). `check` checks pairwise and does not drop edges, so it can show a note that LOOT would not enforce |
 | Group named but undefined | supported | Reported as a note (hard with `--strict-groups`) |
 | Group order violation | supported | A note by default, a violation with `--strict-groups`; see [GROUPS.md](GROUPS.md) |
-| Sorting | partial | See the Sorting section below |
+| Sorting | supported | See the Sorting section below |
 | Minimal-change sort (`SortMode::MinimalChange`) | supported | Not in libloot: keeps the given order and moves the fewest plugins that fix hard-constraint violations. Algorithm, guarantees and per-move reasons in API.md |
 
 ## Sorting
