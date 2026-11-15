@@ -1,0 +1,97 @@
+# pattern<TAB>name<TAB>libloot 0.29.7's answer (regress, flags iu, ^pattern$, find), from scripts/oracle/libloot-driver --regex-table
+"Mod\\.esp"	"Mod.esp"	true
+"Mod\\.esp"	"mod.ESP"	true
+"Mod\\.esp"	"Mod.esp "	false
+"Mod\\.esp"	"XMod.esp"	false
+"Mod\\.esp"	"Modxesp"	false
+"Mod.esp"	"Modxesp"	true
+"Mod.esp"	"Mod.esp"	true
+"Foo.*|.*Bar\\.esp"	"Foo Patch.esm"	true
+"Foo.*|.*Bar\\.esp"	"Some Bar.esp"	true
+"Foo.*|.*Bar\\.esp"	"Other.esp"	false
+"Foo.*|.*Bar\\.esp"	"FooBar.esp"	true
+"A|B"	"A.esp"	true
+"A|B"	"x B"	true
+"A|B"	"AB"	true
+"A|B"	"C"	false
+"(A|B)\\.esp"	"A.esp"	true
+"(A|B)\\.esp"	"B.esp"	true
+"(A|B)\\.esp"	"AB.esp"	false
+"Mod \\d+\\.esp"	"Mod 12.esp"	true
+"Mod \\d+\\.esp"	"Mod .esp"	false
+"Mod \\d+\\.esp"	"Mod \u0663.esp"	false
+"Mod \\d+\\.esp"	"Mod \uff11.esp"	false
+"Mod[0-9]\\.esp"	"Mod5.esp"	true
+"Mod[0-9]\\.esp"	"Mod\u0663.esp"	false
+"\\w+\\.esp"	"Abc_1.esp"	true
+"\\w+\\.esp"	"\u00e9t\u00e9.esp"	false
+"\\w+\\.esp"	"\u03a9.esp"	false
+"\\w+\\.esp"	"a-b.esp"	false
+"\\w+\\.esp"	"\u017f.esp"	true
+"\\w+\\.esp"	"\u212a.esp"	true
+"[a-z]+\\.esp"	"abc.esp"	true
+"[a-z]+\\.esp"	"ABC.esp"	true
+"[a-z]+\\.esp"	"\u017f.esp"	true
+"[a-z]+\\.esp"	"\u212a.esp"	true
+"[a-z]+\\.esp"	"\u00e9.esp"	false
+"\\s"	" "	true
+"\\s"	"\t"	true
+"\\s"	"\u00a0"	true
+"\\s"	"\u3000"	true
+"\\s"	"\u0085"	false
+"\\s"	"\ufeff"	true
+"\\s"	"a"	false
+"x\\Wy"	"x-y"	true
+"x\\Wy"	"x\u00e9y"	true
+"x\\Wy"	"x y"	true
+"x\\Wy"	"xay"	false
+"\\D"	"a"	true
+"\\D"	"1"	false
+"\\D"	"\u0663"	true
+"Straße\\.esp"	"STRASSE.esp"	false
+"Straße\\.esp"	"stra\u00dfe.esp"	true
+"Straße\\.esp"	"STRA\u1e9eE.esp"	true
+"Été\\.esp"	"\u00e9t\u00e9.esp"	true
+"Été\\.esp"	"\u00c9T\u00c9.esp"	true
+"Été\\.esp"	"ete.esp"	false
+"Ωmega\\.esp"	"\u03c9mega.esp"	true
+"Ωmega\\.esp"	"\u2126mega.esp"	true
+"Ωmega\\.esp"	"OMEGA.esp"	false
+"k\\.esp"	"K.esp"	true
+"k\\.esp"	"\u212a.esp"	true
+"s\\.esp"	"S.esp"	true
+"s\\.esp"	"\u017f.esp"	true
+"[^x]\\.esp"	"a.esp"	true
+"[^x]\\.esp"	"X.esp"	false
+"[^x]\\.esp"	"\u00e9.esp"	true
+"[^x]\\.esp"	"\ud83d\ude00.esp"	true
+".\\.esp"	"a.esp"	true
+".\\.esp"	"\ud83d\ude00.esp"	true
+".\\.esp"	"\n.esp"	false
+"[à-ÿ]+"	"\u00e9"	true
+"[à-ÿ]+"	"\u00c9"	true
+"[à-ÿ]+"	"\u0178"	true
+"[à-ÿ]+"	"z"	false
+"Mod (v\\d+)?\\.esp"	"Mod .esp"	true
+"Mod (v\\d+)?\\.esp"	"Mod v2.esp"	true
+"a{2}"	"aa"	true
+"a{2}"	"AA"	true
+"a{2}"	"aaa"	false
+"\\bMod\\b.*"	"Mod x"	true
+"\\bMod\\b.*"	"Modx"	false
+"x\\Sy"	"x y"	false
+"x\\Sy"	"x\u00a0y"	false
+"x\\Sy"	"xay"	true
+"x\\Wy"	"x\u017fy"	false
+"x\\Wy"	"x\u212ay"	false
+"[\\d_]+"	"1_2"	true
+"[\\d_]+"	"\u0663"	false
+"[\\s-]"	"\u3000"	true
+"[\\s-]"	"\u0085"	false
+"a\\\\d"	"a\\d"	true
+"a\\\\d"	"a1"	false
+"[\\w.]+"	"\u00e9.esp"	false
+"[\\w.]+"	"ab.esp"	true
+"[^\\d]"	"\u0663"	true
+"[^\\d]"	"5"	false
+"(?!Old)\\w+\\.esp"	"New.esp"	true

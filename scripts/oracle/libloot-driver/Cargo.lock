@@ -332,6 +332,7 @@ name = "libloot-driver"
 version = "0.0.0"
 dependencies = [
  "libloot",
+ "regress",
 ]
 
 [[package]]

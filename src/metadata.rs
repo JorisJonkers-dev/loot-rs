@@ -647,11 +647,82 @@ pub fn looks_like_regex(text: &str) -> bool {
 /// # Errors
 /// Returns the compile error text, for example for look-around, which this engine lacks.
 pub fn compile_whole_name(pattern: &str) -> Result<Regex, String> {
-    RegexBuilder::new(&format!("^(?:{pattern})$"))
+    // `^` and `$` around the pattern itself, not around a group: libloot (`^{name}$` for plugin names) and
+    // loot-condition-interpreter (`^{regex}$` for paths) both anchor this way, so a top-level alternation `A|B`
+    // means "starts with A, or ends with B", as in LOOT.
+    RegexBuilder::new(&format!("^{pattern}$"))
         .case_insensitive(true)
         .unicode(true)
         .build()
         .map_err(|error| error.to_string())
+}
+
+/// ECMAScript's white space and line terminators, which `\s` means in libloot's engine (regress).
+const ECMASCRIPT_SPACE: &str = "\\t\\n\\x0B\\x0C\\r \\u{A0}\\u{1680}\\u{2000}-\\u{200A}\\u{2028}\\u{2029}\\u{202F}\\u{205F}\\u{3000}\\u{FEFF}";
+
+/// Compile a plugin-name pattern as libloot does (regress, ECMAScript with the `iu` flags, `^{pattern}$`): as
+/// [`compile_whole_name`], with the class escapes translated to their ECMAScript meaning, which is narrower than the
+/// `regex` crate's Unicode one: `\d` is `[0-9]`, `\w` is `[0-9A-Za-z_]` (case folding then adds `ſ` and the Kelvin
+/// sign, in both engines), `\s` is ECMAScript's white space; `\D`, `\W`, `\S` are their complements. Checked on the
+/// table in `tests/regex/cases.tsv`, whose answers come from libloot.
+///
+/// # Errors
+/// As [`compile_whole_name`].
+pub fn compile_plugin_name(pattern: &str) -> Result<Regex, String> {
+    compile_whole_name(&ecmascript_classes(pattern))
+}
+
+/// `pattern` with `\d`, `\w`, `\s` and their complements replaced by explicit classes, outside and inside `[...]`
+/// (inside, only the positive ones; a complement inside a class is left to the `regex` crate).
+fn ecmascript_classes(pattern: &str) -> String {
+    let mut out = String::with_capacity(pattern.len());
+    let mut chars = pattern.chars();
+    let mut in_class = false;
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                let Some(next) = chars.next() else {
+                    out.push(c);
+                    break;
+                };
+                let set = match next {
+                    'd' | 'D' => "0-9",
+                    'w' | 'W' => "0-9A-Za-z_",
+                    's' | 'S' => ECMASCRIPT_SPACE,
+                    _ => "",
+                };
+                let negated = next.is_ascii_uppercase();
+                match (set.is_empty(), in_class, negated) {
+                    (false, false, false) => {
+                        out.push('[');
+                        out.push_str(set);
+                        out.push(']');
+                    }
+                    (false, false, true) => {
+                        out.push_str("[^");
+                        out.push_str(set);
+                        out.push(']');
+                    }
+                    (false, true, false) => out.push_str(set),
+                    _ => {
+                        out.push(c);
+                        out.push(next);
+                    }
+                }
+            }
+            '[' if !in_class => {
+                in_class = true;
+                out.push(c);
+                // A `]` or `^]` right after the opening bracket is a literal, as in both engines.
+            }
+            ']' if in_class => {
+                in_class = false;
+                out.push(c);
+            }
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 fn merge_group(groups: &mut Vec<Group>, incoming: Group) {
@@ -721,7 +792,7 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
             .ok_or_else(|| MetadataError("plugins: an entry has no name".into()))?;
         let context = format!("plugin {name}");
         let pattern = if looks_like_regex(&name) {
-            match compile_whole_name(&name) {
+            match compile_plugin_name(&name) {
                 Ok(regex) => NamePattern::Regex(regex),
                 Err(error) => {
                     metadata.warnings.push(format!(
