@@ -466,6 +466,10 @@ pub struct SortOptions {
     pub cancel: Option<CancelToken>,
     /// Called with the stage and counts as the sort goes, from the sort's threads (see [`Progress`]).
     pub progress: Option<ProgressHook>,
+    /// Languages for message text, most wanted first (`de`, `pt_BR`, ...): each in turn by libloot's rule (the
+    /// language itself, or one with the same language code), then English, then the first text. Empty (the default):
+    /// English.
+    pub languages: Vec<String>,
     /// Do not read whole plugins for the CRC-32 of the masterlist's cleaning data: [`SortOutput::dirty`] stays empty
     /// and no cleaning message is generated. `checksum()` conditions are still evaluated. The order is unchanged.
     pub skip_checksums: bool,
@@ -527,6 +531,17 @@ impl SortOptions {
     #[must_use]
     pub const fn with_skip_executable_versions(mut self, skip: bool) -> Self {
         self.skip_executable_versions = skip;
+        self
+    }
+
+    /// Prefer these languages for message text; see [`SortOptions::languages`].
+    #[must_use]
+    pub fn with_languages<I, S>(mut self, languages: I) -> Self
+    where
+        I: IntoIterator<Item = S>,
+        S: Into<String>,
+    {
+        self.languages = languages.into_iter().map(Into::into).collect();
         self
     }
 
@@ -733,8 +748,22 @@ impl MessageKind {
 pub struct Message {
     /// Severity.
     pub kind: MessageKind,
-    /// The text (English, substitutions applied).
+    /// The text, substitutions applied: Markdown as the masterlist writes it (see `docs/API.md`), in the language
+    /// [`SortOptions::languages`] chose.
     pub text: String,
+    /// The language of `text`: the masterlist's code (`en`, `de`, `pt_BR`, ...); `en` for text that is not localised
+    /// and for the messages LOOT generates.
+    pub lang: String,
+}
+
+/// A place where a plugin can be found: the masterlist's `url` entries.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Location {
+    /// The URL, as the masterlist writes it; never checked or fetched.
+    pub url: String,
+    /// The name of the page or site, when the masterlist gives one.
+    pub name: Option<String>,
 }
 
 /// What a finding is about.
@@ -826,6 +855,8 @@ pub struct PluginResult {
     pub generated_messages: Vec<Message>,
     /// The Bash Tags the plugin's description lists (`{{BASH:Tag,Tag}}`).
     pub bash_tags: Vec<String>,
+    /// The masterlist's (and userlist's) `url` entries, each once, the userlist's first.
+    pub locations: Vec<Location>,
 }
 
 /// Whether a checksum is on the masterlist's dirty or its clean list.
@@ -1163,6 +1194,7 @@ fn messages(applied: &[check::AppliedMessage]) -> Vec<Message> {
         .map(|message| Message {
             kind: message_kind(message.kind),
             text: message.content.clone(),
+            lang: message.lang.clone(),
         })
         .collect()
 }
@@ -1302,12 +1334,13 @@ pub fn sort_with(
         prefetch_checksums(&facts, &sorted_env, threads, options.cancel.as_ref());
     }
     check_cancel(options)?;
-    let report = check::run(
+    let report = check::run_with_languages(
         metadata,
         &sorted_env,
         check::Options {
             strict_groups: options.strict_groups,
         },
+        &options.languages,
     );
     check_cancel(options)?;
     describe(
@@ -1556,7 +1589,9 @@ fn describe(
                 .as_ref()
                 .and_then(|header| header.description.as_deref())
                 .map_or_else(Vec::new, validate::description_tags);
-            plugin_result(plugin, &generated, bash_tags)
+            let mut result = plugin_result(plugin, &generated, bash_tags);
+            result.locations = locations(&fact.entries);
+            result
         })
         .collect();
     output.dirty = dirty_info(order, facts, &matches);
@@ -2104,7 +2139,23 @@ fn plugin_result(
             .collect(),
         generated_messages: messages(generated),
         bash_tags,
+        locations: Vec::new(),
     }
+}
+
+/// The `url` entries of a plugin's entries, each once, in entry order (the userlist's first).
+fn locations(entries: &[&PluginEntry]) -> Vec<Location> {
+    let mut found: Vec<Location> = Vec::new();
+    for location in entries.iter().flat_map(|entry| &entry.url) {
+        let location = Location {
+            url: location.url.clone(),
+            name: location.name.clone(),
+        };
+        if !found.contains(&location) {
+            found.push(location);
+        }
+    }
+    found
 }
 
 fn io_error(text: &str) -> std::io::Error {

@@ -277,3 +277,37 @@ fn minimal_change_moves_only_the_plugins_a_hard_constraint_forces_and_says_why()
     assert_eq!(second.moves.len(), 0);
     assert!(!second.changed(&again));
 }
+
+#[test]
+fn messages_come_in_the_language_asked_for_and_say_which() {
+    let fixture = Fixture::new();
+    fixture.plugin("A.esp", &[]);
+    let yaml = "plugins:\n  - name: A.esp\n    msg:\n      - type: say\n        content:\n          - lang: en\n            text: hello\n          - lang: fr\n            text: bonjour\n    url:\n      - link: 'https://example.invalid/a'\n        name: Nexus\n";
+    let masterlist = Masterlist::parse(yaml).expect("masterlist");
+    let slots = [PluginSlot::new("A.esp", true)];
+    let french = sort(
+        &slots,
+        &masterlist,
+        &fixture.data(),
+        &SortOptions::default().with_languages(["fr"]),
+    )
+    .expect("sort");
+    let german = sort(
+        &slots,
+        &masterlist,
+        &fixture.data(),
+        &SortOptions::default().with_languages(["de"]),
+    )
+    .expect("sort");
+    let message = |output: &loot_rs::api::SortOutput| {
+        let message = &output.plugins[0].messages[0];
+        (message.text.clone(), message.lang.clone())
+    };
+    assert_eq!(message(&french), ("bonjour".to_string(), "fr".to_string()));
+    assert_eq!(message(&german), ("hello".to_string(), "en".to_string()));
+    let location = &french.plugins[0].locations[0];
+    assert_eq!(
+        (location.url.as_str(), location.name.as_deref()),
+        ("https://example.invalid/a", Some("Nexus"))
+    );
+}

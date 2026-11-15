@@ -71,8 +71,10 @@ pub struct Finding {
 pub struct AppliedMessage {
     /// Severity.
     pub kind: MessageKind,
-    /// English text.
+    /// The text, in the language chosen (see [`crate::metadata::Message::select`]).
     pub content: String,
+    /// The language of `content` (`en` for text that is not localised).
+    pub lang: String,
 }
 
 /// Everything found for one plugin.
@@ -162,6 +164,8 @@ pub struct Options {
 pub(crate) struct Evaluator<'a> {
     env: &'a FsEnv,
     findings: Vec<Finding>,
+    /// Languages for message text, most wanted first.
+    languages: &'a [String],
 }
 
 impl<'a> Evaluator<'a> {
@@ -169,6 +173,7 @@ impl<'a> Evaluator<'a> {
         Self {
             env,
             findings: Vec::new(),
+            languages: &[],
         }
     }
 
@@ -197,12 +202,17 @@ impl<'a> Evaluator<'a> {
     }
 
     fn messages(&mut self, messages: &[&Message]) -> Vec<AppliedMessage> {
+        let languages = self.languages;
         messages
             .iter()
             .filter(|message| self.holds(message.condition.as_deref()) == Some(true))
-            .map(|message| AppliedMessage {
-                kind: message.kind,
-                content: message.content.clone(),
+            .map(|message| {
+                let (lang, content) = message.select(languages);
+                AppliedMessage {
+                    kind: message.kind,
+                    content: content.to_string(),
+                    lang: lang.to_string(),
+                }
             })
             .collect()
     }
@@ -266,6 +276,8 @@ struct Run<'a> {
     installed: Vec<(usize, &'a str)>,
     /// The group of each slot of the load order (by position; slots that are not installed have `default`).
     groups_of: Vec<String>,
+    /// Languages for message text, most wanted first.
+    languages: &'a [String],
 }
 
 impl Run<'_> {
@@ -368,6 +380,7 @@ impl Run<'_> {
         let mut ev = Evaluator {
             env: self.env,
             findings: Vec::new(),
+            languages: self.languages,
         };
         let all_messages: Vec<&Message> =
             entries.iter().flat_map(|entry| entry.msg.iter()).collect();
@@ -407,6 +420,17 @@ impl Run<'_> {
 /// Evaluate `metadata` over the load order held by `env`.
 #[must_use]
 pub fn run(metadata: &Metadata, env: &FsEnv, options: Options) -> Report {
+    run_with_languages(metadata, env, options, &[])
+}
+
+/// [`run`] with message text in `languages` (most wanted first; see [`crate::metadata::Message::select`]).
+#[must_use]
+pub fn run_with_languages(
+    metadata: &Metadata,
+    env: &FsEnv,
+    options: Options,
+    languages: &[String],
+) -> Report {
     let mut report = Report {
         metadata_warnings: metadata.warnings.clone(),
         ..Report::default()
@@ -414,6 +438,7 @@ pub fn run(metadata: &Metadata, env: &FsEnv, options: Options) -> Report {
     let mut globals = Evaluator {
         env,
         findings: Vec::new(),
+        languages,
     };
     let global_refs: Vec<&Message> = metadata.globals.iter().collect();
     report.globals = globals.messages(&global_refs);
@@ -446,6 +471,7 @@ pub fn run(metadata: &Metadata, env: &FsEnv, options: Options) -> Report {
     let run = Run {
         env,
         options,
+        languages,
         closure: group_closure(metadata),
         defined: metadata
             .groups

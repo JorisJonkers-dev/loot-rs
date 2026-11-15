@@ -554,3 +554,145 @@ fn comments_and_blank_lines_do_not_end_the_prelude() {
         assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), REPLACED);
     }
 }
+
+// libloot's tests of `select_message_content` (src/metadata/message.rs), translated: `Message::select` with one
+// language is libloot's rule, except that a list without a match and without English gives its first text instead of
+// none (such a list is not valid LOOT metadata).
+
+fn localised(contents: &[(&str, &str)]) -> Message {
+    Message {
+        kind: MessageKind::Say,
+        content: String::new(),
+        contents: contents
+            .iter()
+            .map(|(lang, text)| ((*lang).to_string(), (*text).to_string()))
+            .collect(),
+        condition: None,
+    }
+}
+
+fn pick(message: &Message, language: &str) -> String {
+    message.select(&[language.to_string()]).1.to_string()
+}
+
+const PORTUGUESE: &[(&str, &str)] = &[
+    ("en", "test1"),
+    ("de", "test2"),
+    ("pt", "test3"),
+    ("pt_PT", "test4"),
+    ("pt_BR", "test5"),
+];
+
+#[test]
+fn the_only_text_of_a_message_is_chosen_whatever_the_language() {
+    assert_eq!(pick(&localised(&[("de", "test")]), "fr"), "test");
+}
+
+#[test]
+fn a_text_in_exactly_the_language_wanted_is_chosen() {
+    assert_eq!(pick(&localised(PORTUGUESE), "pt_BR"), "test5");
+}
+
+#[test]
+fn a_text_of_the_same_language_code_is_chosen_when_the_exact_one_is_missing() {
+    assert_eq!(pick(&localised(&PORTUGUESE[..4]), "pt_BR"), "test3");
+}
+
+#[test]
+fn english_is_chosen_when_no_text_has_the_language_code() {
+    assert_eq!(
+        pick(
+            &localised(&[("en", "test1"), ("de", "test2"), ("pt_PT", "test3")]),
+            "pt_BR"
+        ),
+        "test1"
+    );
+}
+
+#[test]
+fn a_language_code_alone_prefers_its_exact_text() {
+    assert_eq!(
+        pick(
+            &localised(&[
+                ("en", "test1"),
+                ("de", "test2"),
+                ("pt_BR", "test3"),
+                ("pt", "test4")
+            ]),
+            "pt"
+        ),
+        "test4"
+    );
+}
+
+#[test]
+fn a_language_code_alone_takes_the_first_text_of_that_code() {
+    assert_eq!(
+        pick(
+            &localised(&[
+                ("en", "test1"),
+                ("de", "test2"),
+                ("pt_PT", "test3"),
+                ("pt_BR", "test4")
+            ]),
+            "pt"
+        ),
+        "test3"
+    );
+}
+
+#[test]
+fn without_a_match_or_english_the_first_text_is_chosen() {
+    assert_eq!(
+        pick(
+            &localised(&[("de", "test2"), ("pt_PT", "test3"), ("pt_BR", "test4")]),
+            "fr"
+        ),
+        "test2"
+    );
+}
+
+#[test]
+fn a_later_language_is_used_when_the_first_wanted_has_no_text() {
+    let message = localised(&[("en", "english"), ("de", "deutsch"), ("fr", "francais")]);
+    assert_eq!(
+        message.select(&["it".to_string(), "fr".to_string()]),
+        ("fr", "francais")
+    );
+    assert_eq!(message.select(&[]), ("en", "english"));
+}
+
+#[test]
+fn localised_texts_keep_their_substitutions() {
+    let metadata = parse(
+        "globals:\n  - type: say\n    content:\n      - lang: en\n        text: 'see {0}'\n      - lang: de\n        text: 'siehe {0}'\n    subs: [x]\n",
+    )
+    .expect("parses");
+    assert_eq!(
+        metadata.globals[0].select(&["de".to_string()]),
+        ("de", "siehe x")
+    );
+}
+
+#[test]
+fn url_entries_are_read_as_links_with_optional_names() {
+    let metadata = parse(
+        "plugins:\n  - name: A.esp\n    url:\n      - 'https://example.invalid/a'\n      - link: 'https://example.invalid/b'\n        name: Page\n",
+    )
+    .expect("parses");
+    let urls = &metadata.plugins[0].url;
+    assert_eq!(
+        urls[0],
+        Location {
+            url: "https://example.invalid/a".into(),
+            name: None
+        }
+    );
+    assert_eq!(
+        urls[1],
+        Location {
+            url: "https://example.invalid/b".into(),
+            name: Some("Page".into())
+        }
+    );
+}

@@ -45,8 +45,10 @@ fn list(items: Vec<String>) -> String {
 
 fn message_json(message: &Message) -> String {
     let content: &[MessageContent] = message.content();
-    let text = select_message_content(content, MessageContent::DEFAULT_LANGUAGE)
-        .map_or("", MessageContent::text);
+    // The language asked for (`LIBLOOT_DRIVER_LANGUAGE`), English by default.
+    let language = std::env::var("LIBLOOT_DRIVER_LANGUAGE")
+        .unwrap_or_else(|_| MessageContent::DEFAULT_LANGUAGE.to_string());
+    let text = select_message_content(content, &language).map_or("", MessageContent::text);
     format!(
         "{{\"type\":{},\"text\":{}}}",
         quote(&message.message_type().to_string()),

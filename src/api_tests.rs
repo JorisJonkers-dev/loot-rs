@@ -206,7 +206,8 @@ plugins:
         output.general_messages,
         [Message {
             kind: MessageKind::Warn,
-            text: "general".into()
+            text: "general".into(),
+            lang: "en".into(),
         }]
     );
     let plugin = &output.plugins[0];

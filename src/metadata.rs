@@ -78,8 +78,68 @@ pub struct Message {
     pub kind: MessageKind,
     /// English text, substitutions applied.
     pub content: String,
+    /// Every `(language, text)` of the message, substitutions applied, in file order; a plain string is `("en", text)`.
+    pub contents: Vec<(String, String)>,
     /// Condition string; the message applies when it holds, or always when absent.
     pub condition: Option<String>,
+}
+
+impl Message {
+    /// The language and text to show for `languages` (most wanted first), by libloot's `select_message_content`
+    /// applied to each language in turn: a message with one text gives that text; otherwise the first text whose
+    /// language is the one wanted, or whose language code matches it (`fr` for `fr_FR`, `fr_FR` for `fr`); then
+    /// English (`en`, or `en_*`); then the first text (a list without English is not valid LOOT metadata).
+    #[must_use]
+    pub fn select(&self, languages: &[String]) -> (&str, &str) {
+        let pick = |at: usize| (self.contents[at].0.as_str(), self.contents[at].1.as_str());
+        if self.contents.len() == 1 {
+            return pick(0);
+        }
+        if self.contents.is_empty() {
+            return (DEFAULT_LANGUAGE, &self.content);
+        }
+        for language in languages {
+            if let Some(at) = select_language(&self.contents, language, false) {
+                return pick(at);
+            }
+        }
+        select_language(&self.contents, DEFAULT_LANGUAGE, true).map_or_else(|| pick(0), pick)
+    }
+}
+
+/// The language of message text that is not localised, and the one LOOT falls back to.
+pub const DEFAULT_LANGUAGE: &str = "en";
+
+/// libloot's `select_message_content` for one language: an exact match first, else the first whose language code
+/// matches, else (when `with_english`) English.
+fn select_language(
+    contents: &[(String, String)],
+    language: &str,
+    with_english: bool,
+) -> Option<usize> {
+    let code = language.split_once('_').map(|(code, _)| code);
+    let mut matched = None;
+    let mut english = None;
+    for (at, (content_language, _)) in contents.iter().enumerate() {
+        if content_language == language {
+            return Some(at);
+        }
+        if matched.is_none() {
+            let code_matches = match code {
+                Some(code) => code == content_language,
+                None => content_language
+                    .split_once('_')
+                    .is_some_and(|(content_code, _)| content_code == language),
+            };
+            if code_matches {
+                matched = Some(at);
+            }
+            if content_language == DEFAULT_LANGUAGE {
+                english = Some(at);
+            }
+        }
+    }
+    matched.or(if with_english { english } else { None })
 }
 
 /// A `file` data structure, used by `after`, `req` and `inc`.
@@ -194,6 +254,17 @@ pub struct PluginEntry {
     pub clean: Vec<Cleaning>,
     /// True when the entry comes from a userlist (see [`merge`]).
     pub user: bool,
+    /// `url`: where the plugin can be found.
+    pub url: Vec<Location>,
+}
+
+/// A `url` entry: a link, with a name when the masterlist gives one (`{link, name}`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Location {
+    /// The URL, as written (not checked or fetched).
+    pub url: String,
+    /// The name of the page or site.
+    pub name: Option<String>,
 }
 
 /// The parsed metadata file.
@@ -477,9 +548,18 @@ fn parse_message(node: &Yaml, context: &str) -> Result<Message, MetadataError> {
     };
     let text = content_text(&node["content"])
         .ok_or_else(|| MetadataError(format!("{context}: message has no content")))?;
+    let subs = list(&node["subs"]);
+    let contents = match scalar(&node["content"]) {
+        Some(text) => vec![(DEFAULT_LANGUAGE.to_string(), substitute(text, subs))],
+        None => list(&node["content"])
+            .iter()
+            .filter_map(|item| Some((field(item, "lang")?, substitute(field(item, "text")?, subs))))
+            .collect(),
+    };
     Ok(Message {
         kind,
-        content: substitute(text, list(&node["subs"])),
+        content: substitute(text, subs),
+        contents,
         condition: field(node, "condition"),
     })
 }
@@ -667,6 +747,16 @@ pub fn parse(text: &str) -> Result<Metadata, MetadataError> {
             dirty: list(&node["dirty"]).iter().map(parse_cleaning).collect(),
             clean: list(&node["clean"]).iter().map(parse_cleaning).collect(),
             user: false,
+            url: list(&node["url"])
+                .iter()
+                .filter_map(|item| match scalar(item) {
+                    Some(url) => Some(Location { url, name: None }),
+                    None => Some(Location {
+                        url: field(item, "link")?,
+                        name: field(item, "name"),
+                    }),
+                })
+                .collect(),
         });
     }
     Ok(metadata)

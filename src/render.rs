@@ -350,7 +350,8 @@ fn finding_label(kind: crate::api::FindingKind) -> &'static str {
 /// The result of a sort as one line of JSON, in the shape of [`render_json`] plus the sort.
 ///
 /// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `contract` (`loot-sort`), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
-/// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `findings`), `generated_general_messages`,
+/// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `locations` (`url`, `name`), `findings`;
+/// each message is `type`, `text`, `lang`), `generated_general_messages`,
 /// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
 /// `warnings`, `explanations` (`plugin`, `from`, `to`, `reason`, `other`, `indirect`, `reasons`: each `reason`,
 /// `other`, `later`, `indirect` and, when they apply, `via` (`before`, `after`), `groups` and `counts`),
@@ -371,35 +372,7 @@ pub fn render_sort_json(result: &SortOutput) -> String {
         json_api_message,
     );
     out.push_str(",\"plugins\":");
-    json_list(&mut out, &result.plugins, |out, plugin| {
-        out.push_str("{\"name\":");
-        json_string(out, &plugin.name);
-        let _ = write!(
-            out,
-            ",\"position\":{},\"active\":{},\"group\":",
-            plugin.position, plugin.active
-        );
-        json_string(out, &plugin.group);
-        out.push_str(",\"messages\":");
-        json_list(out, &plugin.messages, json_api_message);
-        out.push_str(",\"generated_messages\":");
-        json_list(out, &plugin.generated_messages, json_api_message);
-        out.push_str(",\"bash_tags\":");
-        json_strings(out, &plugin.bash_tags);
-        out.push_str(",\"tags_add\":");
-        json_strings(out, &plugin.tags_added);
-        out.push_str(",\"tags_remove\":");
-        json_strings(out, &plugin.tags_removed);
-        out.push_str(",\"findings\":");
-        json_list(out, &plugin.findings, |out, finding| {
-            out.push_str("{\"kind\":");
-            json_string(out, finding_label(finding.kind));
-            let _ = write!(out, ",\"hard\":{},\"text\":", finding.hard);
-            json_string(out, &finding.text);
-            out.push('}');
-        });
-        out.push('}');
-    });
+    json_list(&mut out, &result.plugins, json_plugin);
     out.push_str(",\"dirty\":");
     json_list(&mut out, &result.dirty, |out, info| {
         out.push_str("{\"plugin\":");
@@ -504,11 +477,53 @@ fn json_move_reason(out: &mut String, reason: &crate::api::MoveExplanation) {
     out.push('}');
 }
 
+fn json_plugin(out: &mut String, plugin: &crate::api::PluginResult) {
+    out.push_str("{\"name\":");
+    json_string(out, &plugin.name);
+    let _ = write!(
+        out,
+        ",\"position\":{},\"active\":{},\"group\":",
+        plugin.position, plugin.active
+    );
+    json_string(out, &plugin.group);
+    out.push_str(",\"messages\":");
+    json_list(out, &plugin.messages, json_api_message);
+    out.push_str(",\"generated_messages\":");
+    json_list(out, &plugin.generated_messages, json_api_message);
+    out.push_str(",\"bash_tags\":");
+    json_strings(out, &plugin.bash_tags);
+    out.push_str(",\"tags_add\":");
+    json_strings(out, &plugin.tags_added);
+    out.push_str(",\"tags_remove\":");
+    json_strings(out, &plugin.tags_removed);
+    out.push_str(",\"locations\":");
+    json_list(out, &plugin.locations, |out, location| {
+        out.push_str("{\"url\":");
+        json_string(out, &location.url);
+        if let Some(name) = &location.name {
+            out.push_str(",\"name\":");
+            json_string(out, name);
+        }
+        out.push('}');
+    });
+    out.push_str(",\"findings\":");
+    json_list(out, &plugin.findings, |out, finding| {
+        out.push_str("{\"kind\":");
+        json_string(out, finding_label(finding.kind));
+        let _ = write!(out, ",\"hard\":{},\"text\":", finding.hard);
+        json_string(out, &finding.text);
+        out.push('}');
+    });
+    out.push('}');
+}
+
 fn json_api_message(out: &mut String, message: &crate::api::Message) {
     out.push_str("{\"type\":");
     json_string(out, message_label(message.kind));
     out.push_str(",\"text\":");
     json_string(out, message.text.trim());
+    out.push_str(",\"lang\":");
+    json_string(out, &message.lang);
     out.push('}');
 }
 

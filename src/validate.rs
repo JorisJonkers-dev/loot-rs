@@ -47,6 +47,7 @@ pub fn escape_markdown(text: &str) -> String {
 
 fn say(kind: MessageKind, text: &str) -> AppliedMessage {
     AppliedMessage {
+        lang: crate::metadata::DEFAULT_LANGUAGE.to_string(),
         kind,
         content: escape_markdown(text),
     }
@@ -168,6 +169,7 @@ fn requirements(ev: &mut Evaluator, plugin: &Plugin, out: &mut Vec<AppliedMessag
             ),
         };
         out.push(AppliedMessage {
+            lang: crate::metadata::DEFAULT_LANGUAGE.to_string(),
             kind: MessageKind::Error,
             content: with_detail(text, file),
         });
@@ -212,6 +214,7 @@ fn incompatibilities(
             ),
         };
         out.push(AppliedMessage {
+            lang: crate::metadata::DEFAULT_LANGUAGE.to_string(),
             kind: MessageKind::Error,
             content: with_detail(text, file),
         });
@@ -343,6 +346,7 @@ pub fn dirty_message(data: &Cleaning) -> AppliedMessage {
         text = format!("{text} {detail}");
     }
     AppliedMessage {
+        lang: crate::metadata::DEFAULT_LANGUAGE.to_string(),
         kind: MessageKind::Warn,
         content: text,
     }
