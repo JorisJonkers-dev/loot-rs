@@ -168,7 +168,7 @@ impl PluginOverlaps {
         let computed: Vec<Option<Vec<u8>>> = crate::parallel::map(&rows, threads, |&a| {
             let mut row = vec![0u8; n];
             let mut steps = 0u64;
-            for b in a + 1..n {
+            for (b, slot) in row.iter_mut().enumerate().skip(a + 1) {
                 if needs.is_master[a] != needs.is_master[b] {
                     continue;
                 }
@@ -185,7 +185,7 @@ impl PluginOverlaps {
                     steps += cost;
                     cell |= ASSETS_KNOWN | if shared { ASSETS } else { 0 };
                 }
-                row[b] = cell;
+                *slot = cell;
                 if steps > 1 << 20 {
                     if work.fetch_add(steps, AtomicOrdering::Relaxed) + steps > OVERLAP_WORK_BUDGET
                     {
