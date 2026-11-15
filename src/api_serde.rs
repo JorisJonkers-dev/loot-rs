@@ -5,8 +5,8 @@
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 
 use crate::api::{
-    CleaningStatus, DirtyInfo, Finding, Message, OrderingRule, PluginMove, PluginResult, SortMode,
-    SortOutput,
+    CleaningStatus, DirtyInfo, Finding, Message, MoveExplanation, OrderingRule, PluginMove,
+    PluginResult, SortMode, SortOutput,
 };
 
 impl Serialize for Message {
@@ -82,6 +82,36 @@ impl Serialize for PluginMove {
         out.serialize_field("reason", self.reason.label())?;
         out.serialize_field("other", &self.other)?;
         out.serialize_field("indirect", &self.indirect)?;
+        out.serialize_field("reasons", &self.reasons)?;
+        out.end()
+    }
+}
+
+impl Serialize for MoveExplanation {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        struct Via<'a>(&'a str, &'a str);
+        impl Serialize for Via<'_> {
+            fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+                let mut out = serializer.serialize_struct("Via", 2)?;
+                out.serialize_field("before", self.0)?;
+                out.serialize_field("after", self.1)?;
+                out.end()
+            }
+        }
+        let mut out = serializer.serialize_struct("MoveExplanation", 7)?;
+        out.serialize_field("reason", self.reason.label())?;
+        out.serialize_field("other", &self.other)?;
+        out.serialize_field("later", &self.later)?;
+        out.serialize_field("indirect", &self.indirect)?;
+        if let Some((first, second)) = &self.via {
+            out.serialize_field("via", &Via(first, second))?;
+        }
+        if let Some((first, second)) = &self.groups {
+            out.serialize_field("groups", &[first, second])?;
+        }
+        if let Some((first, second)) = self.counts {
+            out.serialize_field("counts", &[first, second])?;
+        }
         out.end()
     }
 }
@@ -127,6 +157,7 @@ impl Serialize for SortOutput {
             out.serialize_field("mode", self.mode.label())?;
             out.serialize_field("moves", &self.moves)?;
         }
+        out.serialize_field("explanations", &self.explanations)?;
         out.serialize_field("hard_violations", &self.hard_violations())?;
         out.end()
     }

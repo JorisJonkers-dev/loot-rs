@@ -352,8 +352,10 @@ fn finding_label(kind: crate::api::FindingKind) -> &'static str {
 /// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `contract` (`loot-sort`), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
 /// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `findings`), `generated_general_messages`,
 /// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
-/// `warnings`, `hard_violations`. A minimal-change sort adds `mode` (`minimal`) and `moves` (`plugin`, `from`, `to`,
-/// `reason`, `other`, `indirect`) before `hard_violations`; a full sort writes neither.
+/// `warnings`, `explanations` (`plugin`, `from`, `to`, `reason`, `other`, `indirect`, `reasons`: each `reason`,
+/// `other`, `later`, `indirect` and, when they apply, `via` (`before`, `after`), `groups` and `counts`),
+/// `hard_violations`. A minimal-change sort adds `mode` (`minimal`) and `moves` (the same shape) before
+/// `explanations`.
 #[must_use]
 pub fn render_sort_json(result: &SortOutput) -> String {
     let mut out = format!(
@@ -449,13 +451,18 @@ pub fn render_sort_json(result: &SortOutput) -> String {
     out
 }
 
-/// The optional keys `mode` and `moves`, written for a minimal-change sort only.
+/// `mode` and `moves` (a minimal-change sort only), then `explanations` (every sort).
 fn json_moves(out: &mut String, result: &SortOutput) {
-    if result.mode != crate::api::SortMode::MinimalChange {
-        return;
+    if result.mode == crate::api::SortMode::MinimalChange {
+        let _ = write!(out, ",\"mode\":\"{}\",\"moves\":", result.mode.label());
+        json_move_list(out, &result.moves);
     }
-    let _ = write!(out, ",\"mode\":\"{}\",\"moves\":", result.mode.label());
-    json_list(out, &result.moves, |out, moved| {
+    out.push_str(",\"explanations\":");
+    json_move_list(out, &result.explanations);
+}
+
+fn json_move_list(out: &mut String, moves: &[crate::api::PluginMove]) {
+    json_list(out, moves, |out, moved| {
         out.push_str("{\"plugin\":");
         json_string(out, &moved.plugin);
         let _ = write!(
@@ -466,8 +473,35 @@ fn json_moves(out: &mut String, result: &SortOutput) {
             moved.reason.label()
         );
         json_string(out, &moved.other);
-        let _ = write!(out, ",\"indirect\":{}}}", moved.indirect);
+        let _ = write!(out, ",\"indirect\":{},\"reasons\":", moved.indirect);
+        json_list(out, &moved.reasons, json_move_reason);
+        out.push('}');
     });
+}
+
+fn json_move_reason(out: &mut String, reason: &crate::api::MoveExplanation) {
+    let _ = write!(out, "{{\"reason\":\"{}\",\"other\":", reason.reason.label());
+    json_string(out, &reason.other);
+    let _ = write!(
+        out,
+        ",\"later\":{},\"indirect\":{}",
+        reason.later, reason.indirect
+    );
+    if let Some((first, second)) = &reason.via {
+        out.push_str(",\"via\":{\"before\":");
+        json_string(out, first);
+        out.push_str(",\"after\":");
+        json_string(out, second);
+        out.push('}');
+    }
+    if let Some((first, second)) = &reason.groups {
+        out.push_str(",\"groups\":");
+        json_strings(out, &[first.clone(), second.clone()]);
+    }
+    if let Some((first, second)) = reason.counts {
+        let _ = write!(out, ",\"counts\":[{first},{second}]");
+    }
+    out.push('}');
 }
 
 fn json_api_message(out: &mut String, message: &crate::api::Message) {
