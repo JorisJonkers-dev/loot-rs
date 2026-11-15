@@ -136,6 +136,12 @@ fn progress_reports_each_stage_in_order_from_zero_with_counts_within_the_total()
         ]
     );
     assert!(seen.iter().all(|progress| progress.done <= progress.total));
+    for pair in seen
+        .windows(2)
+        .filter(|pair| pair[0].stage == pair[1].stage)
+    {
+        assert!(pair[0].done <= pair[1].done, "{pair:?}");
+    }
     for stage in stages {
         let first = seen
             .iter()
