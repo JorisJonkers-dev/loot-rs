@@ -8,6 +8,7 @@ fn message(kind: MessageKind, content: &str) -> AppliedMessage {
     AppliedMessage {
         kind,
         content: content.into(),
+        lang: "en".into(),
     }
 }
 

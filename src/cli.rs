@@ -2,7 +2,7 @@
 //! is testable without spawning the binary.
 
 use crate::api::{Masterlist, PluginSlot, SortMode, SortOptions, Userlist, sort_with};
-use crate::check::{Options, run};
+use crate::check::{Options, run_with_languages};
 use crate::env::{FsEnv, Slot, parse_plugins_txt};
 use crate::{metadata, render};
 use std::fs::File;
@@ -24,7 +24,7 @@ pub const MAX_MASTERLIST_FILE: u64 = metadata::MAX_MASTERLIST_BYTES as u64;
 pub const MAX_PLUGINS_FILE: u64 = 1024 * 1024;
 
 /// The text printed after an argument error.
-pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> [--prelude <file>] [--userlist <file>] --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
+pub const USAGE: &str = "usage: loot-rs check|sort --masterlist <file> [--prelude <file>] [--userlist <file>] [--language <code>]... --plugins <plugins.txt> --data <Data dir> [--game-dir <dir>] [--extra-data <dir>]... [--strict-groups] [--mode full|minimal] [--json]
        loot-rs contracts --json
 
 check: reports the messages that apply, unmet req/inc entries and violated after/group constraints.
@@ -57,6 +57,8 @@ pub struct Args {
     pub prelude: Option<PathBuf>,
     /// A userlist merged over the masterlist (`--userlist`).
     pub userlist: Option<PathBuf>,
+    /// Languages for message text, most wanted first (`--language`, repeated).
+    pub languages: Vec<String>,
     /// The `plugins.txt` that gives the load order.
     pub plugins: PathBuf,
     /// The game's `Data` directory.
@@ -87,6 +89,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
     };
     let (mut masterlist, mut plugins, mut data) = (None, None, None);
     let (mut game_dir, mut extra_data, mut prelude, mut userlist) = (None, Vec::new(), None, None);
+    let mut languages = Vec::new();
     let mut options = Options::default();
     let mut json = false;
     let mut mode = SortMode::Full;
@@ -100,6 +103,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
             "--masterlist" => masterlist = Some(value("--masterlist")?),
             "--prelude" => prelude = Some(value("--prelude")?),
             "--userlist" => userlist = Some(value("--userlist")?),
+            "--language" => languages.push(value("--language")?.to_string_lossy().into_owned()),
             "--plugins" => plugins = Some(value("--plugins")?),
             "--data" => data = Some(value("--data")?),
             "--game-dir" => game_dir = Some(value("--game-dir")?),
@@ -121,6 +125,7 @@ pub fn parse_args(args: &[String]) -> Result<Args, String> {
         masterlist: masterlist.ok_or("--masterlist is required")?,
         prelude,
         userlist,
+        languages,
         plugins: plugins.ok_or("--plugins is required")?,
         data: data.ok_or("--data is required")?,
         game_dir,
@@ -181,7 +186,7 @@ pub fn execute(args: &Args, out: &mut dyn Write) -> Result<u8, String> {
     let env = FsEnv::new(&args.data, slots)
         .with_game_dir(args.game_dir.as_deref())
         .with_additional_data_dirs(&args.extra_data);
-    let mut report = run(&metadata, &env, args.options);
+    let mut report = run_with_languages(&metadata, &env, args.options, &args.languages);
     report.metadata_warnings.extend(env.case_warnings());
     let text = if args.json {
         render::render_json(&report)
@@ -216,6 +221,7 @@ fn execute_sort(
     let mut options = SortOptions::default()
         .with_strict_groups(args.options.strict_groups)
         .with_mode(args.mode)
+        .with_languages(args.languages.iter().cloned())
         .with_additional_data_dirs(args.extra_data.iter());
     options.game_dir.clone_from(&args.game_dir);
     let result = sort_with(

@@ -5,8 +5,8 @@
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 
 use crate::api::{
-    CleaningStatus, DirtyInfo, Finding, Message, MoveExplanation, OrderingRule, PluginMove,
-    PluginResult, SortMode, SortOutput,
+    CleaningStatus, DirtyInfo, Finding, Location, Message, MoveExplanation, OrderingRule,
+    PluginMove, PluginResult, SortMode, SortOutput,
 };
 
 impl Serialize for Message {
@@ -14,6 +14,7 @@ impl Serialize for Message {
         let mut out = serializer.serialize_struct("Message", 2)?;
         out.serialize_field("type", self.kind.label())?;
         out.serialize_field("text", self.text.trim())?;
+        out.serialize_field("lang", &self.lang)?;
         out.end()
     }
 }
@@ -40,6 +41,7 @@ impl Serialize for PluginResult {
         out.serialize_field("bash_tags", &self.bash_tags)?;
         out.serialize_field("tags_add", &self.tags_added)?;
         out.serialize_field("tags_remove", &self.tags_removed)?;
+        out.serialize_field("locations", &self.locations)?;
         out.serialize_field("findings", &self.findings)?;
         out.end()
     }
@@ -111,6 +113,17 @@ impl Serialize for MoveExplanation {
         }
         if let Some((first, second)) = self.counts {
             out.serialize_field("counts", &[first, second])?;
+        }
+        out.end()
+    }
+}
+
+impl Serialize for Location {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut out = serializer.serialize_struct("Location", 2)?;
+        out.serialize_field("url", &self.url)?;
+        if let Some(name) = &self.name {
+            out.serialize_field("name", name)?;
         }
         out.end()
     }

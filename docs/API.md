@@ -71,6 +71,22 @@ within the same second to the same size is not noticed: use a new cache after su
 `Masterlist`, `SortOptions` and `SortCache` are `Send` and `Sync`: one masterlist can be shared by sorts on several
 threads. Speed measurements and the decisions behind them are in [RESOURCE-LIMITS.md](RESOURCE-LIMITS.md).
 
+## Message text: language and Markdown
+
+Message text is CommonMark, as the masterlist writes it and as LOOT's own generated messages are; loot-rs does not
+render it (the caller does). The New Vegas masterlist uses emphasis (`**bold**`, `*italic*`), inline code, links
+(`[text](url)`), and occasionally bulleted lists and line breaks; substitutions (`{0}`, `subs`) are applied before
+the text is returned, and LOOT's generated messages escape Markdown in plugin names.
+
+`SortOptions::languages` (`with_languages(["de", "pt_BR"])`, `--language <code>` on the command line, repeatable) chooses
+the text of a localised message: a message with one text gives that text; otherwise each wanted language in turn by
+libloot's `select_message_content` rule (the text in exactly that language, else the first whose language code matches:
+`pt` for `pt_BR`, `pt_BR` for `pt`); then English; then the first text. `Message::lang` (JSON `lang`) says which was
+chosen; generated messages are `en`.
+
+`PluginResult::locations` (JSON `locations`) are the plugin's `url` entries (a link, or `{link, name}`), each once, the
+userlist's first. They are returned as written and never checked or fetched.
+
 ## The userlist
 
 `api::sort_with(load_order, &masterlist, Some(&userlist), data_dir, &options)` merges a `Userlist`
@@ -293,7 +309,6 @@ additions: no signature changed, and `SortError` is `#[non_exhaustive]`.
 
 * Writing `plugins.txt` or `loadorder.txt` (the caller writes them).
 * Reading a userlist, and with it metadata for the user's own plugins and user rules in the sort.
-* Choosing the language of a message (English, or the first language, is used) and the `url` entries of plugins.
 * A replacement prelude, and the identity (digest, source) of the masterlist.
 * Cancellation and progress of a sort.
 

@@ -29,10 +29,10 @@ Reference: https://loot-api.readthedocs.io (metadata syntax, condition strings).
 | `after` | supported | Violated when the named installed plugin is later in the order. `condition` honoured |
 | `req` | supported | Missing file is a hard violation; a required plugin that loads later is a hard violation. `condition`, `constraint`, `display`, `detail` honoured |
 | `inc` | supported | Present file is a hard violation. Same fields as `req` |
-| `msg` | supported | `type`, `content` (string or localised list: English), `condition`, `subs` |
+| `msg` | supported | `type`, `content` (string or localised list, see Localised content), `condition`, `subs` |
 | `tag` | supported | Scalar and map forms, `-` removal, `condition`; removal beats addition |
 | `dirty`, `clean` | supported | Read (`crc`, `util`, `itm`, `udr`, `nav`, `detail`) and compared with the installed file's CRC-32 in `api::sort`; a `dirty` match gives LOOT's message (`generated_messages`). `check` does not compare |
-| `url` | unsupported | Ignored |
+| `url` | supported | `PluginResult::locations`: links with their names, as written; never fetched |
 | `display`, `detail` on file entries | supported | |
 | `constraint` on file entries | supported | |
 
@@ -108,9 +108,9 @@ checked against libloot's own unit tests and its documentation.
 | Item | Status | Notes |
 | --- | --- | --- |
 | Message types `say`, `warn`, `error` | supported | |
-| Localised content | partial | English (or the first language) only |
+| Localised content | supported | `SortOptions::languages`: libloot's `select_message_content` per language, then English, then the first text; compared with libloot on random worlds with regional codes |
 | `subs` substitution | supported | `{0}`, `{1}`, ... |
-| CommonMark rendering | unsupported | Text is printed as written |
+| CommonMark rendering | not applicable | Text is returned as CommonMark; the caller renders it (see API.md) |
 
 ## Load order input
 

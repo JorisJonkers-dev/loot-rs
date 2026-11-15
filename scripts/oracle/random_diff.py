@@ -71,6 +71,12 @@ def message(rng: random.Random, names: list[str]) -> dict:
         entry["subs"] = [rng.choice(names), "[the page](http://example.invalid/x)"]
     elif roll < 0.35:
         entry["content"] = [{"lang": "de", "text": "deutsch " + words}, {"lang": "en", "text": words}]
+    elif roll < 0.42:
+        # Several languages, with regional codes, for the language selection (see `language` in `world`).
+        langs = rng.sample(["en", "fr", "fr_CA", "pt", "pt_BR", "pt_PT", "de_AT"], rng.randint(2, 4))
+        if "en" not in langs:
+            langs[rng.randrange(len(langs))] = "en"
+        entry["content"] = [{"lang": lang, "text": f"{lang} {words}"} for lang in langs]
     elif roll < 0.5:
         entry["content"] = f"**{words}** with [a link](http://example.invalid/y)"
     else:
@@ -178,6 +184,8 @@ def world(rng: random.Random, most: int = 12) -> dict:
     add_metadata(random.Random(rng.random()), result)
     if rng.random() < 0.5:
         result["user"] = user_metadata(random.Random(rng.random()), plugins, list(group_after))
+    if rng.random() < 0.5:
+        result["language"] = rng.choice(["de", "fr", "fr_FR", "pt", "pt_BR", "it"])
     return result
 
 
@@ -233,6 +241,8 @@ def tool_env(root: Path) -> dict:
     env = {**os.environ, "LIBLOOT_DRIVER_EXTRA_DATA": str(root / "Extra")}
     if (root / "userlist.yaml").exists():
         env["LIBLOOT_DRIVER_USERLIST"] = str(root / "userlist.yaml")
+    if (root / "language.txt").exists():
+        env["LIBLOOT_DRIVER_LANGUAGE"] = (root / "language.txt").read_text()
     return env
 
 
@@ -322,6 +332,8 @@ def write(w: dict, root: Path) -> list[str]:
     (root / "masterlist.yaml").write_text("\n".join(lines) + "\n")
     if w.get("user"):
         write_userlist(w["user"], root / "userlist.yaml")
+    if w.get("language"):
+        (root / "language.txt").write_text(w["language"])
     order = ["FalloutNV.esm"] + w["order"]
     (root / "plugins.txt").write_text("\n".join(order) + "\n")
     (root / "local").mkdir()
@@ -333,7 +345,8 @@ def run_ours_json(binary: str, root: Path, extra: list[str] | None = None) -> di
     done = subprocess.run(
         [binary, "sort", "--masterlist", str(root / "masterlist.yaml"), "--plugins", str(root / "plugins.txt"),
          "--data", str(root / "Data"), "--extra-data", str(root / "Extra"), *(extra or []), "--json",
-         *(["--userlist", str(root / "userlist.yaml")] if (root / "userlist.yaml").exists() else [])],
+         *(["--userlist", str(root / "userlist.yaml")] if (root / "userlist.yaml").exists() else []),
+         *(["--language", (root / "language.txt").read_text()] if (root / "language.txt").exists() else [])],
         capture_output=True, text=True, check=False,
     )
     if done.returncode in (0, 1):
