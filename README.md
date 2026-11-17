@@ -25,6 +25,19 @@ that apply, the findings, and the cleaning data that matches the installed files
 manager. It reads files and writes nothing. See [docs/API.md](docs/API.md) for the contract, the sorting algorithm (a
 port of libloot's plugin graph, see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)) and the semver policy.
 
+## Packages
+
+The `loot-rs` program is published on each release as an OCI package on ghcr.io:
+
+`ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:<version>-x86_64-unknown-linux-gnu`
+
+where `<version>` is the release tag without the leading `v`. The package is a `tar.gz` archive with the binary and
+`LICENSE`. Verify it with:
+
+```sh
+gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:<version>-x86_64-unknown-linux-gnu --repo JorisJonkers-dev/loot-rs
+```
+
 ## Use (command line)
 
 `loot-rs sort` takes the same arguments as `check` and prints the load order sorted with LOOT's algorithm (see
