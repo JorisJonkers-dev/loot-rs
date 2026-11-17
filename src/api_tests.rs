@@ -821,3 +821,123 @@ fn a_message_guarded_by_a_plugin_version_is_applied_from_the_description() {
     assert_eq!(texts, ["new enough"]);
     assert!(a.findings.is_empty(), "{:?}", a.findings);
 }
+
+#[test]
+fn the_home_directory_is_written_as_a_tilde_only_where_a_path_starts_with_it() {
+    let home = "/home/someone";
+    assert_eq!(
+        tilde("/home/someone/Data: not a directory", home),
+        "~/Data: not a directory"
+    );
+    assert_eq!(tilde("in /home/someone", home), "in ~");
+    assert_eq!(
+        tilde("/mnt/home/someone/Data", home),
+        "/mnt/home/someone/Data"
+    );
+    assert_eq!(tilde("/home/someone2/Data", home), "/home/someone2/Data");
+    assert_eq!(
+        tilde("a /home/someone/x and /home/someone/y", home),
+        "a ~/x and ~/y"
+    );
+}
+
+#[test]
+fn a_home_directory_that_ends_with_a_slash_is_written_as_a_tilde() {
+    let home = trim_home("/home/someone/");
+    assert_eq!(tilde("/home/someone/Data", &home), "~/Data");
+    assert_eq!(tilde("/home/someone", &home), "~");
+}
+
+#[test]
+fn a_home_directory_that_is_the_root_replaces_nothing() {
+    assert_eq!(
+        tilde("/Data: not a directory", &trim_home("/")),
+        "/Data: not a directory"
+    );
+}
+
+#[test]
+fn an_empty_home_directory_replaces_nothing() {
+    assert_eq!(
+        tilde("/Data: not a directory", ""),
+        "/Data: not a directory"
+    );
+}
+
+#[test]
+fn a_home_directory_is_written_as_a_tilde_next_to_text_that_is_not_ascii() {
+    let home = "/home/jörg";
+    assert_eq!(
+        tilde("/home/jörg/Data: läuft nicht", home),
+        "~/Data: läuft nicht"
+    );
+    assert_eq!(tilde("ä/home/jörg/Data", home), "ä/home/jörg/Data");
+}
+
+#[test]
+fn a_home_directory_at_the_end_of_the_text_is_written_as_a_tilde() {
+    assert_eq!(tilde("in /home/someone", "/home/someone"), "in ~");
+    assert_eq!(tilde("/home/someone", "/home/someone"), "~");
+}
+
+#[test]
+fn a_home_directory_inside_a_longer_path_is_left_alone() {
+    assert_eq!(
+        tilde("x/home/someone/Data", "/home/someone"),
+        "x/home/someone/Data"
+    );
+}
+
+#[test]
+fn a_home_directory_is_not_matched_inside_a_longer_word() {
+    assert_eq!(
+        tilde("see/home/someone/Data", "/home/someone"),
+        "see/home/someone/Data"
+    );
+}
+
+#[test]
+fn a_home_directory_that_is_a_prefix_of_a_longer_name_is_left_alone() {
+    assert_eq!(
+        tilde("/home/someone_2/Data", "/home/someone"),
+        "/home/someone_2/Data"
+    );
+}
+
+#[test]
+fn every_home_directory_of_the_text_is_written_as_a_tilde() {
+    assert_eq!(
+        tilde("/home/x/a, /home/x/b, /home/x/c", "/home/x"),
+        "~/a, ~/b, ~/c"
+    );
+}
+
+#[test]
+fn text_without_the_home_directory_is_returned_unchanged() {
+    assert_eq!(
+        tilde("nothing to see here", "/home/someone"),
+        "nothing to see here"
+    );
+}
+
+#[test]
+fn a_home_directory_is_written_as_a_tilde_where_a_path_starts_after_a_colon() {
+    assert_eq!(
+        tilde("Data: /home/someone/Data", "/home/someone"),
+        "Data: ~/Data"
+    );
+}
+
+#[test]
+fn copy_text_names_the_version_and_the_code_before_the_message() {
+    let text = copy_text("internal", &"something broke");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            format!("loot-rs {API_VERSION}").as_str(),
+            "error: internal",
+            "something broke"
+        ]
+    );
+}
