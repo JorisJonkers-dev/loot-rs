@@ -111,6 +111,65 @@ impl fmt::Display for MasterlistError {
 
 impl std::error::Error for MasterlistError {}
 
+impl MasterlistError {
+    /// A stable code for the variant: `masterlist-io` or `masterlist-invalid`. A code never changes meaning.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::Io(_) => "masterlist-io",
+            Self::Invalid(_) => "masterlist-invalid",
+        }
+    }
+
+    /// The error as one block of plain text a person can copy into a bug report; see [`copy_text`].
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        copy_text(self.code(), self)
+    }
+}
+
+/// The version of this library API: the crate version, which every release's notes and tag carry. It follows
+/// semantic versioning (see the module documentation).
+pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// One block of plain text for an error, to show and to copy into a bug report: `loot-rs <version>`, the stable
+/// `code` and the message, on three lines. The home directory in the message is written as `~`. It never contains
+/// a command line.
+#[must_use]
+pub fn copy_text(code: &str, error: &dyn fmt::Display) -> String {
+    let message = error.to_string();
+    let message = match std::env::var("HOME") {
+        Ok(home) if home.len() > 1 => tilde(&message, home.trim_end_matches('/')),
+        _ => message,
+    };
+    format!("loot-rs {API_VERSION}\nerror: {code}\n{message}")
+}
+
+/// `text` with every `home` that starts a path (not inside a longer path, and followed by `/` or the end of a word)
+/// written as `~`.
+fn tilde(text: &str, home: &str) -> String {
+    let path_char = |c: char| c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '~');
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(home) {
+        let after = &rest[at + home.len()..];
+        out.push_str(&rest[..at]);
+        let starts = !out.chars().next_back().is_some_and(path_char);
+        let ends = after
+            .chars()
+            .next()
+            .is_none_or(|c| c == '/' || !path_char(c));
+        if starts && ends {
+            out.push('~');
+        } else {
+            out.push_str(home);
+        }
+        rest = after;
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Most bytes read from a `.metadata.toml` file.
 const MAX_SOURCE_FILE: u64 = 64 * 1024;
 
@@ -1169,6 +1228,14 @@ impl fmt::Display for SortError {
 
 impl std::error::Error for SortError {}
 
+impl SortError {
+    /// The error as one block of plain text a person can copy into a bug report; see [`copy_text`].
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        copy_text(self.code(), self)
+    }
+}
+
 fn matching<'a>(metadata: &'a Metadata, name: &str) -> Vec<&'a PluginEntry> {
     metadata.entries_for(name)
 }
@@ -1356,6 +1423,129 @@ pub fn sort_with(
     Ok(output)
 }
 
+/// The result of [`check`]: what the masterlist and LOOT's own checks say about the load order as given.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CheckOutput {
+    /// One entry per installed plugin, in the order given.
+    pub plugins: Vec<PluginResult>,
+    /// Messages of the masterlist that apply to no plugin in particular.
+    pub general_messages: Vec<Message>,
+    /// Messages LOOT generates about the load order as a whole (more active plugins than the game supports).
+    pub generated_general_messages: Vec<Message>,
+    /// Cleaning data that matches installed files.
+    pub dirty: Vec<DirtyInfo>,
+    /// Plugins of the load order that are not in the data directories.
+    pub not_installed: Vec<String>,
+    /// Things that were skipped: unreadable plugin headers, duplicate names, directories that are not ones.
+    pub warnings: Vec<String>,
+}
+
+impl CheckOutput {
+    /// Findings that fail a check (`hard`), over every plugin.
+    #[must_use]
+    pub fn hard_violations(&self) -> usize {
+        self.plugins
+            .iter()
+            .flat_map(|plugin| &plugin.findings)
+            .filter(|finding| finding.hard)
+            .count()
+    }
+}
+
+/// Check a load order as it is, without sorting it: the messages, Bash Tags, cleaning data and findings (unmet
+/// `req`, present `inc`, violated `after` and group rules) of every installed plugin in the order given. This is
+/// what `loot-rs check` reports. `userlist`, when given, is merged over the masterlist as in [`sort_with`].
+///
+/// `options` supplies the languages, `strict_groups`, the game and additional data directories, the cancel token,
+/// the progress hook (stages [`Stage::ReadingPlugins`] and [`Stage::Checking`]) and the skip switches; the mode,
+/// the threads beyond reading headers and the cache do not matter. Nothing is written.
+///
+/// # Errors
+/// [`SortError::DataDirectory`], [`SortError::TooManyPlugins`] or [`SortError::Cancelled`].
+pub fn check(
+    load_order: &[PluginSlot],
+    masterlist: &Masterlist,
+    userlist: Option<&Userlist>,
+    data_dir: &Path,
+    options: &SortOptions,
+) -> Result<CheckOutput, SortError> {
+    if !data_dir.is_dir() {
+        return Err(SortError::DataDirectory(data_dir.to_path_buf()));
+    }
+    if load_order.len() > MAX_PLUGINS * 4 {
+        return Err(SortError::TooManyPlugins(load_order.len()));
+    }
+    let merged = userlist.map(|userlist| metadata::merge(&userlist.metadata, &masterlist.metadata));
+    let metadata = merged.as_ref().unwrap_or(&masterlist.metadata);
+    let mut output = SortOutput::default();
+    let slots = distinct_slots(load_order, &mut output.warnings);
+    let env = search_env(data_dir, slots, options);
+    check_directories(&env, options, &mut output.warnings);
+    let installed: Vec<&Slot> = env
+        .slots()
+        .iter()
+        .filter(|slot| env.installed(&slot.name))
+        .collect();
+    output.not_installed = env
+        .slots()
+        .iter()
+        .filter(|slot| !env.installed(&slot.name))
+        .map(|slot| slot.name.clone())
+        .collect();
+    if installed.len() > MAX_PLUGINS {
+        return Err(SortError::TooManyPlugins(installed.len()));
+    }
+    let threads = parallel::threads(options.threads);
+    let hook = options.progress.as_ref();
+    let reading = Reporter::start(hook, Stage::ReadingPlugins, installed.len());
+    let facts = all_facts(
+        &env,
+        metadata,
+        &installed,
+        threads,
+        options,
+        &mut output.warnings,
+    );
+    for _ in &facts {
+        reading.tick();
+    }
+    check_cancel(options)?;
+    let checking = Reporter::start(hook, Stage::Checking, 1);
+    if !options.skip_checksums {
+        prefetch_checksums(&facts, &env, threads, options.cancel.as_ref());
+    }
+    check_cancel(options)?;
+    let report = check::run_with_languages(
+        metadata,
+        &env,
+        check::Options {
+            strict_groups: options.strict_groups,
+        },
+        &options.languages,
+    );
+    check_cancel(options)?;
+    let order: Vec<usize> = (0..facts.len()).collect();
+    describe(
+        &mut output,
+        metadata,
+        &facts,
+        &order,
+        &env,
+        &report,
+        options.skip_checksums,
+    );
+    checking.tick();
+    Ok(CheckOutput {
+        plugins: output.plugins,
+        general_messages: output.general_messages,
+        generated_general_messages: output.generated_general_messages,
+        dirty: output.dirty,
+        not_installed: output.not_installed,
+        warnings: output.warnings,
+    })
+}
+
 fn group_inputs(metadata: &Metadata) -> Vec<GroupInput> {
     metadata
         .groups
@@ -1461,6 +1651,14 @@ impl fmt::Display for EvaluateError {
 }
 
 impl std::error::Error for EvaluateError {}
+
+impl EvaluateError {
+    /// The error as one block of plain text a person can copy into a bug report; see [`copy_text`].
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        copy_text(self.code(), self)
+    }
+}
 
 /// Evaluate one LOOT condition string (for example `file("NVSE/nvse_1_4.dll") and not active("Old.esp")`) against
 /// a load order and its data directory, as [`sort`] evaluates the masterlist's conditions: a tester for a doctor

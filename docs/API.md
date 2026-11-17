@@ -56,6 +56,25 @@ the master flag that has to load before one with it), `GroupCycle(groups)` (grou
 `TooMuchWork`, `Internal(text)` (a check inside the sorter failed: a bug). A masterlist condition that cannot be evaluated is not an error: the item is left
 out and reported.
 
+## `check(load_order, masterlist, userlist, data_dir, options) -> Result<CheckOutput, SortError>`
+
+What `loot-rs check` reports, for the load order as given and without sorting it: one `PluginResult` per installed
+plugin in the given order (messages, generated messages, Bash Tags, findings such as an unmet `req`, a present `inc`
+or a violated `after` or group rule), `general_messages`, `generated_general_messages`, `dirty`, `not_installed` and
+`warnings`; `hard_violations()` counts the hard findings. `userlist` is merged as in `sort_with`. It takes the same
+`SortOptions` (languages, `strict_groups`, directories, cancel, progress with the stages `ReadingPlugins` and
+`Checking`, the skip switches) and returns `DataDirectory`, `TooManyPlugins` or `Cancelled`.
+
+## Errors to show and copy
+
+`SortError`, `MasterlistError` and `EvaluateError` each have `code()`, a stable code (`MasterlistError`:
+`masterlist-io`, `masterlist-invalid`), a `Display` message in plain words, and `copy_text()`: one block of three lines,
+`loot-rs <version>`, `error: <code>` and the message, with the home directory written as `~`. It never contains a
+command line. `api::copy_text(code, error)` builds the same block for any message.
+
+No library function prints or ends the process: the command line writes to the writers it is given and only
+`main.rs` turns the result into an exit code (`tests/no_print.rs` checks the sources).
+
 ## Threads and the cache
 
 `sort` reads plugin headers, records, archive tables and checksums, and compares the plugins' records and archive
@@ -285,6 +304,8 @@ for this mode. New optional keys do not raise `schema_version`, which stays 1, a
 
 ## Versioning
 
+* `api::API_VERSION` is the version of this API: the crate version. Each release's tag (`vX.Y.Z`), its GitHub release
+  and its `CHANGELOG.md` section carry it, and a breaking change raises it as described below.
 * The crate follows semantic versioning; while it is 0.x a minor release may break the API and a patch release never
   does. The release pull requests are made by release-please from the Conventional Commit titles, so a breaking
   change is written as `feat!:` or has a `BREAKING CHANGE:` footer.
@@ -308,9 +329,6 @@ additions: no signature changed, and `SortError` is `#[non_exhaustive]`.
 ## Not in the API yet
 
 * Writing `plugins.txt` or `loadorder.txt` (the caller writes them).
-* Reading a userlist, and with it metadata for the user's own plugins and user rules in the sort.
-* A replacement prelude, and the identity (digest, source) of the masterlist.
-* Cancellation and progress of a sort.
 
 Everything else that is missing is listed in [COMPATIBILITY.md](COMPATIBILITY.md).
 

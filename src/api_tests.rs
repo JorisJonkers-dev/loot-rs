@@ -821,3 +821,36 @@ fn a_message_guarded_by_a_plugin_version_is_applied_from_the_description() {
     assert_eq!(texts, ["new enough"]);
     assert!(a.findings.is_empty(), "{:?}", a.findings);
 }
+
+#[test]
+fn the_home_directory_is_written_as_a_tilde_only_where_a_path_starts_with_it() {
+    let home = "/home/someone";
+    assert_eq!(
+        tilde("/home/someone/Data: not a directory", home),
+        "~/Data: not a directory"
+    );
+    assert_eq!(tilde("in /home/someone", home), "in ~");
+    assert_eq!(
+        tilde("/mnt/home/someone/Data", home),
+        "/mnt/home/someone/Data"
+    );
+    assert_eq!(tilde("/home/someone2/Data", home), "/home/someone2/Data");
+    assert_eq!(
+        tilde("a /home/someone/x and /home/someone/y", home),
+        "a ~/x and ~/y"
+    );
+}
+
+#[test]
+fn copy_text_names_the_version_and_the_code_before_the_message() {
+    let text = copy_text("internal", &"something broke");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(
+        lines,
+        [
+            format!("loot-rs {API_VERSION}").as_str(),
+            "error: internal",
+            "something broke"
+        ]
+    );
+}
