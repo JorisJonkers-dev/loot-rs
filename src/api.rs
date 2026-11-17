@@ -111,6 +111,75 @@ impl fmt::Display for MasterlistError {
 
 impl std::error::Error for MasterlistError {}
 
+impl MasterlistError {
+    /// A stable code for the variant: `masterlist-io` or `masterlist-invalid`. A code never changes meaning.
+    #[must_use]
+    pub const fn code(&self) -> &'static str {
+        match self {
+            Self::Io(_) => "masterlist-io",
+            Self::Invalid(_) => "masterlist-invalid",
+        }
+    }
+
+    /// The error as one block of plain text a person can copy into a bug report; see [`copy_text`].
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        copy_text(self.code(), self)
+    }
+}
+
+/// The version of this library API: the crate version, which every release's notes and tag carry. It follows
+/// semantic versioning (see the module documentation).
+pub const API_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// One block of plain text for an error, to show and to copy into a bug report: `loot-rs <version>`, the stable
+/// `code` and the message, on three lines. The home directory in the message is written as `~`, as `$HOME` names it
+/// (without trailing `/`; without `$HOME`, or when it is `/`, nothing is replaced). It never contains a command line.
+#[must_use]
+pub fn copy_text(code: &str, error: &dyn fmt::Display) -> String {
+    let message = error.to_string();
+    let message = match std::env::var("HOME") {
+        Ok(home) => tilde(&message, &trim_home(&home)),
+        Err(_) => message,
+    };
+    format!("loot-rs {API_VERSION}\nerror: {code}\n{message}")
+}
+
+/// `home` as [`copy_text`] matches it: without trailing `/` (as `$HOME` may end with one), and empty when that leaves
+/// nothing, so that `/` (the root, not a home directory) replaces nothing.
+fn trim_home(home: &str) -> String {
+    home.trim_end_matches('/').to_string()
+}
+
+/// `text` with every `home` that starts a path (not inside a longer path, and followed by `/` or the end of a word)
+/// written as `~`. An empty `home` (or `/`, which has no trailing `/` to trim) replaces nothing.
+fn tilde(text: &str, home: &str) -> String {
+    if home.is_empty() {
+        return text.to_string();
+    }
+    // What can follow a path in a message: a character that is not part of one, or the end of the text. A name that
+    // continues the path (`/home/someone2`) does not count.
+    let path_char = |c: char| c.is_alphanumeric() || matches!(c, '/' | '.' | '_' | '-' | '~');
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find(home) {
+        out.push_str(&rest[..at]);
+        rest = &rest[at + home.len()..];
+        let starts = !out.chars().next_back().is_some_and(path_char);
+        let ends = rest
+            .chars()
+            .next()
+            .is_none_or(|c| c == '/' || !path_char(c));
+        if starts && ends {
+            out.push('~');
+        } else {
+            out.push_str(home);
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Most bytes read from a `.metadata.toml` file.
 const MAX_SOURCE_FILE: u64 = 64 * 1024;
 
@@ -464,7 +533,8 @@ pub struct SortOptions {
     /// Set it (from any thread) to stop the sort: it returns [`SortError::Cancelled`] soon after, having written
     /// nothing and left no threads running. Checked before each file and inside the graph search.
     pub cancel: Option<CancelToken>,
-    /// Called with the stage and counts as the sort goes, from the sort's threads (see [`Progress`]).
+    /// Called with the stage and counts as the sort goes, from the sort's threads (see [`Progress`]); [`check`]
+    /// reports only the stages it has.
     pub progress: Option<ProgressHook>,
     /// Languages for message text, most wanted first (`de`, `pt_BR`, ...): each in turn by libloot's rule (the
     /// language itself, or one with the same language code), then English, then the first text. Empty (the default):
@@ -604,7 +674,8 @@ pub enum Stage {
     ComparingPlugins,
     /// The graph sort; `total` is 1.
     Sorting,
-    /// The masterlist's messages, findings and checksums over the sorted order; `total` is 1.
+    /// The masterlist's messages, findings and checksums over the sorted order (over the order given, for
+    /// [`check`]); `total` is 1.
     Checking,
 }
 
@@ -1107,9 +1178,8 @@ pub struct CycleLink {
 
 impl SortError {
     /// A stable code for the variant, for programs and translations: `data-directory`, `too-many-plugins`,
-    /// `conflict`, `master-order`, `group-cycle`, `too-much-work`, `internal`, `cancelled` or
-    /// `rule-cycle`. A code never changes
-    /// meaning; a new variant gets a new code.
+    /// `conflict`, `master-order`, `group-cycle`, `too-much-work`, `internal`, `cancelled` or `rule-cycle`. A code
+    /// never changes meaning; a new variant gets a new code.
     #[must_use]
     pub const fn code(&self) -> &'static str {
         match self {
@@ -1168,6 +1238,14 @@ impl fmt::Display for SortError {
 }
 
 impl std::error::Error for SortError {}
+
+impl SortError {
+    /// The error as one block of plain text a person can copy into a bug report; see [`copy_text`].
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        copy_text(self.code(), self)
+    }
+}
 
 fn matching<'a>(metadata: &'a Metadata, name: &str) -> Vec<&'a PluginEntry> {
     metadata.entries_for(name)
@@ -1274,6 +1352,7 @@ pub fn sort_with(
 
     let threads = parallel::threads(options.threads);
     let hook = options.progress.as_ref();
+    // The records of every plugin tick this stage, the headers are read with it.
     let reading = Reporter::start(hook, Stage::ReadingPlugins, installed.len());
     let facts = all_facts(
         &env,
@@ -1282,6 +1361,7 @@ pub fn sort_with(
         threads,
         options,
         &mut output.warnings,
+        &|| {},
     );
     check_cancel(options)?;
     let rules = rules(&env, metadata, &facts, &mut output.warnings);
@@ -1354,6 +1434,146 @@ pub fn sort_with(
     );
     checking.tick();
     Ok(output)
+}
+
+/// The result of [`check`]: what the masterlist and LOOT's own checks say about the load order as given.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct CheckOutput {
+    /// One entry per installed plugin, in the order given.
+    pub plugins: Vec<PluginResult>,
+    /// Messages of the masterlist that apply to no plugin in particular.
+    pub general_messages: Vec<Message>,
+    /// Messages LOOT generates about the load order as a whole (more active plugins than the game supports).
+    pub generated_general_messages: Vec<Message>,
+    /// Problems of a general message whose condition could not be evaluated, so the message was not applied.
+    pub general_findings: Vec<Finding>,
+    /// Cleaning data that matches installed files.
+    pub dirty: Vec<DirtyInfo>,
+    /// Plugins of the load order that are not in the data directories, in the order given.
+    pub not_installed: Vec<String>,
+    /// Things that were skipped: masterlist and userlist entries the metadata reader left out, unreadable plugin
+    /// headers, duplicate names, directories that are not ones.
+    pub warnings: Vec<String>,
+}
+
+impl CheckOutput {
+    /// Findings that fail a check (`hard`), over every plugin and the general findings.
+    #[must_use]
+    pub fn hard_violations(&self) -> usize {
+        self.plugins
+            .iter()
+            .flat_map(|plugin| &plugin.findings)
+            .chain(&self.general_findings)
+            .filter(|finding| finding.hard)
+            .count()
+    }
+}
+
+/// Check a load order as it is, without sorting it: the messages, Bash Tags, cleaning data and findings (unmet
+/// `req`, present `inc`, violated `after` and group rules) of every installed plugin in the order given. This is
+/// what `loot-rs check` reports. `userlist`, when given, is merged over the masterlist as in [`sort_with`].
+///
+/// `options` supplies the languages, `strict_groups`, the game and additional data directories, the cancel token,
+/// the progress hook (stages [`Stage::ReadingPlugins`], one tick per plugin whose header was looked at, and
+/// [`Stage::Checking`]) and the skip switches; the mode, the threads beyond reading headers and the cache do not
+/// matter. Nothing is written. [`CheckOutput::warnings`] holds what `loot-rs check` lists as notes: the entries the
+/// masterlist and the userlist left out, duplicate names, directories that are not ones and unreadable headers.
+///
+/// # Errors
+/// [`SortError::DataDirectory`], [`SortError::TooManyPlugins`] or [`SortError::Cancelled`].
+pub fn check(
+    load_order: &[PluginSlot],
+    masterlist: &Masterlist,
+    userlist: Option<&Userlist>,
+    data_dir: &Path,
+    options: &SortOptions,
+) -> Result<CheckOutput, SortError> {
+    if !data_dir.is_dir() {
+        return Err(SortError::DataDirectory(data_dir.to_path_buf()));
+    }
+    if load_order.len() > MAX_PLUGINS * 4 {
+        return Err(SortError::TooManyPlugins(load_order.len()));
+    }
+    let merged = userlist.map(|userlist| metadata::merge(&userlist.metadata, &masterlist.metadata));
+    let metadata = merged.as_ref().unwrap_or(&masterlist.metadata);
+    let mut warnings = metadata.warnings.clone();
+    let slots = distinct_slots(load_order, &mut warnings);
+    let env = search_env(data_dir, slots, options);
+    check_directories(&env, options, &mut warnings);
+    // Installed-ness is decided once for every listed plugin, so the two lists below cannot disagree.
+    let found: Vec<bool> = env
+        .slots()
+        .iter()
+        .map(|slot| env.installed(&slot.name))
+        .collect();
+    let installed: Vec<&Slot> = env
+        .slots()
+        .iter()
+        .zip(&found)
+        .filter(|&(_, &present)| present)
+        .map(|(slot, _)| slot)
+        .collect();
+    let not_installed: Vec<String> = env
+        .slots()
+        .iter()
+        .zip(&found)
+        .filter(|&(_, &present)| !present)
+        .map(|(slot, _)| slot.name.clone())
+        .collect();
+    if installed.len() > MAX_PLUGINS {
+        return Err(SortError::TooManyPlugins(installed.len()));
+    }
+    let threads = parallel::threads(options.threads);
+    let hook = options.progress.as_ref();
+    // No stage between reading the headers and the checks: the first stage ends with `done == total`.
+    let reading = Reporter::start(hook, Stage::ReadingPlugins, installed.len());
+    let facts = all_facts(
+        &env,
+        metadata,
+        &installed,
+        threads,
+        options,
+        &mut warnings,
+        &|| reading.tick(),
+    );
+    check_cancel(options)?;
+    let checking = Reporter::start(hook, Stage::Checking, 1);
+    if !options.skip_checksums {
+        prefetch_checksums(&facts, &env, threads, options.cancel.as_ref());
+    }
+    check_cancel(options)?;
+    let report = check::run_with_languages(
+        metadata,
+        &env,
+        check::Options {
+            strict_groups: options.strict_groups,
+        },
+        &options.languages,
+    );
+    check_cancel(options)?;
+    // The plugins are checked in the order given, so the places are that order.
+    let order: Vec<usize> = (0..facts.len()).collect();
+    let mut output = SortOutput::default();
+    describe(
+        &mut output,
+        metadata,
+        &facts,
+        &order,
+        &env,
+        &report,
+        options.skip_checksums,
+    );
+    checking.tick();
+    Ok(CheckOutput {
+        plugins: output.plugins,
+        general_messages: output.general_messages,
+        generated_general_messages: output.generated_general_messages,
+        general_findings: findings(&report.general),
+        dirty: output.dirty,
+        not_installed,
+        warnings,
+    })
 }
 
 fn group_inputs(metadata: &Metadata) -> Vec<GroupInput> {
@@ -1462,6 +1682,14 @@ impl fmt::Display for EvaluateError {
 
 impl std::error::Error for EvaluateError {}
 
+impl EvaluateError {
+    /// The error as one block of plain text a person can copy into a bug report; see [`copy_text`].
+    #[must_use]
+    pub fn copy_text(&self) -> String {
+        copy_text(self.code(), self)
+    }
+}
+
 /// Evaluate one LOOT condition string (for example `file("NVSE/nvse_1_4.dll") and not active("Old.esp")`) against
 /// a load order and its data directory, as [`sort`] evaluates the masterlist's conditions: a tester for a doctor
 /// command. An empty condition is true. `options` supplies the game and additional data directories and the
@@ -1560,6 +1788,8 @@ fn describe(
         .iter()
         .map(|group| group.name.as_str())
         .collect();
+    // The group LOOT generates a message about: the first one the entries set, as the check takes it. The message
+    // asks whether the groups define it, so a group the userlist sets is defined by the merge.
     output.plugins = report
         .plugins
         .iter()
@@ -1580,7 +1810,7 @@ fn describe(
                     header: fact.header.as_ref(),
                     entries: &fact.entries,
                     groups: &defined,
-                    group: fact.entries.iter().find_map(|entry| entry.group.as_deref()),
+                    group: named_group(&fact.entries),
                     dirty: &dirty,
                 },
             );
@@ -1628,7 +1858,9 @@ fn read_all_records(
 }
 
 /// The files of the archives each installed plugin loads (see `load::read_assets`). As libloot does, archives are
-/// taken from every directory searched, the additional ones first.
+/// taken from every directory searched, the additional ones first. The stage is reported per archive, and the
+/// archives are read on `threads` threads, except when the caller cancelled: then one after the other, so that the
+/// sort stops at the first archive.
 fn read_all_assets(
     env: &FsEnv,
     data_dir: &Path,
@@ -1654,6 +1886,11 @@ fn read_all_assets(
         Stage::ReadingArchives,
         distinct.len(),
     );
+    let threads = if parallel::cancelled(options.cancel.as_ref()) {
+        1
+    } else {
+        threads
+    };
     let hooks = load::Hooks {
         cancel: options.cancel.as_ref(),
         done: &|| reporter.tick(),
@@ -1944,7 +2181,9 @@ fn distinct_slots(load_order: &[PluginSlot], warnings: &mut Vec<String>) -> Vec<
     slots
 }
 
-/// The facts of every installed plugin, with the headers read on `threads` threads.
+/// The facts of every installed plugin, with the headers read on `threads` threads; `done` is called once per header
+/// looked at, from the thread that looked at it. When the caller cancelled, the headers are looked at one after the
+/// other, so that a cancelled check stops at the first one instead of reading the whole load order.
 fn all_facts<'a>(
     env: &FsEnv,
     metadata: &'a Metadata,
@@ -1952,15 +2191,25 @@ fn all_facts<'a>(
     threads: usize,
     options: &SortOptions,
     warnings: &mut Vec<String>,
+    done: &(dyn Fn() + Sync),
 ) -> Vec<Facts<'a>> {
     let paths: Vec<Option<PathBuf>> = installed
         .iter()
         .map(|slot| env.resolve(&slot.name))
         .collect();
-    let headers = parallel::map(&paths, threads, |path| match path {
-        _ if parallel::cancelled(options.cancel.as_ref()) => Err(io_error("cancelled")),
-        Some(path) => plugin::read_header(path),
-        None => Err(io_error("not found")),
+    let threads = if parallel::cancelled(options.cancel.as_ref()) {
+        1
+    } else {
+        threads
+    };
+    let headers = parallel::map(&paths, threads, |path| {
+        let header = match path {
+            _ if parallel::cancelled(options.cancel.as_ref()) => Err(io_error("cancelled")),
+            Some(path) => plugin::read_header(path),
+            None => Err(io_error("not found")),
+        };
+        done();
+        header
     });
     installed
         .iter()
@@ -2130,19 +2379,23 @@ fn plugin_result(
         messages: messages(&plugin.messages),
         tags_added: plugin.tags_add.clone(),
         tags_removed: plugin.tags_remove.clone(),
-        findings: plugin
-            .findings
-            .iter()
-            .map(|finding| Finding {
-                kind: finding.kind.into(),
-                text: finding.text.clone(),
-                hard: finding.hard,
-            })
-            .collect(),
+        findings: findings(&plugin.findings),
         generated_messages: messages(generated),
         bash_tags,
         locations: Vec::new(),
     }
+}
+
+/// The findings of a check report, for the API.
+fn findings(found: &[check::Finding]) -> Vec<Finding> {
+    found
+        .iter()
+        .map(|finding| Finding {
+            kind: finding.kind.into(),
+            text: finding.text.clone(),
+            hard: finding.hard,
+        })
+        .collect()
 }
 
 /// The `url` entries of a plugin's entries, each once, in entry order (the userlist's first).
@@ -2254,3 +2507,8 @@ impl Conditions<'_> {
 #[cfg(test)]
 #[path = "api_tests.rs"]
 mod tests;
+
+/// The group LOOT generates a message about: the first one the entries set.
+fn named_group<'a>(entries: &[&'a PluginEntry]) -> Option<&'a str> {
+    entries.iter().find_map(|entry| entry.group.as_deref())
+}

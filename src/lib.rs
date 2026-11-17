@@ -1,6 +1,7 @@
 //! Read-only evaluation of LOOT masterlist rules over a Fallout: New Vegas load order.
 //!
-//! * [`api`]: the library API for a mod manager (sort a load order, messages, cleaning data). Start here.
+//! * [`api`]: the library API for a mod manager (sort or check a load order, messages, cleaning data, copyable
+//!   errors). Start here.
 //! * [`plugin`]: plugin header reader (separate MIT module, see `NOTICE.md`).
 //! * [`metadata`]: masterlist YAML reader for the subset that matters for New Vegas.
 //! * [`condition`]: parser and evaluator for LOOT condition strings.
