@@ -29,13 +29,13 @@ port of libloot's plugin graph, see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.m
 
 The `loot-rs` program is published on each release as an OCI package on ghcr.io:
 
-`ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:<version>-x86_64-unknown-linux-gnu`
+`ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu`
 
 where `<version>` is the release tag without the leading `v`. The package is a `tar.gz` archive with the binary and
 `LICENSE`. Verify it with:
 
 ```sh
-gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:<version>-x86_64-unknown-linux-gnu --repo JorisJonkers-dev/loot-rs
+gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu --repo JorisJonkers-dev/loot-rs
 ```
 
 ## Use (command line)

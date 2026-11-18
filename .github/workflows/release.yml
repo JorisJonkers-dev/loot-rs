@@ -51,7 +51,7 @@ jobs:
           manifest-file: .release-please-manifest.json
 
   # The loot-rs program as an OCI package on ghcr.io, as the Toolbox's packages ADR decides:
-  # ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:<version>-x86_64-unknown-linux-gnu. The archive (the binary and LICENSE)
+  # ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu. The archive (the binary and LICENSE)
   # is built and checked before it is pushed, its digest is attested in the registry, and the job then pulls the
   # digest anonymously and compares its SHA-256, so a package that is not public fails the release. The repository
   # variable LOOT_RS_FIRST_PACKAGE_PUSH=true skips only that pull, for the first push of a new package (ghcr.io
@@ -119,7 +119,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${TAG_NAME#v}"
-          ref="ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:${VERSION}-x86_64-unknown-linux-gnu"
+          ref="ghcr.io/jorisjonkers-dev/loot-rs:${VERSION}-x86_64-unknown-linux-gnu"
           echo "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           (cd "$OUT" && oras push "$ref" loot-rs-x86_64-unknown-linux-gnu.tar.gz \
             --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
@@ -132,7 +132,7 @@ jobs:
       - name: Attest the package
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-name: ghcr.io/jorisjonkers-dev/loot-rs-loot-rs
+          subject-name: ghcr.io/jorisjonkers-dev/loot-rs
           subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
       # The attestation above is pushed with the login of the push step; the pull below is anonymous.
@@ -146,7 +146,7 @@ jobs:
           sha="$(cat "$OUT/sha256")"
           rm -rf "$OUT/pull"
           mkdir -p "$OUT/pull"
-          oras pull "ghcr.io/jorisjonkers-dev/loot-rs-loot-rs@${digest}" -o "$OUT/pull"
+          oras pull "ghcr.io/jorisjonkers-dev/loot-rs@${digest}" -o "$OUT/pull"
           pulled="$(sha256sum "$OUT/pull/loot-rs-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')"
           echo "pulled $pulled (expected $sha)"
           test "$pulled" = "$sha"
@@ -160,7 +160,7 @@ jobs:
             echo
             echo "| Name | Tag | Digest | Archive SHA-256 |"
             echo "| --- | --- | --- | --- |"
-            echo "| ghcr.io/jorisjonkers-dev/loot-rs-loot-rs | ${VERSION}-x86_64-unknown-linux-gnu | $(cat "$OUT/digest") | $(cat "$OUT/sha256") |"
+            echo "| ghcr.io/jorisjonkers-dev/loot-rs | ${VERSION}-x86_64-unknown-linux-gnu | $(cat "$OUT/digest") | $(cat "$OUT/sha256") |"
           } > "$summary"
           cat "$summary" >> "$GITHUB_STEP_SUMMARY"
           notes="$(mktemp)"
@@ -207,5 +207,5 @@ jobs:
           OUT: packages
         run: |
           set -euo pipefail
-          echo "Would push: ghcr.io/jorisjonkers-dev/loot-rs-loot-rs:0.0.0-dry-run-x86_64-unknown-linux-gnu"
+          echo "Would push: ghcr.io/jorisjonkers-dev/loot-rs:0.0.0-dry-run-x86_64-unknown-linux-gnu"
           echo "Archive SHA-256: $(sha256sum "$OUT/loot-rs-x86_64-unknown-linux-gnu.tar.gz" | awk '{print $1}')"
