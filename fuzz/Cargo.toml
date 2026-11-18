@@ -8,7 +8,7 @@ publish = false
 cargo-fuzz = true
 
 [dependencies]
-libfuzzer-sys = "0.4.13"
+libfuzzer-sys = "=0.4.13"
 
 [dependencies.loot-rs]
 path = ".."
