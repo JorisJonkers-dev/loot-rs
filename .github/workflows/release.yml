@@ -42,7 +42,7 @@ jobs:
       release_created: ${{ steps.rp.outputs.release_created }}
       tag_name: ${{ steps.rp.outputs.tag_name }}
     steps:
-      # Author the release PR with the personal-stack-agents App token (not the
+      # Author the release PR with the release App token (not the
       # default GITHUB_TOKEN) so CI runs on the PR without a manual approval
       # gate. Best-effort: falls back to GITHUB_TOKEN when the App secrets or
       # installation are absent.
@@ -60,6 +60,56 @@ jobs:
           token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
+
+      # release-please cannot edit Cargo.lock, so the release PR would fail every `--locked` build. Refresh the
+      # workspace crates' own lock entries on the release branch, with the App token so that CI runs on the commit.
+      # The open release PR is looked up by its label: release-please reports `pr` only when it changed the PR.
+      - name: Find the release pull request
+        id: release-pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RELEASE_PR: ${{ steps.rp.outputs.pr }}
+        run: |
+          set -euo pipefail
+          # release-please reports the pull request it opened or changed in `pr`; use that first. The label
+          # lookup is the fallback, retried, because the label is added after the pull request is opened.
+          branch=""
+          if [[ -n $RELEASE_PR ]]; then
+            branch="$(jq -r '.headBranchName // ""' <<<"$RELEASE_PR")"
+          fi
+          for _ in 1 2 3 4 5 6; do
+            [[ -n $branch ]] && break
+            branch="$(gh pr list --repo "$REPO" --state open --label 'autorelease: pending' --json headRefName --jq '.[0].headRefName // ""')"
+            [[ -n $branch ]] || sleep 10
+          done
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+          echo "release pull request branch: ${branch:-none}"
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.release-pr.outputs.branch }}
+          persist-credentials: false
+      # The refresh is `cargo update --workspace`, which only moves the workspace crates' own entries and keeps
+      # every other locked version. The 7-day crate cooldown holds: this checkout reads the repository's
+      # .cargo/config.toml (`[registry] global-min-publish-age = "7 days"`), so do not pass --config or a
+      # CARGO_REGISTRY_* override, and never run a plain `cargo update` without `--workspace`, which would move
+      # third-party crates to versions published less than 7 days ago.
+      - if: ${{ steps.release-pr.outputs.branch != '' }}
+        name: Refresh the lock entries of the workspace crates
+        env:
+          PUSH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ steps.release-pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          cargo update --workspace
+          cargo update --workspace --manifest-path fuzz/Cargo.toml
+          if git diff --quiet; then echo "the lock entries are current"; exit 0; fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore(release): refresh the workspace lock entries"
+          git push "https://x-access-token:${PUSH_TOKEN}@github.com/${REPO}.git" "HEAD:refs/heads/${BRANCH}"
 
   # The loot-rs program as an OCI package on ghcr.io, as the Toolbox's packages ADR decides:
   # ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu. The archive (the binary and LICENSE)
