@@ -89,11 +89,6 @@ jobs:
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: true
-      # Routes cargo through the packages proxy; the hygiene guard fails a cargo build outside it.
-      - name: Set up the packages proxy
-        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
-        with:
-          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: release
@@ -195,11 +190,6 @@ jobs:
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
           cache: true
-      # Routes cargo through the packages proxy; the hygiene guard fails a cargo build outside it.
-      - name: Set up the packages proxy
-        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
-        with:
-          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           shared-key: release
