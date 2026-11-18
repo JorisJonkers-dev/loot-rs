@@ -39,11 +39,6 @@ jobs:
         with:
           cache: true
 
-      # Routes cargo through the packages proxy.
-      - name: Set up the packages proxy
-        uses: JorisJonkers-dev/github-workflows/actions/setup-package-proxy@8e402cc4904be3f6bdb53bad3d9b5d7951bed491 # v0.50.3
-        with:
-          token: ${{ secrets.PACKAGES_PROXY_TOKEN }}
 
       - name: Fetch the masterlist
         env:
