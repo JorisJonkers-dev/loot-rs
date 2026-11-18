@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.5.0...v0.6.0) (2026-11-17)
+
+
+### Features
+
+* **api:** check a load order in process ([#64](https://github.com/JorisJonkers-dev/loot-rs/issues/64)) ([ebb24fc](https://github.com/JorisJonkers-dev/loot-rs/commit/ebb24fc2aa891b57aa08e05c07122abda3e9e137))
+
 ## [0.5.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.4.0...v0.5.0) (2026-11-15)
 
 
