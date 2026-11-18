@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.2](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.1...v0.6.2) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** use caret requirements so the Components link together ([#77](https://github.com/JorisJonkers-dev/loot-rs/issues/77)) ([cf11202](https://github.com/JorisJonkers-dev/loot-rs/commit/cf1120227e425e034300fff0e364583f8db8a525))
+
 ## [0.6.1](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.0...v0.6.1) (2026-11-18)
 
 
