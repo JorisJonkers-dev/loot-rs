@@ -2,7 +2,7 @@
 name = "loot-rs"
 version = "0.6.0"
 edition = "2024"
-rust-version = "1.99"
+rust-version = "1.100"
 license = "GPL-3.0-only"
 description = "Read-only evaluator of LOOT masterlist rules over a Fallout: New Vegas load order."
 repository = "https://github.com/JorisJonkers-dev/loot-rs"
