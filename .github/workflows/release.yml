@@ -11,6 +11,17 @@ on:
   pull_request:
     paths:
       - .github/workflows/release.yml
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: An existing release tag, vX.Y.Z. Empty runs the dry run from the selected ref
+        required: false
+        type: string
+      publish:
+        description: Publish the tag's assets and package (false is a dry run)
+        required: false
+        default: false
+        type: boolean
 
 # Releases are serialised and never cancelled half way.
 concurrency:
@@ -58,7 +69,7 @@ jobs:
   # creates it private; make it public, then remove the variable).
   packages:
     needs: release-please
-    if: ${{ !cancelled() && github.event_name == 'push' && needs.release-please.outputs.release_created == 'true' }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || (inputs.tag != '' && inputs.publish)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -67,13 +78,13 @@ jobs:
       id-token: write
       attestations: write
     env:
-      TAG_NAME: ${{ needs.release-please.outputs.tag_name }}
+      TAG_NAME: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       OUT: packages
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ needs.release-please.outputs.tag_name }}
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
           persist-credentials: false
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:
@@ -170,7 +181,7 @@ jobs:
   # On a pull request that changes this workflow: build the archive from the checked-out source and print what a
   # release would push, without logging in to a registry and without any write permission.
   packages-dry-run:
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || (github.event_name == 'workflow_dispatch' && !(inputs.tag != '' && inputs.publish)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -178,6 +189,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          ref: ${{ inputs.tag || github.ref }}
           persist-credentials: false
       - uses: jdx/mise-action@236a21c3b91f5db6d4e174b348674a0f0caac06d # v5.2.9
         with:

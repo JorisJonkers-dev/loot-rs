@@ -38,6 +38,8 @@ where `<version>` is the release tag without the leading `v`. The package is a `
 gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu --repo JorisJonkers-dev/loot-rs
 ```
 
+To republish an existing tag, for example after the package was renamed, run the release workflow by hand on `main` with the tag and `publish` set: `gh workflow run release.yml -R JorisJonkers-dev/loot-rs --ref main -f tag=vX.Y.Z -f publish=true`. The run pushes the package of that tag again and adds its reference to the release notes. Without `publish=true` it is a dry run that pushes nothing.
+
 ## Use (command line)
 
 `loot-rs sort` takes the same arguments as `check` and prints the load order sorted with LOOT's algorithm (see
