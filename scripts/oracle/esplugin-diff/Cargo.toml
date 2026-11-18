@@ -10,7 +10,7 @@ publish = false
 license = "GPL-3.0-only"
 
 [dependencies]
-esplugin = "=6.1.4"
+esplugin = "6.1.4"
 loot-rs = { path = "../../.." }
 
 [workspace]

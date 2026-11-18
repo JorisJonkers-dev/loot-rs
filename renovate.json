@@ -1,7 +1,7 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["github>JorisJonkers-dev/renovate-config"],
-  "description": "Cargo (the library and the separate fuzz workspace), mise.toml and the workflow pins. Rust crates are pinned exactly by the estate preset; the fuzz crate has its own Cargo.lock.",
+  "description": "Cargo (the library and the separate fuzz workspace), mise.toml and the workflow pins. Rust crates are caret requirements and the exact versions live in Cargo.lock (update-lockfile); the fuzz crate has its own Cargo.lock.",
   "includePaths": [
     "Cargo.toml",
     "Cargo.lock",
@@ -14,6 +14,11 @@
       "description": "Crates from crates.io wait 7 days after publication, as Cargo does (.cargo/config.toml). The organisation's own git dependencies have their own rules.",
       "matchManagers": ["cargo"],
       "minimumReleaseAge": "7 days"
+    },
+    {
+      "description": "Cargo: keep caret requirements so the Components link together; exact versions live in Cargo.lock.",
+      "matchManagers": ["cargo"],
+      "rangeStrategy": "update-lockfile"
     }
   ]
 }
