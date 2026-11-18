@@ -126,15 +126,16 @@ jobs:
         id: push
         env:
           GITHUB_ACTOR: ${{ github.actor }}
-          GITHUB_SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
+          # The commit the tag points at (the job checked the tag out), also when the workflow runs from main.
+          REVISION="$(git rev-parse HEAD)"
           VERSION="${TAG_NAME#v}"
           ref="ghcr.io/jorisjonkers-dev/loot-rs:${VERSION}-x86_64-unknown-linux-gnu"
           echo "$GH_TOKEN" | oras login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           (cd "$OUT" && oras push "$ref" loot-rs-x86_64-unknown-linux-gnu.tar.gz \
             --annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
-            --annotation "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --annotation "org.opencontainers.image.revision=${REVISION}" \
             --annotation "org.opencontainers.image.licenses=GPL-3.0-only")
           digest="$(oras resolve "$ref")"
           printf '%s' "$digest" > "$OUT/digest"
