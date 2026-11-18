@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.0...v0.6.1) (2026-11-18)
+
+
+### Bug Fixes
+
+* **deps:** pin dependencies ([#68](https://github.com/JorisJonkers-dev/loot-rs/issues/68)) ([965c5a4](https://github.com/JorisJonkers-dev/loot-rs/commit/965c5a4c489ee31f0b02ceb82e93e22bcb7e934d))
+
 ## [0.6.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.5.0...v0.6.0) (2026-11-17)
 
 
