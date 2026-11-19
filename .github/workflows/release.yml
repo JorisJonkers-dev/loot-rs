@@ -22,6 +22,11 @@ on:
         required: false
         default: false
         type: boolean
+      macos_only:
+        description: With tag and publish, build and upload only the macOS asset (the package is left as it is)
+        required: false
+        default: false
+        type: boolean
 
 # Releases are serialised and never cancelled half way.
 concurrency:
@@ -119,7 +124,7 @@ jobs:
   # creates it private; make it public, then remove the variable).
   packages:
     needs: release-please
-    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || (inputs.tag != '' && inputs.publish)) }}
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || (inputs.tag != '' && inputs.publish && !inputs.macos_only)) }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -223,6 +228,98 @@ jobs:
           notes="$(mktemp)"
           { gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --json body --jq .body; printf '\n'; cat "$summary"; } > "$notes"
           gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --notes-file "$notes"
+
+  # The macOS release asset, loot-rs-universal-apple-darwin.tar.gz (the binary for Apple silicon and Intel, and LICENSE)
+  # with its .sha256. `macos-half` builds one processor per runner in parallel (x86_64 cross-compiled on Apple silicon);
+  # `macos-asset` joins them with lipo, checks both architectures, runs `contracts --json`, attests and uploads the
+  # archive to the release (`gh release upload --clobber`). On a pull request that changes this workflow and on a dry run the same
+  # archive is built and kept as a workflow artifact. Uncached: a release build starts from the tag's sources only.
+  # To add the asset to an existing release without a new version:
+  #   gh workflow run release.yml -R JorisJonkers-dev/loot-rs --ref main -f tag=vX.Y.Z -f publish=true -f macos_only=true
+  macos-half:
+    needs: release-please
+    if: ${{ !cancelled() && ((github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch') }}
+    name: macOS loot-rs (${{ matrix.target }})
+    strategy:
+      fail-fast: true
+      matrix:
+        target: [aarch64-apple-darwin, x86_64-apple-darwin]
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
+          persist-credentials: false
+      - name: Build loot-rs
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          rustup toolchain install
+          rustup target add "$TARGET"
+          cargo build --locked --release --target "$TARGET"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: loot-rs-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/loot-rs
+          if-no-files-found: error
+          retention-days: 3
+
+  macos-asset:
+    needs: [release-please, macos-half]
+    if: ${{ !cancelled() && needs.macos-half.result == 'success' }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # upload the asset to the release
+      id-token: write
+      attestations: write
+    env:
+      TAG_NAME: ${{ inputs.tag || needs.release-please.outputs.tag_name }}
+      PUBLISH: ${{ (github.event_name == 'push' && needs.release-please.outputs.release_created == 'true') || (inputs.tag != '' && inputs.publish) }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ASSET: loot-rs-universal-apple-darwin.tar.gz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.tag || needs.release-please.outputs.tag_name || github.ref }}
+          persist-credentials: false
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: loot-rs-*-apple-darwin
+          path: ${{ runner.temp }}/halves
+      - name: Join, check and pack
+        run: |
+          set -euo pipefail
+          mkdir -p out/stage
+          lipo -create -output out/stage/loot-rs \
+            "$RUNNER_TEMP/halves/loot-rs-aarch64-apple-darwin/loot-rs" "$RUNNER_TEMP/halves/loot-rs-x86_64-apple-darwin/loot-rs"
+          chmod 0755 out/stage/loot-rs
+          lipo -archs out/stage/loot-rs | tee "$RUNNER_TEMP/archs"
+          grep -qw arm64 "$RUNNER_TEMP/archs" && grep -qw x86_64 "$RUNNER_TEMP/archs"
+          out/stage/loot-rs contracts --json >/dev/null
+          cp LICENSE out/stage/
+          COPYFILE_DISABLE=1 tar -czf "out/$ASSET" -C out/stage .
+          rm -rf out/stage
+          (cd out && shasum -a 256 "$ASSET" > "$ASSET.sha256" && cat "$ASSET.sha256")
+      - name: Attest build provenance
+        if: ${{ env.PUBLISH == 'true' }}
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: out/${{ env.ASSET }}
+      - name: Upload to the release
+        if: ${{ env.PUBLISH == 'true' }}
+        run: gh release upload "$TAG_NAME" out/* --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Keep the archive of a dry run
+        if: ${{ env.PUBLISH != 'true' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: loot-rs-macos-dry-run
+          path: out/
+          retention-days: 7
 
   # On a pull request that changes this workflow: build the archive from the checked-out source and print what a
   # release would push, without logging in to a registry and without any write permission.
