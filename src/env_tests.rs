@@ -232,10 +232,13 @@ fn directory_listings_are_cached() {
         Ok(1),
         "an exact name is found directly"
     );
+    // On a file system that tells names apart by case, a differently cased name is looked up in the cached
+    // listing (made before Late.esp existed); elsewhere (macOS, Windows) it is the same file, found directly.
+    let expected = usize::from(!dir.case_sensitive());
     assert_eq!(
         env.count_files("late.esp"),
-        Ok(0),
-        "a differently cased name is looked up in the cached listing"
+        Ok(expected),
+        "a differently cased name on this file system"
     );
 }
 
@@ -331,6 +334,10 @@ fn a_ghosted_plugin_counts_as_the_plugin() {
 #[test]
 fn names_that_differ_only_in_case_are_a_warning() {
     let dir = TempDir::new();
+    if !dir.case_sensitive() {
+        // Two names that differ only in case are one file here (macOS, Windows): no collision to report.
+        return;
+    }
     dir.file("Thing.dll", b"1");
     dir.file("thing.DLL", b"22");
     dir.file("other.txt", b"");

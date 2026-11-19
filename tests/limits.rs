@@ -1,5 +1,7 @@
 //! The hard bounds of the library, proven with a counting allocator: every hostile input below must fail fast
 #![allow(clippy::format_push_string)]
+// The peak resident size is read from /proc (Linux only; the crate forbids `unsafe`, so no counting allocator).
+#![cfg(target_os = "linux")]
 //! with an error while using little memory (the rise in peak resident size, from `/proc/self/status`). One test function, so nothing else allocates while it measures.
 //! See `docs/RESOURCE-LIMITS.md`.
 
