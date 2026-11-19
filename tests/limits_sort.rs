@@ -1,5 +1,7 @@
 //! The bounds of the sorter on the largest input it accepts: each case below has 1024 plugins and must finish
 //! quickly, in little memory, either with an order or with an error. See `docs/RESOURCE-LIMITS.md`.
+// The peak resident size is read from /proc (Linux only; the crate forbids `unsafe`, so no counting allocator).
+#![cfg(target_os = "linux")]
 
 use loot_rs::archives::{ArchiveError, PathIds, read_archive_from, synthetic_bsa};
 use loot_rs::records::{MAX_RECORDS_PER_PLUGIN, NameIds, RecordsError, read_records_from};

@@ -776,6 +776,10 @@ fn a_ghosted_plugin_is_sorted_as_the_plugin() {
 #[test]
 fn a_case_collision_in_a_directory_is_a_warning() {
     let dir = data(&["A.esp"]);
+    if !dir.case_sensitive() {
+        // Two names that differ only in case are one file here (macOS, Windows): no collision to report.
+        return;
+    }
     dir.file("x.dll", b"1");
     dir.file("X.dll", b"2");
     let output = run("", &dir, &["A.esp"]).expect("sorts");

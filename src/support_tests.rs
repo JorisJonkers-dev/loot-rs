@@ -33,6 +33,16 @@ impl TempDir {
         path
     }
 
+    /// Whether this directory's file system tells names apart by case (Linux's usually does; macOS's APFS and
+    /// Windows's NTFS usually do not, so two names that differ only in case are one file there).
+    pub fn case_sensitive(&self) -> bool {
+        let probe = self.file("case-probe", b"");
+        let other = self.0.join("CASE-PROBE");
+        let sensitive = !other.exists();
+        let _ = fs::remove_file(probe);
+        sensitive
+    }
+
     /// Write a synthetic plugin; `.esm` names get the master flag.
     pub fn plugin(&self, name: &str, masters: &[&str]) -> PathBuf {
         let flags = u32::from(name.to_lowercase().ends_with(".esm")) * FLAG_ESM;

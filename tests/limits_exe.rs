@@ -3,6 +3,8 @@
 //! (`task limits`). One test function, so nothing else allocates while it measures. See
 //! `docs/RESOURCE-LIMITS.md`.
 #![cfg(feature = "executable-versions")]
+// The peak resident size is read from /proc (Linux only; the crate forbids `unsafe`, so no counting allocator).
+#![cfg(target_os = "linux")]
 
 mod common;
 
