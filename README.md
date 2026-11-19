@@ -6,7 +6,8 @@ in Rust, for use on Linux.
 
 **Systems.** The library builds and its tests pass on Linux and macOS (Apple silicon) on every pull request; it is
 linked into the Toolbox's `raul` on Linux, Windows and macOS, which builds it from the pinned source. The `loot-rs`
-program is published for Linux x86-64 only (see Packages).
+program is published for Linux x86-64 as a package (see Packages) and for macOS as the release asset
+`loot-rs-universal-apple-darwin.tar.gz` (one binary for Apple silicon and Intel, with its `.sha256`).
 
 This is an independent port, not an official LOOT project.
 
