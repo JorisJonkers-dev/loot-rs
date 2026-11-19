@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.2...v0.6.3) (2026-11-19)
+
+
+### Bug Fixes
+
+* **deps:** update minor and patch dependencies ([#80](https://github.com/JorisJonkers-dev/loot-rs/issues/80)) ([c1d6239](https://github.com/JorisJonkers-dev/loot-rs/commit/c1d6239f1558f066599509ed6a8010e6ec11b66e))
+
 ## [0.6.2](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.1...v0.6.2) (2026-11-18)
 
 
