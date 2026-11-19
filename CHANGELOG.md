@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.3...v0.7.0) (2026-11-19)
+
+
+### Features
+
+* **release:** attach a universal macOS archive to each release ([#84](https://github.com/JorisJonkers-dev/loot-rs/issues/84)) ([3bc0373](https://github.com/JorisJonkers-dev/loot-rs/commit/3bc0373e1404a87ca459acd387d9b6b610dd354e))
+
 ## [0.6.3](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.2...v0.6.3) (2026-11-19)
 
 
