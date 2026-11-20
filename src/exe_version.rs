@@ -381,6 +381,7 @@ struct Scratch(PathBuf);
 #[cfg(feature = "executable-versions")]
 impl Scratch {
     fn new() -> std::io::Result<Self> {
+        #[cfg(unix)]
         use std::os::unix::fs::DirBuilderExt;
         use std::sync::atomic::{AtomicUsize, Ordering};
         static COUNTER: AtomicUsize = AtomicUsize::new(0);
@@ -392,7 +393,11 @@ impl Scratch {
             std::process::id(),
             COUNTER.fetch_add(1, Ordering::Relaxed)
         ));
-        std::fs::DirBuilder::new().mode(0o700).create(&path)?;
+        let mut builder = std::fs::DirBuilder::new();
+        // Windows has no mode; its temporary folder is private to the user by default.
+        #[cfg(unix)]
+        builder.mode(0o700);
+        builder.create(&path)?;
         Ok(Self(path))
     }
 }
