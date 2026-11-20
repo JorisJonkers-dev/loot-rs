@@ -1,0 +1,13 @@
+plugin FalloutNV.esm esm
+plugin Base.esp masters=FalloutNV.esm
+plugin Off.esm esm masters=FalloutNV.esm
+plugin MissingMaster.esp masters=FalloutNV.esm,Gone.esm
+plugin InactiveMaster.esp masters=FalloutNV.esm,Off.esm
+plugin OldHeader.esp masters=FalloutNV.esm version=1.2
+plugin UndefinedGroup.esp masters=FalloutNV.esm
+plugin BashTagged.esp masters=FalloutNV.esm
+file BashTags/BashTagged.txt text=-Relev
+plugin FilterPlug.esp masters=FalloutNV.esm,Gone2.esm desc={{BASH:Filter}}
+plugin Dirty.esp masters=FalloutNV.esm
+plugin Req.esp masters=FalloutNV.esm
+plugin Inc.esp masters=FalloutNV.esm

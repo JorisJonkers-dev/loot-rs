@@ -5,7 +5,7 @@
 pub mod model;
 
 use loot_rs::archives::synthetic_bsa;
-use loot_rs::plugin::{FLAG_ESM, synthetic_plugin};
+use loot_rs::plugin::{FLAG_ESM, synthetic_plugin_version};
 use loot_rs::records::synthetic_records;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -40,7 +40,7 @@ impl Fixture {
         } else {
             0
         };
-        self.file(name, &synthetic_plugin(flags, masters, None))
+        self.file(name, &synthetic_plugin_version(flags, masters, None, 1.34))
     }
 
     /// Write any file under `Data` (parent directories are created).
@@ -110,7 +110,7 @@ pub fn proptest_config(cases: u32) -> proptest::test_runner::Config {
     }
 }
 
-/// Build the `Data` directory a golden case describes (`data.txt`): `plugin NAME [esm] [masters=A,B]` writes a
+/// Build the `Data` directory a golden case describes (`data.txt`): `plugin NAME [esm] [masters=A,B] [version=1.2] [desc=TEXT_WITH_UNDERSCORES]` writes a
 /// synthetic plugin (`records=HEX,HEX` adds a group with a record of each of those form ids), `file PATH text=TEXT`
 /// writes a file, `bsa NAME.bsa folder=file,file;folder=file` writes a version 104 archive that lists those files.
 pub fn build_data(fixture: &Fixture, spec: &str) {
@@ -120,11 +120,16 @@ pub fn build_data(fixture: &Fixture, spec: &str) {
             Some("plugin") => {
                 let name = words.next().expect("plugin name");
                 let (mut flags, mut masters, mut form_ids) = (0, Vec::new(), Vec::new());
+                let (mut version, mut description) = (1.34f32, None);
                 for word in words {
                     if word == "esm" {
                         flags |= FLAG_ESM;
                     } else if let Some(list) = word.strip_prefix("masters=") {
                         masters = list.split(',').collect();
+                    } else if let Some(text) = word.strip_prefix("version=") {
+                        version = text.parse().expect("header version");
+                    } else if let Some(text) = word.strip_prefix("desc=") {
+                        description = Some(text.replace('_', " "));
                     } else if let Some(list) = word.strip_prefix("records=") {
                         form_ids = list
                             .split(',')
@@ -135,7 +140,12 @@ pub fn build_data(fixture: &Fixture, spec: &str) {
                     }
                 }
                 let bytes = if form_ids.is_empty() {
-                    synthetic_plugin(flags, &masters, None)
+                    synthetic_plugin_version(
+                        flags,
+                        &masters,
+                        description.as_deref().map(str::as_bytes),
+                        version,
+                    )
                 } else {
                     synthetic_records(flags, &masters, &[(*b"NPC_", &form_ids)])
                 };

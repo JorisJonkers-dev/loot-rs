@@ -1,0 +1,48 @@
+LOOT 0.29.2 (libloot 0.29.6), loot_0.29.2-win64.7z sha256 10685b03a43a77a7644b5c417eb757f6b405425f3c4d9abeaab4faaa967fb6e0
+---
+# General Information
+
+## Masterlist Revision
+
+- ID: Unknown: No revision metadata found
+- Update Date: Unknown: No revision metadata found
+
+## Masterlist Prelude Revision
+
+- ID: N/A: No masterlist prelude present
+- Update Date: N/A: No masterlist prelude present
+
+## Messages
+
+- Error: Cyclic interaction detected between "A\.esp" and "B\.esp": 
+
+A.esp\
+&emsp;[Masterlist Load After]\
+B.esp\
+&emsp;[Masterlist Load After]\
+A.esp
+- Warning: You have not sorted your load order this session\.
+
+
+
+# FalloutNV.esm
+
+- Load Order Index: 00
+- Attributes: Active, Empty, Master Plugin
+
+
+
+# A.esp
+
+- Load Order Index: 01
+- Attributes: Active, Empty
+
+
+
+# B.esp
+
+- Load Order Index: 02
+- Attributes: Active, Empty
+
+
+

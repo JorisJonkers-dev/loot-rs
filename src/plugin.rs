@@ -263,6 +263,20 @@ pub fn synthetic_plugin(flags: u32, masters: &[&str], description: Option<&str>)
 /// If a field is longer than a subrecord can hold (tests only).
 #[must_use]
 pub fn synthetic_plugin_bytes(flags: u32, masters: &[&str], description: Option<&[u8]>) -> Vec<u8> {
+    synthetic_plugin_version(flags, masters, description, 1.34)
+}
+
+/// [`synthetic_plugin_bytes`] with a chosen header version (`HEDR`), for the check against the game's minimum.
+///
+/// # Panics
+/// If a field is longer than a subrecord can hold (tests only).
+#[must_use]
+pub fn synthetic_plugin_version(
+    flags: u32,
+    masters: &[&str],
+    description: Option<&[u8]>,
+    version: f32,
+) -> Vec<u8> {
     fn subrecord(out: &mut Vec<u8>, kind: [u8; 4], payload: &[u8]) {
         out.extend_from_slice(&kind);
         let length = u16::try_from(payload.len()).expect("test subrecord fits in u16");
@@ -271,7 +285,7 @@ pub fn synthetic_plugin_bytes(flags: u32, masters: &[&str], description: Option<
     }
     let mut data = Vec::new();
     let mut hedr = Vec::new();
-    hedr.extend_from_slice(&1.34f32.to_le_bytes());
+    hedr.extend_from_slice(&version.to_le_bytes());
     hedr.extend_from_slice(&0u32.to_le_bytes());
     hedr.extend_from_slice(&0x800u32.to_le_bytes());
     subrecord(&mut data, *b"HEDR", &hedr);

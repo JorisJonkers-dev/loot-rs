@@ -1,0 +1,27 @@
+bash_tags:
+  - Relev
+globals:
+  - type: say
+    content: 'Global note'
+plugins:
+  - name: 'UndefinedGroup.esp'
+    group: 'Nope'
+  - name: 'BashTagged.esp'
+    tag: ['Relev']
+  - name: 'Dirty.esp'
+    dirty:
+      - crc: 0x61E2B469
+        util: 'FNVEdit'
+        itm: 3
+        udr: 1
+        nav: 2
+  - name: 'Req.esp'
+    req:
+      - name: 'Missing.esp'
+        display: 'Missing Mod'
+      - name: 'Other.esp'
+        detail: 'Get it from the usual place.'
+  - name: 'Inc.esp'
+    inc:
+      - name: 'Base.esp'
+        display: 'Base Mod'

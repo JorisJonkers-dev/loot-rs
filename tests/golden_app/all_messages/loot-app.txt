@@ -1,0 +1,140 @@
+LOOT 0.29.2 (libloot 0.29.6), loot_0.29.2-win64.7z sha256 10685b03a43a77a7644b5c417eb757f6b405425f3c4d9abeaab4faaa967fb6e0
+---
+# General Information
+
+## Masterlist Revision
+
+- ID: Unknown: No revision metadata found
+- Update Date: Unknown: No revision metadata found
+
+## Masterlist Prelude Revision
+
+- ID: N/A: No masterlist prelude present
+- Update Date: N/A: No masterlist prelude present
+
+## Messages
+
+- Note: Global note
+- Warning: You have not sorted your load order this session\.
+
+
+
+# FalloutNV.esm
+
+- Load Order Index: 00
+- Attributes: Active, Empty, Master Plugin
+
+
+
+# Off.esm
+
+- Attributes: Empty, Master Plugin
+
+
+
+# Base.esp
+
+- Load Order Index: 01
+- Attributes: Active, Empty
+
+
+
+# MissingMaster.esp
+
+- Load Order Index: 02
+- Attributes: Active, Empty
+
+## Messages
+
+- Error: This plugin requires \"Gone\.esm\" to be installed\, but it is missing\.
+
+
+
+# InactiveMaster.esp
+
+- Load Order Index: 03
+- Attributes: Active, Empty
+
+## Messages
+
+- Error: This plugin requires \"Off\.esm\" to be active\, but it is inactive\.
+
+
+
+# OldHeader.esp
+
+- Load Order Index: 04
+- Attributes: Active, Empty
+
+## Messages
+
+- Warning: This plugin has a header version of 1\.2\, which is less than the game\'s minimum supported header version of 1\.32\.
+
+
+
+# UndefinedGroup.esp
+
+- Load Order Index: 05
+- Attributes: Active, Empty
+- Group: Nope
+
+## Messages
+
+- Error: This plugin belongs to the group \"Nope\"\, which does not exist\.
+
+
+
+# BashTagged.esp
+
+- Load Order Index: 06
+- Attributes: Active, Empty
+- Add Bash Tags: Relev
+
+## Messages
+
+- Note: This plugin has a BashTags file that will override the suggestions made by LOOT for the following Bash Tags\: Relev\.
+
+
+
+# FilterPlug.esp
+
+- Load Order Index: 07
+- Attributes: Active, Empty
+- Current Bash Tags: Filter
+
+
+
+# Dirty.esp
+
+- Load Order Index: 08
+- Attributes: Active, Dirty, Empty
+
+## Messages
+
+- Warning: FNVEdit found 3 ITM records, 1 deleted reference and 2 deleted navmeshes.
+
+
+
+# Req.esp
+
+- Load Order Index: 09
+- Attributes: Active, Empty
+
+## Messages
+
+- Error: This plugin requires Missing Mod to be installed, but it is missing.
+- Error: This plugin requires "Other\.esp" to be installed, but it is missing. Get it from the usual place.
+
+
+
+# Inc.esp
+
+- Load Order Index: 0A
+- Attributes: Active, Empty
+
+## Messages
+
+- Error: This plugin is incompatible with Base Mod, but both are present.
+
+
+
