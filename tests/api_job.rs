@@ -4,9 +4,11 @@
 mod common;
 
 use common::Fixture;
+#[cfg(unix)]
+use loot_rs::api::copy_text;
 use loot_rs::api::{
     API_VERSION, CancelToken, EvaluateError, FindingKind, Masterlist, MasterlistError, PluginSlot,
-    ProgressHook, SortError, SortOptions, Stage, Userlist, check, copy_text, evaluate, sort,
+    ProgressHook, SortError, SortOptions, Stage, Userlist, check, evaluate, sort,
 };
 use std::fs;
 use std::path::Path;
