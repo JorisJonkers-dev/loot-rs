@@ -198,6 +198,7 @@ fn file_size_readable_master_and_checksum_read_the_files() {
 }
 
 #[test]
+#[cfg(unix)]
 fn an_unreadable_directory_is_an_environment_error_for_regex_counts() {
     use std::os::unix::fs::PermissionsExt;
     let (dir, env) = world();

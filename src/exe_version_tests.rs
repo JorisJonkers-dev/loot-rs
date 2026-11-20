@@ -453,6 +453,7 @@ fn versions_and_operators_that_could_not_be_rebuilt_as_text_are_syntax_errors() 
 }
 
 #[test]
+#[cfg(unix)]
 fn the_scratch_directory_is_private_and_removed_with_its_content() {
     use std::os::unix::fs::PermissionsExt;
     let scratch = Scratch::new().expect("creates");
