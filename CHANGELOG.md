@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.8.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.7.0...v0.8.0) (2026-11-20)
+
+
+### Features
+
+* **condition:** evaluate version() and product_version() on executables by default ([#90](https://github.com/JorisJonkers-dev/loot-rs/issues/90)) ([45a2cba](https://github.com/JorisJonkers-dev/loot-rs/commit/45a2cba7ef1f7582f6f5f05cbd78e91fa989efc9))
+
+
+### Bug Fixes
+
+* **sort:** report no group-order note for the game's main master ([#89](https://github.com/JorisJonkers-dev/loot-rs/issues/89)) ([a708d87](https://github.com/JorisJonkers-dev/loot-rs/commit/a708d87101ac27488adfc98dcf04c3147b473c68)), closes [#87](https://github.com/JorisJonkers-dev/loot-rs/issues/87)
+
 ## [0.7.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.6.3...v0.7.0) (2026-11-19)
 
 
