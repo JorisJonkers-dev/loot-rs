@@ -1419,6 +1419,7 @@ pub fn sort_with(
         &sorted_env,
         check::Options {
             strict_groups: options.strict_groups,
+            fixed_first: &[EARLY_LOADER],
         },
         &options.languages,
     );
@@ -1548,6 +1549,7 @@ pub fn check(
         &env,
         check::Options {
             strict_groups: options.strict_groups,
+            fixed_first: &[EARLY_LOADER],
         },
         &options.languages,
     );
