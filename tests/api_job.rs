@@ -674,6 +674,7 @@ fn an_evaluate_error_copies_with_its_code() {
 }
 
 #[test]
+#[cfg(unix)]
 fn copy_text_writes_the_home_directory_of_the_message_as_a_tilde() {
     let home = std::env::var("HOME").expect("HOME is set for the tests");
     let home = home.trim_end_matches('/');
@@ -685,6 +686,7 @@ fn copy_text_writes_the_home_directory_of_the_message_as_a_tilde() {
 }
 
 #[test]
+#[cfg(unix)]
 fn copy_text_leaves_a_path_that_only_starts_like_the_home_directory_alone() {
     let home = std::env::var("HOME").expect("HOME is set for the tests");
     let message = format!("{}2/Data: not a directory", home.trim_end_matches('/'));
@@ -695,6 +697,7 @@ fn copy_text_leaves_a_path_that_only_starts_like_the_home_directory_alone() {
 }
 
 #[test]
+#[cfg(unix)]
 fn copy_text_writes_a_home_directory_that_ends_with_a_slash_as_a_single_tilde() {
     let home = std::env::var("HOME").expect("HOME is set for the tests");
     let home = home.trim_end_matches('/');

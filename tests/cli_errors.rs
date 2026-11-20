@@ -118,7 +118,12 @@ fn a_missing_masterlist_names_the_file() {
     let absent = fixture.root.join("nowhere.yaml");
     let result = check(&absent, &plugins, &fixture.data(), &[]);
     assert_error(&result, "nowhere.yaml");
-    assert!(result.stderr.contains("No such file"), "{}", result.stderr);
+    let os_says = if cfg!(windows) {
+        "cannot find the file"
+    } else {
+        "No such file"
+    };
+    assert!(result.stderr.contains(os_says), "{}", result.stderr);
 }
 
 #[test]
