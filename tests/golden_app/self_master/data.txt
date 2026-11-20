@@ -1,0 +1,2 @@
+plugin FalloutNV.esm esm
+plugin SelfMaster.esp masters=FalloutNV.esm,SelfMaster.esp

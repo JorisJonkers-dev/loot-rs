@@ -1,0 +1,5 @@
+plugins:
+  - name: 'A.esp'
+    after: ['B.esp']
+  - name: 'B.esp'
+    after: ['A.esp']

@@ -1,0 +1,11 @@
+FalloutNV.esm
+Base.esp
+MissingMaster.esp
+InactiveMaster.esp
+OldHeader.esp
+UndefinedGroup.esp
+BashTagged.esp
+FilterPlug.esp
+Dirty.esp
+Req.esp
+Inc.esp

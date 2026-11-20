@@ -1,0 +1,3 @@
+plugin FalloutNV.esm esm
+plugin A.esp masters=FalloutNV.esm
+plugin B.esp masters=FalloutNV.esm

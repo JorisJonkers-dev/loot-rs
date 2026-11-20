@@ -70,7 +70,7 @@ cases, property tests and, on the owner's machine, the oracle ([ORACLE.md](ORACL
 | Asset (archive) overlap edges | supported | A plugin loads the BSA files of `Data` whose names begin with its name (case ignored, as libloot does for New Vegas); their folder and file names are read from the tables (version 103, 104 and 105; never the data). Of two plugins that load a file with the same path, the one that loads more files goes first, unless records decide. An archive that cannot be read is noted and skipped. Archives are taken from every searched directory (the additional data directories first), as libloot does. `.ba2` archives are not looked at |
 | Tie-break edges and pinning | supported | |
 | Topological sort | supported | petgraph's depth-first topological sort, reproduced |
-| Messages LOOT's application generates when it checks the install (`generated_messages`, `generated_general_messages`) | partial | The ones that apply to Fallout: New Vegas, with LOOT's English texts as Markdown: a missing or inactive master of an active plugin (not with the `Filter` tag), a plugin that is its own master, a header version below 1.32, a group named by the masterlist that it does not define, Bash Tags overridden by `Data/BashTags/<plugin>.txt`, a `dirty` entry that matches the file, a requirement that is missing, an incompatibility that is present, and more than 255 active plugins. Not ported: the checks of other games (light, medium, update and blueprint plugins), the case-sensitive path warnings, the "not sorted this session" note, and the text LOOT shows for a sorting cycle |
+| Messages LOOT's application generates when it checks the install (`generated_messages`, `generated_general_messages`) | partial | The ones that apply to Fallout: New Vegas, with LOOT's English texts as Markdown: a missing or inactive master of an active plugin (not with the `Filter` tag), a plugin that is its own master, a header version below 1.32, a group named by the masterlist that it does not define, Bash Tags overridden by `Data/BashTags/<plugin>.txt`, a `dirty` entry that matches the file, a requirement that is missing, an incompatibility that is present, and more than 255 active plugins. Every text above is compared with what LOOT 0.29.2 itself showed on synthetic cases ([LOOT-APP-CAPTURE.md](LOOT-APP-CAPTURE.md), `tests/golden_app/`); no difference was found. Not ported, with the reasons in [Not-ported messages](#not-ported-messages) below |
 | The Bash Tags of the plugin's description (`bash_tags`) | supported | `{{BASH:Tag,Tag}}`, as libloot reads them |
 
 Everything here is Fallout: New Vegas only. Differences that follow from what is not supported are listed above;
@@ -139,3 +139,23 @@ under Wine by the owner (issue #38); until then they are checked against LOOT's 
 | Game directory, additional data directories | supported | `SortOptions::game_dir` and `additional_data_dirs`, or `--game-dir` and `--extra-data`; additional directories first, then `Data`; `..` is the game directory. See API.md |
 | Names differing only in case | warning | Reported in `warnings`; matching stays case-insensitive |
 | Master flag / master list sort rules | unsupported | See `fnvorder check` in NV-Linux-Modding |
+
+## Not-ported messages
+
+Decisions for the messages the LOOT application adds that `generated_messages` and `generated_general_messages` do not
+reproduce. The first two were shown by the application in the capture ([LOOT-APP-CAPTURE.md](LOOT-APP-CAPTURE.md)).
+
+| LOOT message | Decision | Reason |
+| --- | --- | --- |
+| "You have not sorted your load order this session." (General Information) | Not ported | It describes the application's session (no sort has been applied since it started). `loot-rs sort` is the sort, and `check` has no session; a caller that wants the note knows its own session. The golden test drops this one line from the application's list |
+| Text for a sorting cycle: `Cyclic interaction detected between "A.esp" and "B.esp": A.esp [Masterlist Load After] B.esp [Masterlist Load After] A.esp` | Not ported, behaviour matches | Both refuse the sort and name the same two plugins; `SortError::Conflict` / `GroupCycle` carry the plugin names, not LOOT's Markdown path with the rule kinds. Difference listed, not a bug: `tests/golden_app.rs` checks that both refuse and name the same plugins |
+| A plugin that is its own master | Reproduced, but only visible through `validate::plugin_messages` | `loot-rs sort` refuses such a load order (the plugin would have to load before itself, as in the application, whose sort also fails), so the message never reaches `sort` output. The text matches the application's (`tests/golden_app/self_master`) |
+| Case-sensitive path warnings ("... is installed in a case-sensitive location ...", and the same for local application data) | Not ported | The warning is about the game's folder and the mods, not about the load order: it fires when the game folder or `%LOCALAPPDATA%` folder is on a case-sensitive file system, which is the normal state on Linux. `loot-rs` resolves every plugin and file name case-insensitively itself (`FsEnv::resolve`) and already reports names that differ only in case (`case_warnings`), so its result does not depend on the file system. Under nvmod the case handling of the game folder belongs to nvmod, which owns the folder. The application could not be made to show it under Wine (Wine looks files up case-insensitively, so the check in LOOT 0.29.2 found nothing with the setting on), so there is no captured text to compare; the template is in LOOT.exe's string table. A native-Linux capture would need a LOOT build for Linux, which the release does not have |
+| Checks of other games (light, medium, update and blueprint plugins) | Not applicable | Fallout: New Vegas has none of these plugin kinds |
+
+## Condition functions used by the real masterlist
+
+The README lists `filename_version`, `description_contains` and `is_executable` as not implemented. The Fallout: New
+Vegas masterlist (`loot/falloutnv` branches `v0.26`, commit 9f4974f of 2026-04-07, and `v0.29`, 2026-08-31, the one LOOT
+0.29 uses) contains none of them (`grep -c` of each name is 0 in both). The functions it does use are `active`, `file`,
+`checksum`, `many`, `version`, `is_master`, `readable` and `product_version`, so no ticket is needed for the three.
