@@ -204,7 +204,7 @@ Reasons hold names and counts only.
   `data-directory`, `invalid`, `unsupported`.
 * Switches for a caller that wants only the order: `skip_checksums` (no whole-file CRC-32 for cleaning data, so
   `dirty` is empty; the order is unchanged), `skip_archives` (no BSA tables, so no asset overlap: the order can differ
-  from LOOT's), `skip_executable_versions` (`version()`/`product_version()` on executables are unsupported).
+  from LOOT's), `skip_executable_versions` (`version()`/`product_version()` on executables are unsupported; they are evaluated by default).
   `SortOptions::order_only()` sets all three.
 * Cargo feature `serde`: `Serialize` for `SortOutput` and its parts, with exactly the keys and values of
   `loot-rs sort --json` without `schema_version` and `contract` (`tests/serde.rs` compares the two). Written by hand on

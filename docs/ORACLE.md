@@ -144,8 +144,7 @@ Ordering is checked two ways: every `after`, `req` and header-master rule of `lo
 orders should be **equal**. The record and archive overlap data are read as libloot reads them (see [COMPATIBILITY.md](COMPATIBILITY.md)); a real load order that differs from LOOT's order is a case to examine, not an expected difference.
 
 Known, expected differences (not bugs): `loot-rs` implements `version()` and `product_version()` on
-executables and DLLs only with the cargo feature `executable-versions` (build with `--features executable-versions` for the
-comparison), so other items that use them are reported as unsupported and left out (see
+executables and DLLs with the cargo feature `executable-versions`, a default feature (not with `--no-default-features`), so other items that use them are reported as unsupported and left out (see
 [TESTING.md](TESTING.md)); LOOT renders the Markdown of messages, `loot-rs` returns it as written; LOOT's application adds messages of its own (missing masters, inactive requirements, dirty plugins); libloot does
 not, so they are in `generated_messages` and are not compared with libloot's output.
 

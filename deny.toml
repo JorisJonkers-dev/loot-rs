@@ -23,9 +23,8 @@ allow = [
     "Apache-2.0",
     "Zlib",         # foldhash, through yaml-rust2
     "BSD-3-Clause", # encoding_rs (with Apache-2.0 OR MIT), through yaml-rust2
-    # esplugin, through loot-condition-interpreter, which is only in the tree with the opt-in feature
-    # `executable-versions`. GPL-3.0 is this project's own licence, so it is compatible; the default build
-    # does not contain it.
+    # esplugin, through loot-condition-interpreter, which is in the tree with the feature
+    # `executable-versions` (a default feature). GPL-3.0 is this project's own licence, so it is compatible.
     "GPL-3.0",
 ]
 confidence-threshold = 0.8
