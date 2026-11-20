@@ -173,11 +173,15 @@ fn a_bad_call_is_a_syntax_error() {
         eval(&dir, r#"version("nvse_loader.exe", "1", ===)"#),
         Err(ConditionError::Syntax(_))
     ));
-    dir.file("q\"x.exe", &PeSpec::new([1, 0, 0, 0], "1").build());
-    assert!(matches!(
-        eval(&dir, r#"version("q\"x.exe", "1", ==)"#),
-        Err(ConditionError::Syntax(_) | ConditionError::Environment(_))
-    ));
+    // A quote cannot be part of a file name on Windows, so the file is only made where it can exist.
+    #[cfg(unix)]
+    {
+        dir.file("q\"x.exe", &PeSpec::new([1, 0, 0, 0], "1").build());
+        assert!(matches!(
+            eval(&dir, r#"version("q\"x.exe", "1", ==)"#),
+            Err(ConditionError::Syntax(_) | ConditionError::Environment(_))
+        ));
+    }
 }
 
 fn refused(spec: &PeSpec) -> bool {
@@ -395,13 +399,19 @@ fn the_pe_header_offset_is_32_bits() {
 fn the_file_name_is_never_part_of_what_the_interpreter_parses() {
     let dir = TempDir::new();
     let image = PeSpec::new([1, 2, 0, 0], "1.2").build();
-    for name in [
-        "q\"x.exe",
-        "back\\slash.dll",
-        "tab\there.dll",
-        "new\nline.dll",
-        "par(en).dll",
-    ] {
+    // Quotes, tabs and line breaks cannot be part of a file name on Windows.
+    let names: &[&str] = if cfg!(windows) {
+        &["back\\slash.dll", "par(en).dll"]
+    } else {
+        &[
+            "q\"x.exe",
+            "back\\slash.dll",
+            "tab\there.dll",
+            "new\nline.dll",
+            "par(en).dll",
+        ]
+    };
+    for &name in names {
         dir.file(name, &image);
         let text = format!("version(\"{}\", \"1.2\", ==)", name.replace('\\', "/"));
         let env = env_with(&dir);
@@ -453,6 +463,7 @@ fn versions_and_operators_that_could_not_be_rebuilt_as_text_are_syntax_errors() 
 }
 
 #[test]
+#[cfg(unix)]
 fn the_scratch_directory_is_private_and_removed_with_its_content() {
     use std::os::unix::fs::PermissionsExt;
     let scratch = Scratch::new().expect("creates");

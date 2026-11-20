@@ -4,9 +4,11 @@
 mod common;
 
 use common::Fixture;
+#[cfg(unix)]
+use loot_rs::api::copy_text;
 use loot_rs::api::{
     API_VERSION, CancelToken, EvaluateError, FindingKind, Masterlist, MasterlistError, PluginSlot,
-    ProgressHook, SortError, SortOptions, Stage, Userlist, check, copy_text, evaluate, sort,
+    ProgressHook, SortError, SortOptions, Stage, Userlist, check, evaluate, sort,
 };
 use std::fs;
 use std::path::Path;
@@ -674,6 +676,7 @@ fn an_evaluate_error_copies_with_its_code() {
 }
 
 #[test]
+#[cfg(unix)]
 fn copy_text_writes_the_home_directory_of_the_message_as_a_tilde() {
     let home = std::env::var("HOME").expect("HOME is set for the tests");
     let home = home.trim_end_matches('/');
@@ -685,6 +688,7 @@ fn copy_text_writes_the_home_directory_of_the_message_as_a_tilde() {
 }
 
 #[test]
+#[cfg(unix)]
 fn copy_text_leaves_a_path_that_only_starts_like_the_home_directory_alone() {
     let home = std::env::var("HOME").expect("HOME is set for the tests");
     let message = format!("{}2/Data: not a directory", home.trim_end_matches('/'));
@@ -695,6 +699,7 @@ fn copy_text_leaves_a_path_that_only_starts_like_the_home_directory_alone() {
 }
 
 #[test]
+#[cfg(unix)]
 fn copy_text_writes_a_home_directory_that_ends_with_a_slash_as_a_single_tilde() {
     let home = std::env::var("HOME").expect("HOME is set for the tests");
     let home = home.trim_end_matches('/');

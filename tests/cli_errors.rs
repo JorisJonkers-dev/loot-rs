@@ -4,6 +4,7 @@
 mod common;
 
 use common::Fixture;
+#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use std::process::Command;
@@ -117,7 +118,12 @@ fn a_missing_masterlist_names_the_file() {
     let absent = fixture.root.join("nowhere.yaml");
     let result = check(&absent, &plugins, &fixture.data(), &[]);
     assert_error(&result, "nowhere.yaml");
-    assert!(result.stderr.contains("No such file"), "{}", result.stderr);
+    let os_says = if cfg!(windows) {
+        "cannot find the file"
+    } else {
+        "No such file"
+    };
+    assert!(result.stderr.contains(os_says), "{}", result.stderr);
 }
 
 #[test]
@@ -136,6 +142,7 @@ fn a_masterlist_that_is_not_utf8_is_an_error() {
 }
 
 #[test]
+#[cfg(unix)]
 fn an_unreadable_masterlist_is_an_error() {
     let (fixture, masterlist, plugins) = game();
     std::fs::set_permissions(&masterlist, std::fs::Permissions::from_mode(0o000)).expect("chmod");
@@ -295,6 +302,7 @@ fn an_empty_plugin_list_is_valid() {
 // ---- plugins that cannot be read -------------------------------------------------------------
 
 #[test]
+#[cfg(unix)]
 fn an_unreadable_plugin_is_not_an_error_but_is_not_a_master() {
     let fixture = Fixture::new();
     fixture
@@ -344,6 +352,7 @@ fn a_file_that_is_not_a_plugin_is_not_a_master() {
 }
 
 #[test]
+#[cfg(unix)]
 fn an_unreadable_directory_in_a_regex_condition_is_a_note_not_a_failure() {
     let fixture = Fixture::new();
     fixture.plugin("A.esp", &[]);

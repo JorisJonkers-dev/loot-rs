@@ -116,12 +116,18 @@ jobs:
         run: mise exec -- task deny
 
   # loot-rs is linked into the Toolbox's raul on Linux, Windows and macOS (Toolbox ADR-0006), so it is built and
-  # tested natively on macOS too (Apple silicon). Linux runs the full set above; this job lints and tests.
-  macos:
-    name: Build and test (macos-latest)
+  # tested natively on Windows and macOS too (Apple silicon). Linux runs the full set above; this job lints and
+  # tests, and Pipeline Complete gates on it, so a unix-only call fails the pull request and the release pull
+  # request alike.
+  platforms:
+    name: Build and test (${{ matrix.os }})
     needs: changes
     if: ${{ needs.changes.outputs.code == 'true' }}
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -130,7 +136,7 @@ jobs:
       - run: rustup toolchain install
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
-          shared-key: macos
+          shared-key: ${{ matrix.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Clippy
         run: cargo clippy --locked --all-targets --all-features -- -D warnings
@@ -174,7 +180,7 @@ jobs:
 
   pipeline-complete:
     name: Pipeline Complete
-    needs: [changes, hygiene, pr-title, rust, macos, fuzz-smoke]
+    needs: [changes, hygiene, pr-title, rust, platforms, fuzz-smoke]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -204,5 +210,5 @@ jobs:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key | IN("rust", "macos", "fuzz-smoke")) and $n.changes.outputs.code == "false" | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
+          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key | IN("rust", "platforms", "fuzz-smoke")) and $n.changes.outputs.code == "false" | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
           if [ -n "$failed" ]; then echo "$failed"; exit 1; fi
