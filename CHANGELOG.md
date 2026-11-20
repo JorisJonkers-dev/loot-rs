@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.8.0...v0.8.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **condition:** create the executable-version scratch folder on Windows too ([#92](https://github.com/JorisJonkers-dev/loot-rs/issues/92)) ([230b57d](https://github.com/JorisJonkers-dev/loot-rs/commit/230b57dc3be17298777c48e0a5867f40cab76fca))
+
 ## [0.8.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.7.0...v0.8.0) (2026-11-20)
 
 
