@@ -39,6 +39,49 @@ fn the_fixed_file_version_is_compared_in_both_argument_orders() {
 }
 
 #[test]
+fn every_comparator_holds_and_fails_where_it_should_for_both_functions() {
+    let dir = TempDir::new();
+    dir.file("a.dll", &PeSpec::new([1, 4, 0, 2], "1.4.0.2").build());
+    // (comparator, version below, equal, above): the result of `file <comparator> given`.
+    for (op, below, equal, above) in [
+        ("==", false, true, false),
+        ("!=", true, false, true),
+        ("<", false, false, true),
+        (">", true, false, false),
+        ("<=", false, true, true),
+        (">=", true, true, false),
+    ] {
+        for function in ["version", "product_version"] {
+            for (given, expected) in [("1.3.0.0", below), ("1.4.0.2", equal), ("1.5.0.0", above)] {
+                let text = format!(r#"{function}("a.dll", {op}, "{given}")"#);
+                assert_eq!(eval(&dir, &text), Ok(expected), "{text}");
+                let text = format!(r#"{function}("a.dll", "{given}", {op})"#);
+                assert_eq!(eval(&dir, &text), Ok(expected), "{text}");
+            }
+        }
+    }
+}
+
+#[test]
+fn a_masterlist_guard_on_a_script_extender_beside_the_data_directory_is_evaluated() {
+    let dir = TempDir::new();
+    let nvse = |version: [u16; 4], text: &str| {
+        dir.file("game/nvse_1_4.dll", &PeSpec::new(version, text).build());
+    };
+    dir.file("game/Data/readme.txt", b"x");
+    nvse([0, 5, 0, 0], "0.5");
+    // A fresh environment per evaluation: one caches what it has read.
+    let env = || {
+        FsEnv::new(&dir.path().join("game/Data"), Vec::<Slot>::new())
+            .with_game_dir(Some(&dir.path().join("game")))
+    };
+    let guard = r#"not version("../nvse_1_4.dll", >=, "0.6.0.0")"#;
+    assert_eq!(eval_str(guard, &env()), Ok(true));
+    nvse([0, 6, 0, 0], "0.6");
+    assert_eq!(eval_str(guard, &env()), Ok(false));
+}
+
+#[test]
 fn the_product_version_string_is_compared_with_loots_grammar() {
     let dir = TempDir::new();
     dir.file("a.dll", &PeSpec::new([0, 0, 0, 0], "2.0.1-beta.2").build());

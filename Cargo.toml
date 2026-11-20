@@ -11,15 +11,17 @@ publish = false
 [dependencies]
 yaml-rust2 = "0.13.0"
 regex = "1.13.1"
-# MIT, by the LOOT authors. Opt-in (feature `executable-versions`): the default build does not contain it.
+# MIT, by the LOOT authors. In the default build through the feature `executable-versions` (default-features = false
+# leaves it out).
 # It pulls in esplugin (GPL-3.0), which this crate's own licence is compatible with.
 loot-condition-interpreter = { version = "6.0.0", optional = true }
 # MIT OR Apache-2.0. Opt-in (feature `serde`): `Serialize` for the sort output, written by hand (no derive macros).
 serde = { version = "1.0.229", optional = true, default-features = false, features = ["std"] }
 
 [features]
-default = []
-# version() and product_version() on executables and DLLs, through loot-condition-interpreter.
+# version() and product_version() on executables and DLLs, through loot-condition-interpreter: the masterlists for
+# New Vegas use them for the script extender and its plugins, so a build without them drops those items.
+default = ["executable-versions"]
 executable-versions = ["dep:loot-condition-interpreter"]
 # `Serialize` for `api::SortOutput` and its parts, with the keys of `loot-rs sort --json`.
 serde = ["dep:serde"]
