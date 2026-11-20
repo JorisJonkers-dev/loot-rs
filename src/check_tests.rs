@@ -22,6 +22,7 @@ fn check(yaml: &str, installed: &[&str], order: &str, strict: bool) -> (Report, 
     let metadata = parse(yaml).expect("masterlist parses");
     let options = Options {
         strict_groups: strict,
+        ..Options::default()
     };
     (run(&metadata, &env, options), dir)
 }
@@ -473,4 +474,37 @@ fn slots_are_read_in_load_order() {
             },
         ]
     );
+}
+
+/// `default` loads after `DLC`, so a plugin in `default` that precedes a `DLC` plugin is out of group order.
+const DEFAULT_AFTER_DLC: &str = "
+groups:
+  - {name: DLC}
+  - {name: default, after: [DLC]}
+plugins:
+  - {name: 'DLC.esm', group: DLC}
+";
+
+fn check_fixed(fixed: &'static [&'static str]) -> (Report, TempDir) {
+    let (dir, env) = game(&["Main.esm", "DLC.esm"], "Main.esm\nDLC.esm\n");
+    let metadata = parse(DEFAULT_AFTER_DLC).expect("masterlist parses");
+    let options = Options {
+        strict_groups: false,
+        fixed_first: fixed,
+    };
+    (run(&metadata, &env, options), dir)
+}
+
+#[test]
+fn a_plugin_the_game_fixes_first_gets_no_group_order_note() {
+    let (report, _dir) = check_fixed(&["main.ESM"]);
+    assert_eq!(plugin(&report, "Main.esm").findings, []);
+}
+
+#[test]
+fn an_ordinary_plugin_still_gets_a_group_order_note_when_another_is_fixed() {
+    let (report, _dir) = check_fixed(&["Other.esm"]);
+    let findings = &plugin(&report, "Main.esm").findings;
+    assert_eq!(findings.len(), 1);
+    assert_eq!(findings[0].kind, FindingKind::GroupOrder);
 }

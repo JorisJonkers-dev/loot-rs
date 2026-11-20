@@ -159,6 +159,9 @@ impl Report {
 pub struct Options {
     /// Count group violations and undefined groups as hard.
     pub strict_groups: bool,
+    /// Plugins whose place the game fixes (hard-coded, loaded first whatever their group). A group-order note
+    /// says nothing a player can act on for them, so none is reported for them. Names compare ignoring case.
+    pub fixed_first: &'static [&'static str],
 }
 
 pub(crate) struct Evaluator<'a> {
@@ -342,6 +345,15 @@ impl Run<'_> {
 
     fn group_rules(&self, ev: &mut Evaluator, index: usize) {
         let group = &self.groups_of[index];
+        let name = &self.env.slots()[index].name;
+        if self
+            .options
+            .fixed_first
+            .iter()
+            .any(|fixed| fixed.eq_ignore_ascii_case(name))
+        {
+            return;
+        }
         if !self.defined.contains(group.as_str()) {
             ev.findings.push(Finding {
                 kind: FindingKind::UndefinedGroup,

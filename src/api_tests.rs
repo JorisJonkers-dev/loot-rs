@@ -132,6 +132,34 @@ fn a_group_rule_that_a_requirement_contradicts_is_dropped_and_soft_unless_strict
 }
 
 #[test]
+fn the_games_main_master_gets_no_group_note_but_an_ordinary_plugin_does() {
+    let yaml = "
+groups:
+  - {name: DLC}
+  - {name: default, after: [DLC]}
+plugins:
+  - {name: 'DeadMoney.esm', group: DLC, after: ['Ordinary.esm']}
+";
+    let names = ["FalloutNV.esm", "Ordinary.esm", "DeadMoney.esm"];
+    let dir = data(&names);
+    let output = run(yaml, &dir, &names).expect("sorts");
+    assert_eq!(order(&output), names, "the rule keeps Ordinary first");
+    let notes = |name: &str| {
+        output
+            .plugins
+            .iter()
+            .find(|plugin| plugin.name == name)
+            .expect("plugin")
+            .findings
+            .iter()
+            .filter(|finding| finding.kind == FindingKind::GroupOrder)
+            .count()
+    };
+    assert_eq!(notes("FalloutNV.esm"), 0);
+    assert_eq!(notes("Ordinary.esm"), 1);
+}
+
+#[test]
 fn rules_that_contradict_each_other_are_an_error_naming_two_plugins() {
     let dir = data(&["A.esp", "B.esp"]);
     let yaml = "plugins:\n  - {name: A.esp, after: [B.esp]}\n  - {name: B.esp, after: [A.esp]}\n";
