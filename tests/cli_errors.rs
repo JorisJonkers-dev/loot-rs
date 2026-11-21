@@ -88,6 +88,21 @@ fn an_unknown_command_is_an_error() {
 }
 
 #[test]
+fn version_prints_the_package_version_and_exits_zero() {
+    for flag in ["--version", "-V"] {
+        let result = run(&[flag]);
+        assert_eq!(result.code, 0, "{}", result.stderr);
+        assert_eq!(
+            result.stdout,
+            format!("loot-rs {}\n", env!("CARGO_PKG_VERSION"))
+        );
+        assert_eq!(result.stderr, "");
+    }
+    // only on its own: a command with the flag is still an argument error
+    assert_error(&run(&["check", "--version"]), "unknown argument");
+}
+
+#[test]
 fn each_required_flag_is_named_when_missing() {
     assert_error(&run(&["check"]), "--masterlist is required");
     assert_error(
