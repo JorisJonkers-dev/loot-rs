@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.8.1...v0.9.0) (2026-11-21)
+
+
+### Features
+
+* **cli:** --version, and how to pull and verify the package without a login ([#96](https://github.com/JorisJonkers-dev/loot-rs/issues/96)) ([#97](https://github.com/JorisJonkers-dev/loot-rs/issues/97)) ([3e6f579](https://github.com/JorisJonkers-dev/loot-rs/commit/3e6f579b25c63bd796f44710512299360f20bcc1))
+
 ## [0.8.1](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.8.0...v0.8.1) (2026-11-20)
 
 
