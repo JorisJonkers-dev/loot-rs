@@ -26,8 +26,8 @@ permissions:
 
 env:
   # The same pin as ci.yml.
-  TALLY_VERSION: v0.1.0
-  TALLY_SHA256: 7d8f99a9704dffbd63e5c1a05012a745ca2de34f7faf8fb1318e5c42f2f7415d
+  TALLY_VERSION: v0.2.0
+  TALLY_SHA256: 33dfec99d0fce69bdba7c8c13bdc96126d1f278497f4cf224571d9a667c13824
   # The only files the bot may commit.
   REPORT_FILES: >-
     docs/COMPATIBILITY.md
