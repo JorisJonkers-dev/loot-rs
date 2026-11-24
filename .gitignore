@@ -8,7 +8,7 @@ node_modules/
 
 # Coverage output. the org requires a >=80% line coverage gate, so every repo produces these.
 coverage/
-# The feature-catalogue reports that raul-progress-bot commits on main (.github/workflows/tally-progress.yml).
+# The feature-catalogue reports that raul-progress-bot commits on main (.github/workflows/ci.yml, job `reports`).
 !/docs/coverage/
 .nyc_output/
 *.lcov

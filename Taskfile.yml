@@ -37,6 +37,12 @@ tasks:
     desc: The same tests with the opt-in cargo features (executable-versions)
     cmd: cargo test --locked --all-features
 
+  test:junit:
+    desc: The tests with the opt-in features through cargo-nextest, leaving JUnit in target/nextest/ci/junit.xml (what CI runs on every platform)
+    cmds:
+      - cargo nextest run --locked --all-features --profile ci
+      - cargo test --locked --all-features --doc
+
   coverage:html:
     desc: HTML coverage report in target/llvm-cov/html
     cmd: cargo llvm-cov --locked --html --ignore-filename-regex '{{.COVERAGE_IGNORE}}'
