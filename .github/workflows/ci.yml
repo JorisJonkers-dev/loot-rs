@@ -273,6 +273,7 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           JUNIT: ${{ runner.temp }}/junit
+          CODE: ${{ needs.changes.outputs.code }}
         run: |
           set -euo pipefail
           # The files the `reports` job commits on main must not be ignored, or its `git add` fails there.
@@ -288,10 +289,11 @@ jobs:
           if [ -f "$JUNIT/junit-linux.xml" ] && [ -f "$JUNIT/junit-windows.xml" ] && [ -f "$JUNIT/junit-macos.xml" ]; then
             "$tally" ingest --junit "$JUNIT/junit-linux.xml" --junit "$JUNIT/junit-windows.xml" --junit "$JUNIT/junit-macos.xml" --out "$RUNNER_TEMP/results.json"
             args=(--results "$RUNNER_TEMP/results.json")
-          elif [ "$GITHUB_EVENT_NAME" = push ]; then
-            echo "::error title=Feature catalogue::a push to main needs the JUnit results of Linux, Windows and macOS"; exit 1
+          elif [ "$GITHUB_EVENT_NAME" = push ] || [ "$CODE" = true ]; then
+            # The test jobs ran, so their results must be here: a lost upload must not switch the ratchet off.
+            echo "::error title=Feature catalogue::the JUnit results of Linux, Windows and macOS are needed when the tests run"; exit 1
           else
-            echo "::notice title=Feature catalogue::no JUnit results of all three platforms (the tests did not run or did not finish): no covered count and no ratchet"
+            echo "::notice title=Feature catalogue::documentation only: the tests did not run, so no covered count and no ratchet"
           fi
           # Pull requests never carry the generated reports, so none can lower the bar the ratchet measures against.
           if [ "$GITHUB_EVENT_NAME" = pull_request ] && git diff --name-only "$BASE" HEAD -- docs/COVERAGE.md docs/coverage | grep -q .; then
