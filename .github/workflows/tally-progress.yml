@@ -49,6 +49,13 @@ jobs:
       - name: Render
         run: |
           set -euo pipefail
+          # The files the report workflow commits on main must not be ignored, or its `git add` fails there.
+          files="$(sed -n '/^  REPORT_FILES: >-$/,/^$/p' .github/workflows/tally-progress.yml | sed -n 's/^    \(docs\/[^ ]*\)$/\1/p')"
+          [ -n "$files" ] || { echo "::error title=Feature catalogue::no REPORT_FILES found in tally-progress.yml"; exit 1; }
+          # shellcheck disable=SC2086
+          if ignored="$(git check-ignore --no-index -v $files)"; then
+            echo "::error title=Feature catalogue::report files are ignored by .gitignore: $ignored"; exit 1
+          fi
           curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/tally" "https://github.com/JorisJonkers-dev/tally/releases/download/${TALLY_VERSION}/tally-x86_64-unknown-linux-gnu"
           echo "${TALLY_SHA256}  $RUNNER_TEMP/tally" | sha256sum -c -
           chmod +x "$RUNNER_TEMP/tally"
