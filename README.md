@@ -1,223 +1,56 @@
 # loot-rs
 
-`loot-rs` sorts the load order of Fallout: New Vegas and Tale of Two Wastelands with the rules of the
-[LOOT](https://github.com/loot/loot) masterlist (requirements, incompatibilities, load-after, groups, messages, Bash
-Tag suggestions), in Rust, for Linux, Windows and macOS. It reads files and writes nothing: a mod manager
-decides what to do with the order it returns.
+**loot-rs puts the mods of Fallout: New Vegas and Tale of Two Wastelands in a working load order.** Mods are loaded
+one after another, and in the wrong order they can stop working properly. loot-rs sorts them with the
+rules the [LOOT](https://loot.github.io/) community keeps for many mods.
 
-Players use it through [raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox), where it sorts the
-Load order page. On its own it is a library and a command line program.
+<p align="center">
+  <img src="docs/images/how-it-works.svg" alt="Your plugins in any order go through loot-rs, which applies the LOOT masterlist's rules and returns a working order" width="100%">
+</p>
 
-## Used from raul
+## What you see
 
-raul's **Load order** page sorts the plugins of the active profile with loot-rs (through
-[nvmod-rs](https://github.com/JorisJonkers-dev/nvmod-rs), which links it). raul shows every move, each plugin's group
-and the masterlist's messages before anything changes; **Apply** writes the order, and the change can be undone.
+loot-rs sorts the **Load order** page of [raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox). raul shows
+every move and LOOT's messages first, and changes nothing until you press Apply.
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/JorisJonkers-dev/rauls-trusty-toolbox/main/crates/raul-gui/tests/snapshots/load-order/load-order-preview.png" alt="raul's Load order page: a preview of three moves with their groups and the masterlist's messages" width="49%">
   <img src="https://raw.githubusercontent.com/JorisJonkers-dev/rauls-trusty-toolbox/main/crates/raul-gui/tests/snapshots/load-order/load-order-sorted.png" alt="raul's Load order page when the plugins are already in the masterlist's order" width="49%">
 </p>
 
-The same from raul's command line: `raul sort --instance <dir> --fetch-masterlist`, and `--apply` to write it.
+## What it does for you
 
-## On its own
+- 🔢 **Sorts your mods** the way LOOT does, on Linux, Windows and macOS.
+- 💬 **Warns you** with LOOT's messages: a missing file a mod needs, two mods that do not go together.
+- 👀 **Only looks, never changes**: it reads your files, and raul asks you before the order is changed.
 
-As a library, `loot_rs::api::sort(load_order, masterlist, data_dir, options)` returns the sorted order, the messages
-and Bash Tags that apply, the findings, and the cleaning data that matches the installed files. See
-[docs/API.md](docs/API.md) for the contract, the sorting algorithm (a port of libloot's plugin graph, see
-[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)) and the semver policy.
+## How far along it is
 
-As a program:
+Every LOOT feature on the list, and how many are built and tested. The picture is redrawn each time a change lands.
 
-```text
-loot-rs sort  --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--json]
-loot-rs check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
-```
+<p align="center">
+  <img src="docs/coverage/tally.svg" alt="Feature catalogue: implemented and covered per area" width="100%">
+</p>
 
-`sort` prints the load order sorted with LOOT's algorithm and what applies to it; `check` reports which rules a given
-order breaks. Neither writes anything. The details of both are below.
+## How it fits together
 
-## Why a separate project
+<p align="center">
+  <img src="docs/images/raul-parts.svg" alt="raul and its five parts: nv-rs the game engine, nvmod-rs mods, loot-rs load order (this project), lodwright-rs distant view, ttwright-rs Tale of Two Wastelands" width="100%">
+</p>
 
-loot-rs is one of the Components raul is made of, next to [nv-rs](https://github.com/JorisJonkers-dev/nv-rs),
-[nvmod-rs](https://github.com/JorisJonkers-dev/nvmod-rs), [lodwright-rs](https://github.com/JorisJonkers-dev/lodwright-rs)
-and [ttwright-rs](https://github.com/JorisJonkers-dev/ttwright-rs). Each does one job, is tested on its own and
-releases on its own schedule; raul links them into one program and ships one tested set. loot-rs is checked on its
-own against the real libloot on generated load orders ([docs/ORACLE.md](docs/ORACLE.md)).
+loot-rs is one part of raul. As its own project it is tested on its own: on 3,300 made-up load orders it sorted
+exactly as LOOT's own sorter does ([docs/ORACLE.md](docs/ORACLE.md)).
 
-## Licence and origin
+## Get it
 
-This is an independent port, not an official LOOT project.
+**[Download raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox/releases/latest)**: loot-rs is built in.
+Written in Rust, it also works on its own, inside another program or from the command line ([docs/USAGE.md](docs/USAGE.md)).
 
-**Licence: GPL-3.0**, the licence of LOOT and libloot (read from their `LICENSE` files, see
-[docs/UPSTREAMS.md](docs/UPSTREAMS.md)). This is a port in the licensing sense: it follows LOOT's rule semantics,
-which were read from LOOT's public metadata documentation (https://loot-api.readthedocs.io), and is kept under
-LOOT's licence. The sorter, the record and archive overlap, the generated messages and the version grammar are ported
-from libloot and LOOT's source; [NOTICE.md](NOTICE.md) lists each part and where it came from. LOOT is by Oliver Hamlet (Ortham) and
-contributors: https://github.com/loot/loot. The masterlist is community data under its own licence (CC0-1.0 for
-`loot/falloutnv`) and is read at run time from a path you give; it is never copied into this repository.
+## Learn more
 
-`src/plugin.rs` is not GPL: it is the plugin header reader from `fnvorder`
-(MIT OR Apache-2.0, JorisJonkers-dev/NV-Linux-Modding), taken under MIT and kept as a separate module. See
-[NOTICE.md](NOTICE.md).
+- [Using loot-rs](docs/USAGE.md): raul's Load order page, the library, the commands, what it does not do, downloads.
+- [More detail](docs/OVERVIEW.md): licence and origin, design notes, how it was tested, open questions.
+- [Every LOOT feature and its state](docs/COMPATIBILITY.md).
 
-## Systems and packages
-
-The library builds and its tests pass on Linux and macOS (Apple silicon) on every pull request; raul builds it from
-the pinned source on Linux, Windows and macOS. The `loot-rs` program is published for Linux x86-64 as an OCI package
-(below) and for macOS as the release asset `loot-rs-universal-apple-darwin.tar.gz` (one binary for Apple silicon and
-Intel, with its `.sha256`).
-
-### Packages
-
-The `loot-rs` program is published on each release as an OCI package on ghcr.io:
-
-`ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu`
-
-where `<version>` is the release tag without the leading `v`. The package is a `tar.gz` archive with the binary and
-`LICENSE`. The package is an OCI artifact with one layer; the layer is that archive, and its digest equals the
-"Archive SHA-256" in the release notes. `loot-rs --version` prints the version of an installed program, to match it to
-a release.
-
-Verify it with:
-
-```sh
-gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-unknown-linux-gnu --repo JorisJonkers-dev/loot-rs
-```
-
-This needs `gh` 2.49 or newer (older versions, such as the 2.46 of Debian 13, have no `attestation` command) and
-a GitHub token: run `gh auth login` or set `GH_TOKEN`, even though the package and its attestation are public.
-
-#### Pulling and verifying without a login or docker
-
-The package is public, so an anonymous token is enough. With `curl`, `python3` and `sha256sum` (replace `<version>`):
-
-```sh
-TAG=<version>-x86_64-unknown-linux-gnu
-TOKEN=$(curl -s "https://ghcr.io/token?scope=repository:jorisjonkers-dev/loot-rs:pull" | python3 -c 'import sys,json;print(json.load(sys.stdin)["token"])')
-# the manifest (keep the digest header: it is the manifest digest) and the layer it names
-curl -s -D headers.txt -H "Authorization: Bearer $TOKEN" -H "Accept: application/vnd.oci.image.manifest.v1+json" \
-  -o manifest.json "https://ghcr.io/v2/jorisjonkers-dev/loot-rs/manifests/$TAG"
-LAYER=$(python3 -c 'import json;print(json.load(open("manifest.json"))["layers"][0]["digest"])')
-curl -sL -H "Authorization: Bearer $TOKEN" -o loot-rs.tar.gz "https://ghcr.io/v2/jorisjonkers-dev/loot-rs/blobs/$LAYER"
-sha256sum loot-rs.tar.gz    # equals the Archive SHA-256 of the release notes and the layer digest
-```
-
-To verify the attestation without a login, fetch its bundle from the public API (the digest is the manifest digest
-from `headers.txt`, `docker-content-digest`) and give it to `gh`, which then needs no token:
-
-```sh
-DIGEST=$(grep -i '^docker-content-digest:' headers.txt | tr -d '\r' | cut -d' ' -f2)
-curl -s "https://api.github.com/repos/JorisJonkers-dev/loot-rs/attestations/$DIGEST" \
-  | python3 -c 'import sys,json;[print(json.dumps(a["bundle"])) for a in json.load(sys.stdin)["attestations"]]' > bundle.jsonl
-gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs:$TAG --bundle bundle.jsonl --repo JorisJonkers-dev/loot-rs
-```
-
-`gh` exits 0 when the bundle verifies. The unauthenticated GitHub API allows 60 requests an hour per address.
-
-To republish an existing tag, for example after the package was renamed, run the release workflow by hand on `main` with the tag and `publish` set: `gh workflow run release.yml -R JorisJonkers-dev/loot-rs --ref main -f tag=vX.Y.Z -f publish=true`. The run pushes the package of that tag again and adds its reference to the release notes. Without `publish=true` it is a dry run that pushes nothing.
-
-## Use (command line)
-
-`loot-rs sort` takes the same arguments as `check` and prints the load order sorted with LOOT's algorithm (see
-[docs/API.md](docs/API.md)), with what applies to it; `--json` prints it for tools. It writes nothing. The rest of this
-section describes `check`.
-
-```text
-loot-rs check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
-```
-
-* `--masterlist`: a LOOT masterlist (for example `masterlist.yaml` from https://github.com/loot/falloutnv).
-* `--plugins`: the load order, a `plugins.txt` (the active-only style MO2 writes for New Vegas, or the `*` style).
-  The order of the lines is the load order.
-* `--data`: the game's `Data` directory (for MO2, a directory that already shows the merged files). Paths in
-  conditions are relative to it; `..` reaches the game directory. File names are matched case-insensitively.
-
-It prints, for every installed plugin of the load order that has something to report:
-
-* the messages whose condition holds, and the Bash Tags suggested (`+Tag` add, `-Tag` remove);
-* **VIOLATION** lines (hard): a `req` file that is missing, an `inc` file that is present, an `after` plugin
-  (or a `req` plugin) that loads later than the plugin;
-* `note` lines (soft): group-order violations, an undefined group, conditions that could not be evaluated, listed
-  plugins that are not in `Data`.
-
-Group findings are soft unless `--strict-groups` is given, see [docs/GROUPS.md](docs/GROUPS.md).
-
-Exit code `0`: no hard violation. `1`: at least one hard violation (with `--strict-groups`, group violations and
-undefined groups count too). `2`: bad arguments or unreadable input. `check` does not sort and writes nothing.
-
-## Executable versions (opt-in)
-
-```text
-cargo build --release --features executable-versions
-```
-
-With the feature, `version(path, ...)` and `product_version(path, ...)` on a `.exe` or `.dll` under `Data` (or `..`,
-the game directory) read the file's PE version resource and compare it with LOOT's version grammar, through
-[`loot-condition-interpreter`](https://github.com/loot/loot-condition-interpreter) (MIT, by the LOOT authors). The
-default build does not contain it. The interpreter depends on `esplugin` (GPL-3.0), which is why the feature is
-off by default; this project is GPL-3.0 as well. A file that does not exist makes the condition false, as in
-LOOT; a file that is not a PE image, or whose headers are out of bounds, is a condition error (the item is not
-applied). The file is read once with every size checked and the interpreter is given only the validated version block, in a minimal image in a private temporary directory. `version()` on a plugin (`.esp`, `.esm`) needs no feature: it is read from the description field by this crate's own
-port of libloot's rules (`src/version.rs`). Every size read from the file is checked before the interpreter sees it, see
-[docs/RESOURCE-LIMITS.md](docs/RESOURCE-LIMITS.md).
-
-## What it does NOT do
-
-* Nothing here writes `plugins.txt`, `loadorder.txt` or anything else. `sort` (command line and library) sorts: it is a
-  port of libloot's plugin graph (masters, `req`, `after`, groups, record overlap, archive (BSA) overlap, tie-breaks),
-  and `dirty` / `clean` CRCs are compared with the installed files. What is ported and what is not is listed in
-  [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
-* It does not run the game, Wine, Proton or MO2, and it does not download the masterlist or update it.
-* `version` and `product_version` on executables and DLLs need the cargo feature `executable-versions` (below).
-  An item guarded by a condition this crate cannot evaluate is not applied and is reported as unsupported (with a
-  count at the end); it is never guessed.
-* No Markdown rendering: message text is returned as the masterlist writes it.
-* `check` looks only at the plugin list you give and does not sort. Its group findings are pairwise: it does not drop
-  the group rules that `sort` drops because they clash with a master, `after` or `req` rule, so `check` can show a
-  group note that `sort` (and LOOT) would not enforce. `sort` reports only the group rules it really dropped
-  (`dropped_group_rules`).
-
-Every LOOT feature is listed as supported, partial or unsupported in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
-
-## Design notes
-
-* `plugin`: header reader (flags, masters, description). Used for `is_master()`.
-* `metadata`: masterlist reader. YAML anchors, aliases and `<<` merge keys are resolved, because the real New
-  Vegas masterlist builds its messages from `<<: *template` merges.
-* `condition`: parser and evaluator for the condition language. `and` / `or` are plain boolean logic with errors as
-  unknown: `false and <unsupported>` is `false`, `true and <unsupported>` is reported as unsupported.
-* `env`: the load order and `Data` directory conditions run against. Regex file names and `file()` paths with
-  directories resolve case-insensitively.
-* `check`, `render`: the rules and the text output.
-
-### Why `yaml-rust2`
-
-The masterlist needs a real YAML parser with anchors and aliases. `serde_yaml` is archived and no longer
-maintained. `yaml-rust2` is the maintained fork of `yaml-rust`, resolves anchors and aliases, has a small
-dependency tree and no proc macros (the metadata is read by hand from its node tree, so there is no derive layer
-to get wrong on LOOT's scalar-or-map forms). The version in `Cargo.lock` (0.10.4) is the newest one the registry
-proxy offered for this toolchain; a newer 0.13.0 exists and was not taken. `regex` is used for LOOT's regex names
-and paths (anchored, case-insensitive, Unicode-aware); it has no look-around, so such a masterlist regex is
-skipped with a warning instead of matching wrongly.
-
-## How it was tested
-
-* Unit tests next to each module (`src/*_tests.rs`): the plugin and record readers, the archive tables, the YAML subset
-  (aliases, merge keys, localised content, group merging, regex names, bad input), the condition grammar and
-  precedence, the version grammar, the sorter (libloot's own sorting tests, translated) and the generated messages.
-* Integration tests (`tests/`) that run the library and the built binary on throwaway game directories whose plugin
-  and archive files are generated byte by byte inside the test: golden check and sort cases, property tests over
-  generated worlds, resource-limit tests, and a check that nothing under the fixture changed.
-* The sorted order, messages, Bash Tags, groups and cleaning data are compared with the real libloot on random
-  synthetic worlds, and the plugin readers with esplugin; see [docs/ORACLE.md](docs/ORACLE.md) for the runs and their
-  results. The owner's real load order is compared locally and privately by `scripts/oracle/oracle_run.py`.
-* Fuzzing, mutation testing and a weekly run against the real masterlist: see [docs/TESTING.md](docs/TESTING.md) and
-  [docs/PRACTICES.md](docs/PRACTICES.md). `task check` runs what CI runs.
-
-## Open questions
-
-* Group violations are soft by default and hard with `--strict-groups`; see [docs/GROUPS.md](docs/GROUPS.md).
-* The messages the LOOT application (not libloot) generates are ported from its source and documentation; they are not
-  yet compared with the application's own output (issue #38).
+An independent port, not an official LOOT project. Licence: GPL-3.0, the licence of LOOT
+([details and origin](docs/OVERVIEW.md#licence-and-origin), [NOTICE.md](NOTICE.md)).
