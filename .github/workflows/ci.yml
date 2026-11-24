@@ -372,7 +372,9 @@ jobs:
   reports:
     name: Catalogue reports
     needs: pipeline-complete
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.pipeline-complete.outputs.reports == 'changed' }}
+    # Explicit result check: the implicit success() is false on a push, because the pull-request-only jobs upstream of
+    # Pipeline Complete (hygiene, PR title) are skipped there.
+    if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.pipeline-complete.result == 'success' && needs.pipeline-complete.outputs.reports == 'changed' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
