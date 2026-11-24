@@ -124,11 +124,17 @@ to rename one, keep the old id in `aliases`.
 
 Locally, with tally installed: `tally check`, `tally report --depth 2`, `tally doc docs/COMPATIBILITY.md`.
 
-On main, the workflow "Catalogue reports" (`.github/workflows/tally-progress.yml`) regenerates `docs/COMPATIBILITY.md`,
-`docs/COVERAGE.md`, `docs/coverage/tally-report.json` and `docs/coverage/tally.svg` after every push and, when one
-changed, commits only those files as raul-progress-bot with `[skip ci]`. Pull requests never carry the generated
-reports. An item counts as covered once its tagged tests passed on Linux, Windows and macOS on main, which needs the
-JUnit results of those runs (`tally ingest`); until then the reports show implemented and tagged.
+Tests run through cargo-nextest with the `ci` profile (`.config/nextest.toml`; `task test:junit`) on Linux, Windows
+and macOS, with the opt-in features, no retries and every skipped test listed, so each run leaves a JUnit file. The
+step "Feature catalogue (tally)" of Pipeline Complete reads the three files (`tally ingest`): an item is covered once
+its tagged tests passed on all three platforms. With those results it holds a ratchet: the covered and tagged counts
+may not drop below main's last report, `docs/coverage/tally-report.json`, so a pull request that loses a tag or a
+platform fails.
+
+On main, every push builds and tests on all three platforms; that step then regenerates `docs/COMPATIBILITY.md`,
+`docs/COVERAGE.md`, `docs/coverage/tally-report.json` and `docs/coverage/tally.svg`, and when one changed and every
+job passed, the job "Catalogue reports" commits only those files as raul-progress-bot with `[skip ci]`. Pull requests
+never carry the generated reports.
 
 ## The real masterlist (ignored by default)
 
