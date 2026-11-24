@@ -138,6 +138,10 @@ On main, every push builds and tests on all three platforms; that step then rege
 job passed, the job "Catalogue reports" commits only those files as raul-progress-bot with `[skip ci]`. Pull requests
 never carry the generated reports.
 
+The report commit's subject ends with GitHub's skip marker (square brackets around `skip ci`), so it starts no run.
+The same marker anywhere in a squash-merge message skips main's run for that commit too, and with it the tests on
+three platforms and the reports: keep it out of pull request titles and bodies, or edit it out of the squash message.
+
 ## The real masterlist (ignored by default)
 
 `tests/real_masterlist.rs` runs against the real masterlist for Fallout: New Vegas, community data under CC0-1.0
