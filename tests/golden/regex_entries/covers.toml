@@ -1,0 +1,2 @@
+# The catalogue items this case shows (catalogue/, docs/COMPATIBILITY.md).
+covers = ["metadata.plugin.name_regex"]

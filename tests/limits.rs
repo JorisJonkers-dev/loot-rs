@@ -7,6 +7,8 @@
 
 mod common;
 
+use common::{covers, ids};
+
 use common::Fixture;
 use loot_rs::cli::{MAX_PLUGINS_FILE, main_with};
 use loot_rs::condition::parse as parse_condition;
@@ -60,6 +62,7 @@ fn laughs(levels: usize) -> String {
 
 #[test]
 fn hostile_input_is_refused_quickly_and_with_little_memory() {
+    covers(&[ids::tool::cli::RESOURCE_LIMITS]);
     // A billion-laughs document: ten levels of ten aliases.
     let text = laughs(12);
     let (result, peak, time) = measure(|| parse_masterlist(&text));

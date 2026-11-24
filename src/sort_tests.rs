@@ -6,6 +6,7 @@
 //! Unit tests of `sort`: the algorithm on plain inputs.
 
 use super::*;
+use crate::tally::{covers, ids};
 
 fn plugin(name: &str, group: &str) -> PluginInput {
     let mut plugin = PluginInput::new(name);
@@ -72,6 +73,7 @@ fn sorting_its_own_output_changes_nothing() {
 
 #[test]
 fn masters_load_before_the_others_and_each_group_keeps_its_order() {
+    covers(&[ids::sorting::stages::SEPARATE_GRAPHS]);
     let mut master = PluginInput::new("M.esm");
     master.is_master = true;
     let mut other_master = PluginInput::new("N.esm");
@@ -91,6 +93,10 @@ fn masters_load_before_the_others_and_each_group_keeps_its_order() {
 
 #[test]
 fn groups_decide_the_relative_positions() {
+    covers(&[
+        ids::groups::behaviour::SORTING,
+        ids::sorting::stages::GROUP_EDGES,
+    ]);
     let plugins = vec![plugin("B.esp", "B"), plugin("A.esp", "A")];
     let sorted = run(&plugins).expect("sorts");
     assert_eq!(names(&plugins, &sorted), ["A.esp", "B.esp"]);
@@ -111,6 +117,10 @@ fn a_plugin_in_a_group_nobody_defined_has_no_group_edges() {
 
 #[test]
 fn load_after_and_requirements_decide_the_relative_positions() {
+    covers(&[
+        ids::sorting::stages::EDGES_RULES,
+        ids::sorting::stages::TOPOLOGICAL,
+    ]);
     let mut a = PluginInput::new("A.esp");
     a.load_after = vec!["b.esp".into()];
     let plugins = vec![a.clone(), PluginInput::new("B.esp")];
@@ -141,6 +151,7 @@ fn header_masters_load_first_and_names_are_compared_without_case() {
 
 #[test]
 fn an_early_loader_loads_before_everything_else_of_its_kind() {
+    covers(&[ids::sorting::stages::EARLY_LOADER]);
     let plugins = vec![PluginInput::new("B.esp"), PluginInput::new("A.esp")];
     let sorted = sort(&plugins, &groups(), &["A.esp".to_string()], &NoOverlaps).expect("sorts");
     assert_eq!(names(&plugins, &sorted), ["A.esp", "B.esp"]);
@@ -154,6 +165,7 @@ fn an_early_loader_loads_before_everything_else_of_its_kind() {
 
 #[test]
 fn a_cycle_among_the_metadata_names_the_plugins_and_edges() {
+    covers(&[ids::sorting::stages::CYCLE_ERROR]);
     let mut a = PluginInput::new("A.esp");
     a.masters = vec!["B.esp".into()];
     let mut b = PluginInput::new("B.esp");
@@ -236,6 +248,10 @@ fn a_master_that_asks_for_a_master_is_not_an_error_and_a_non_master_may_ask_for_
 
 #[test]
 fn groups_that_load_after_each_other_are_an_error() {
+    covers(&[
+        ids::groups::behaviour::CYCLIC,
+        ids::sorting::stages::GROUP_CYCLE,
+    ]);
     let cyclic = vec![
         GroupInput {
             name: "A".into(),

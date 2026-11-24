@@ -15,6 +15,7 @@
 use super::*;
 use crate::sort::groups;
 use crate::sort::{EdgeType, GroupInput, Overlaps};
+use crate::tally::{covers, ids};
 use std::collections::{HashMap, HashSet};
 
 const PLUGIN_A: &str = "A.esp";
@@ -173,6 +174,7 @@ fn tie_break(order: &[&str], edges: &[(&str, &str)]) -> (Vec<String>, bool) {
 
 #[test]
 fn tie_break_gives_the_creation_order_when_there_are_no_other_edges() {
+    covers(&[ids::sorting::stages::TIE_BREAK]);
     let order = [PLUGIN_A, PLUGIN_B, PLUGIN_C, PLUGIN_D, PLUGIN_E];
     let (sorted, unique) = tie_break(&order, &[]);
     assert!(unique);
@@ -259,6 +261,7 @@ fn should_add_no_edges_if_there_are_no_early_loading_plugins() {
 
 #[test]
 fn should_add_edges_between_consecutive_early_loaders_skipping_missing_plugins() {
+    covers(&[ids::sorting::stages::EARLY_LOADER]);
     let order = [PLUGIN_A, PLUGIN_C, PLUGIN_D];
     let mut over = TestOverlaps::default();
     let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
@@ -419,6 +422,7 @@ fn should_add_edges_across_the_non_empty_default_group() {
 
 #[test]
 fn should_skip_an_edge_that_would_cause_a_cycle() {
+    covers(&[ids::sorting::stages::GROUP_EDGES]);
     let order = [PLUGIN_A, PLUGIN_C];
     let mut over = TestOverlaps::default();
     let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
@@ -1260,6 +1264,7 @@ fn should_add_edges_across_the_merge_point_of_two_root_node_paths() {
 
 #[test]
 fn should_not_depend_on_plugin_graph_node_order() {
+    covers(&[ids::sorting::stages::BYTE_ORDER_VERTICES]);
     let order = [PLUGIN_A1, PLUGIN_A2, PLUGIN_B, PLUGIN_C];
     let mut over = TestOverlaps::default();
     let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
@@ -1686,6 +1691,10 @@ fn should_add_edge_between_plugins_with_asset_overlap_and_unequal_override_count
 
 #[test]
 fn should_choose_record_overlap_over_asset_overlap() {
+    covers(&[
+        ids::sorting::stages::RECORD_OVERLAP,
+        ids::sorting::stages::ASSET_OVERLAP,
+    ]);
     let order = [PLUGIN_A, PLUGIN_B];
     let mut over = TestOverlaps::default();
     let groups_graph = groups::build(&fixture_groups(), &fixture_user_groups()).unwrap();
@@ -1755,6 +1764,7 @@ fn group_edge_kind(
 
 #[test]
 fn should_add_user_group_edge_if_source_plugin_is_in_group_due_to_user_metadata() {
+    covers(&[ids::sorting::stages::USER_EDGES]);
     let kind = group_edge_kind(
         |nodes, order| {
             let a = user_group_node(nodes, order, PLUGIN_A, "A");

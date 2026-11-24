@@ -1,5 +1,6 @@
 use super::{Repaired, repair};
 use crate::sort::{EdgeType, SortedEdge};
+use crate::tally::{covers, ids};
 
 fn edge(from: usize, to: usize, kind: EdgeType) -> SortedEdge {
     SortedEdge { from, to, kind }
@@ -26,6 +27,7 @@ fn an_order_without_violations_is_returned_unchanged() {
 
 #[test]
 fn one_plugin_that_loads_too_late_is_moved_alone_to_the_place_the_rule_needs() {
+    covers(&[ids::groups::behaviour::MINIMAL_CHANGE]);
     // Plugin 5 has to load before plugin 1; the other four keep their places.
     let result = run(&[false; 6], &[edge(5, 1, EdgeType::MasterlistLoadAfter)]);
     assert_eq!(result.order, vec![0, 5, 1, 2, 3, 4]);

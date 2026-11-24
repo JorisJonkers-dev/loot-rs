@@ -1,0 +1,29 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The original functionality loot-rs follows, pinned to the libloot release named in docs/UPSTREAMS.md.
+# ref/libloot.tsv was written by hand from the files below (one row per documented key, condition function and
+# sorting stage; no text copied). To check the pins: tally refs fetch.
+
+[[source]]
+id = "libloot"
+name = "libloot (the library LOOT is built on): metadata syntax, condition strings and the sorting algorithm"
+repo = "https://github.com/loot/libloot"
+tag = "0.29.7"
+commit = "c242698ea86a382998cd8d1c5329f26aea666867"
+licence = "GPL-3.0-or-later (code); the documentation is GFDL-1.3-or-later"
+read = "2026-11-24"
+extractor = "manual"
+list = "ref/libloot.tsv"
+sha256 = "52339feea5ccadd45d3e79c5489be5016635ab79e38ed003a7c5b22795814189"
+
+[source.upstream]
+"docs/api/sorting.rst" = "f225c946651b915fb8bbd54b1594ecd052ae82d96034c880fd809854efb1c91a"
+"docs/metadata/conditions.rst" = "3d0ff9dd50c0e6784b3edb55d0596e8fc1df0f1a8520713dc81d4cb245bd7794"
+"docs/metadata/data_structures/cleaning.rst" = "966f5376c51c8fdfe19ce8d6553f7557fc0eec67c212b5be977ed6d0f605a2bc"
+"docs/metadata/data_structures/file.rst" = "a3020fc1e6d69891a7456d727416dff658023164a33b622d215c086da6556bb9"
+"docs/metadata/data_structures/group.rst" = "a34c532b21a35a6d88c365cb2930eb3e33cbe87b91d40db3244aa12bd73cf39e"
+"docs/metadata/data_structures/localised_content.rst" = "abd28f67f4d203862581687358c1ae6f80d5096749c13fd675a2fcb9380844c3"
+"docs/metadata/data_structures/location.rst" = "00cb599a8a6a5962de5f0c955b96692d749715f5a49cc71a6ec80b540201f145"
+"docs/metadata/data_structures/message.rst" = "91ecb08eadcb0688d37710a9312ad01d5792527188662457cf0e0a253fa95330"
+"docs/metadata/data_structures/plugin.rst" = "d4e306452ca6d1db17fbac8bcb58c704489f6fd3ebfdcd34ecd319be43f80cee"
+"docs/metadata/data_structures/tag.rst" = "64722f64022123e33070785f80f15356f29984e95e5cc6294207d01131dd42db"
+"docs/metadata/file_structure.rst" = "7dfc130cb3dbb7a85f8600b1876265d308fdb3b4efc61be2544c730449230214"

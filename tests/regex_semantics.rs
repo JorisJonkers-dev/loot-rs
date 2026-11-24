@@ -4,6 +4,10 @@
 //! (`libloot-driver --regex-table`); this test needs no libloot. A row whose answer differs is listed in
 //! `KNOWN_DIFFERENCES` with the reason, which docs/COMPATIBILITY.md repeats.
 
+mod common;
+
+use common::{covers, ids};
+
 use loot_rs::metadata::compile_plugin_name;
 
 /// `(pattern, name)` rows where loot-rs answers differently from libloot, on purpose or by a documented limit.
@@ -58,6 +62,7 @@ fn ours(pattern: &str, name: &str) -> &'static str {
 
 #[test]
 fn plugin_name_expressions_match_as_libloot_matches_them() {
+    covers(&[ids::metadata::plugin::NAME_REGEX]);
     let table = include_str!("regex/cases.tsv");
     let mut differences = Vec::new();
     let mut rows = 0;

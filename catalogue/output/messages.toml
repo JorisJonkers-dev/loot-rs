@@ -1,0 +1,35 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "output.messages"
+title = "Messages and output"
+origin = "original"
+reference = "libloot"
+item_column = "Item"
+status_column = "Status"
+notes_column = "Notes"
+
+[[item]]
+id = "types"
+title = "Message types `say`, `warn`, `error`"
+status = "implemented"
+ref = ["libloot:message.type"]
+
+[[item]]
+id = "localised"
+title = "Localised content"
+status = "implemented"
+notes = "`SortOptions::languages`: libloot's `select_message_content` per language, then English, then the first text; compared with libloot on random worlds with regional codes"
+ref = ["libloot:message.content", "libloot:localised.text", "libloot:localised.lang"]
+
+[[item]]
+id = "subs"
+title = "`subs` substitution"
+status = "implemented"
+notes = "`{0}`, `{1}`, ..."
+ref = ["libloot:message.subs"]
+
+[[item]]
+id = "commonmark"
+title = "CommonMark rendering"
+status = "n/a"
+reason = "Text is returned as CommonMark; the caller renders it (see API.md)"

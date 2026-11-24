@@ -1,0 +1,39 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# What loot-rs adds beyond LOOT and libloot.
+[group]
+id = "tool.cli"
+title = "Additions of this project"
+origin = "ours"
+
+[[item]]
+id = "check_command"
+title = "`loot-rs check`: read-only check of a load order against the masterlist rules"
+status = "implemented"
+evidence = ["src/check.rs"]
+
+[[item]]
+id = "strict_groups"
+title = "`--strict-groups`: group order violations are hard"
+status = "implemented"
+
+[[item]]
+id = "json_output"
+title = "JSON output of `sort` with an integer schema version"
+status = "implemented"
+
+[[item]]
+id = "parallel_sort"
+title = "Parallel reading of plugins with a shared memory budget, the same result for any thread count"
+status = "implemented"
+evidence = ["src/parallel.rs"]
+
+[[item]]
+id = "resource_limits"
+title = "Every size that comes from the input is bounded"
+status = "implemented"
+notes = "docs/RESOURCE-LIMITS.md"
+
+[[item]]
+id = "home_tilde"
+title = "Copyable text writes the home directory as `~`"
+status = "implemented"

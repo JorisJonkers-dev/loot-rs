@@ -1,6 +1,7 @@
 //! Unit tests of `condition`.
 
 use super::*;
+use crate::tally::{covers, ids};
 use std::collections::HashMap;
 
 #[derive(Default)]
@@ -47,6 +48,10 @@ fn eval(text: &str) -> Result<bool, ConditionError> {
 
 #[test]
 fn file_and_active() {
+    covers(&[
+        ids::conditions::language::FILE,
+        ids::conditions::language::ACTIVE,
+    ]);
     assert_eq!(eval(r#"file("b.esp")"#), Ok(true));
     assert_eq!(eval(r#"file("zzz.esp")"#), Ok(false));
     assert_eq!(eval(r#"active("a.esp")"#), Ok(true));
@@ -55,6 +60,7 @@ fn file_and_active() {
 
 #[test]
 fn many_counts_more_than_one() {
+    covers(&[ids::conditions::language::MANY]);
     assert_eq!(eval(r#"many("a.esp")"#), Ok(true));
     assert_eq!(eval(r#"many("b.esp")"#), Ok(false));
     assert_eq!(eval(r#"many_active("a.esp")"#), Ok(false));
@@ -62,6 +68,7 @@ fn many_counts_more_than_one() {
 
 #[test]
 fn precedence_is_not_then_and_then_or() {
+    covers(&[ids::conditions::language::OPERATORS]);
     // true or (false and false) = true; (true or false) and false would be false.
     assert_eq!(
         eval(r#"file("a.esp") or file("x") and file("y")"#),
@@ -80,6 +87,7 @@ fn precedence_is_not_then_and_then_or() {
 
 #[test]
 fn whitespace_and_line_breaks_are_allowed() {
+    covers(&[ids::conditions::language::WHITESPACE]);
     assert_eq!(
         eval("file( \"a.esp\" )\n and\n( not file(\"x\") )"),
         Ok(true)
@@ -88,6 +96,12 @@ fn whitespace_and_line_breaks_are_allowed() {
 
 #[test]
 fn size_checksum_master_and_readable() {
+    covers(&[
+        ids::conditions::language::FILE_SIZE,
+        ids::conditions::language::READABLE,
+        ids::conditions::language::IS_MASTER,
+        ids::conditions::language::CHECKSUM,
+    ]);
     assert_eq!(eval(r#"file_size("a.esp", 10)"#), Ok(true));
     assert_eq!(eval(r#"file_size("a.esp", 11)"#), Ok(false));
     assert_eq!(eval(r#"checksum("a.esp", DEADBEEF)"#), Ok(true));

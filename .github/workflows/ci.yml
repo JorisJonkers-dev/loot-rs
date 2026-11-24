@@ -23,6 +23,11 @@ permissions:
 env:
   CARGO_INCREMENTAL: 0
   CARGO_TERM_COLOR: always
+  # The pinned tally release (https://github.com/JorisJonkers-dev/tally) and the SHA-256 of its Linux binary, from
+  # that release's SHA256SUMS. Also in tally-progress.yml; bump both together, with `tally ids --generator
+  # catalogue/tally_ids_gen.rs`.
+  TALLY_VERSION: v0.1.0
+  TALLY_SHA256: 7d8f99a9704dffbd63e5c1a05012a745ca2de34f7faf8fb1318e5c42f2f7415d
 
 jobs:
   # Documentation-only changes skip the Rust job. The gate below still runs and still requires everything else.
@@ -201,6 +206,26 @@ jobs:
       - name: Secrets
         if: ${{ !cancelled() }}
         run: mise exec -- task secrets
+      # The feature catalogue (catalogue/, docs/COMPATIBILITY.md): ids, pins, references, evidence and test tags, and
+      # against the base revision no id removed without `retired` or an alias. tally is a pinned release binary,
+      # checked against its SHA-256; it is not a crate dependency.
+      - name: Feature catalogue (tally)
+        if: ${{ !cancelled() }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --retry-all-errors -o "$RUNNER_TEMP/tally" "https://github.com/JorisJonkers-dev/tally/releases/download/${TALLY_VERSION}/tally-x86_64-unknown-linux-gnu"
+          echo "${TALLY_SHA256}  $RUNNER_TEMP/tally" | sha256sum -c -
+          chmod +x "$RUNNER_TEMP/tally"
+          if [ -n "${BASE:-}" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            "$RUNNER_TEMP/tally" check --base "$BASE"
+          elif [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+            echo "::error title=Feature catalogue::the base revision $BASE is not in the checkout"; exit 1
+          else
+            "$RUNNER_TEMP/tally" check
+          fi
+          "$RUNNER_TEMP/tally" report --depth 2 --format md >>"$GITHUB_STEP_SUMMARY"
 
       # A skipped job fails, except the two that only run on pull requests (hygiene also skips when its
       # override label is set) and the Rust, macOS and fuzz jobs when only documentation changed.

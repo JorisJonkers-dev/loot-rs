@@ -4,6 +4,7 @@ use super::*;
 use crate::env::crc32;
 use crate::plugin::{FLAG_ESM, synthetic_plugin};
 use crate::support_tests::TempDir;
+use crate::tally::{covers, ids};
 
 fn slots(names: &[&str]) -> Vec<PluginSlot> {
     names
@@ -108,6 +109,7 @@ fn groups_order_plugins_and_are_reported() {
 
 #[test]
 fn a_group_rule_that_a_requirement_contradicts_is_dropped_and_soft_unless_strict() {
+    covers(&[ids::groups::behaviour::EDGE_DROPPED]);
     let dir = data(&["A.esp", "B.esp"]);
     let yaml = format!("{GROUPS}  - name: B.esp\n    after: [A.esp]\n");
     let output = run(&yaml, &dir, &["A.esp", "B.esp"]).expect("sorts");
@@ -250,6 +252,7 @@ plugins:
 
 #[test]
 fn cleaning_data_is_matched_by_the_checksum_of_the_installed_file() {
+    covers(&[ids::metadata::plugin::DIRTY_CLEAN]);
     let dir = TempDir::new();
     let bytes = synthetic_plugin(0, &[], Some("dirty one"));
     dir.file("A.esp", &bytes);
@@ -463,6 +466,7 @@ fn records_plugin(dir: &TempDir, name: &str, masters: &[&str], form_ids: &[u32])
 
 #[test]
 fn the_plugin_that_changes_more_of_the_same_records_loads_first() {
+    covers(&[ids::sorting::stages::RECORD_OVERLAP]);
     let dir = TempDir::new();
     dir.plugin("FalloutNV.esm", &[]);
     records_plugin(&dir, "A.esp", &["FalloutNV.esm"], &[0x0000_0001]);
@@ -523,6 +527,7 @@ fn a_rule_wins_over_the_overlap_and_a_plugin_whose_records_cannot_be_read_is_not
 
 #[test]
 fn the_plugin_that_loads_more_of_the_same_archive_files_goes_first() {
+    covers(&[ids::sorting::stages::ASSET_OVERLAP]);
     let dir = TempDir::new();
     dir.plugin("FalloutNV.esm", &[]);
     dir.plugin("A.esp", &[]);
@@ -739,6 +744,7 @@ fn message_and_finding_kinds_have_the_labels_of_the_output() {
 
 #[test]
 fn the_sort_json_starts_with_the_integer_schema_version() {
+    covers(&[ids::tool::cli::JSON_OUTPUT]);
     let json = crate::render::render_sort_json(&SortOutput::default());
     assert!(
         json.starts_with(&format!(
@@ -938,6 +944,7 @@ fn a_home_directory_that_is_a_prefix_of_a_longer_name_is_left_alone() {
 
 #[test]
 fn every_home_directory_of_the_text_is_written_as_a_tilde() {
+    covers(&[ids::tool::cli::HOME_TILDE]);
     assert_eq!(
         tilde("/home/x/a, /home/x/b, /home/x/c", "/home/x"),
         "~/a, ~/b, ~/c"

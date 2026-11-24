@@ -1,0 +1,82 @@
+key	title	upstream
+file.prelude	Metadata file key `prelude`	docs/metadata/file_structure.rst
+file.bash_tags	Metadata file key `bash_tags`	docs/metadata/file_structure.rst
+file.globals	Metadata file key `globals`	docs/metadata/file_structure.rst
+file.groups	Metadata file key `groups`	docs/metadata/file_structure.rst
+file.plugins	Metadata file key `plugins`	docs/metadata/file_structure.rst
+file.other_keys	Other top-level keys are not processed	docs/metadata/file_structure.rst
+plugin.name	Plugin `name` (exact or regular expression)	docs/metadata/data_structures/plugin.rst
+plugin.group	Plugin `group`	docs/metadata/data_structures/plugin.rst
+plugin.after	Plugin `after`	docs/metadata/data_structures/plugin.rst
+plugin.req	Plugin `req`	docs/metadata/data_structures/plugin.rst
+plugin.inc	Plugin `inc`	docs/metadata/data_structures/plugin.rst
+plugin.msg	Plugin `msg`	docs/metadata/data_structures/plugin.rst
+plugin.tag	Plugin `tag`	docs/metadata/data_structures/plugin.rst
+plugin.url	Plugin `url`	docs/metadata/data_structures/plugin.rst
+plugin.dirty	Plugin `dirty`	docs/metadata/data_structures/plugin.rst
+plugin.clean	Plugin `clean`	docs/metadata/data_structures/plugin.rst
+plugin.merging	Merging behaviour of plugin data	docs/metadata/data_structures/plugin.rst
+file_entry.name	File `name`	docs/metadata/data_structures/file.rst
+file_entry.display	File `display`	docs/metadata/data_structures/file.rst
+file_entry.detail	File `detail`	docs/metadata/data_structures/file.rst
+file_entry.condition	File `condition`	docs/metadata/data_structures/file.rst
+file_entry.constraint	File `constraint`	docs/metadata/data_structures/file.rst
+group.name	Group `name`	docs/metadata/data_structures/group.rst
+group.description	Group `description`	docs/metadata/data_structures/group.rst
+group.after	Group `after`	docs/metadata/data_structures/group.rst
+tag.name	Tag `name` (with `-` for removal)	docs/metadata/data_structures/tag.rst
+tag.condition	Tag `condition`	docs/metadata/data_structures/tag.rst
+location.link	Location `link`	docs/metadata/data_structures/location.rst
+location.name	Location `name`	docs/metadata/data_structures/location.rst
+message.type	Message `type` (`say`, `warn`, `error`)	docs/metadata/data_structures/message.rst
+message.content	Message `content`	docs/metadata/data_structures/message.rst
+message.condition	Message `condition`	docs/metadata/data_structures/message.rst
+message.subs	Message `subs`	docs/metadata/data_structures/message.rst
+localised.text	Localised content `text`	docs/metadata/data_structures/localised_content.rst
+localised.lang	Localised content `lang`	docs/metadata/data_structures/localised_content.rst
+cleaning.crc	Cleaning data `crc`	docs/metadata/data_structures/cleaning.rst
+cleaning.util	Cleaning data `util`	docs/metadata/data_structures/cleaning.rst
+cleaning.detail	Cleaning data `detail`	docs/metadata/data_structures/cleaning.rst
+cleaning.itm	Cleaning data `itm`	docs/metadata/data_structures/cleaning.rst
+cleaning.udr	Cleaning data `udr`	docs/metadata/data_structures/cleaning.rst
+cleaning.nav	Cleaning data `nav`	docs/metadata/data_structures/cleaning.rst
+cleaning.condition	Cleaning data `condition`	docs/metadata/data_structures/cleaning.rst
+condition.grammar	Condition grammar: `and`, `or`, `not`, parentheses	docs/metadata/conditions.rst
+condition.whitespace	White space around operators, parentheses and commas	docs/metadata/conditions.rst
+condition.regex_path	Regular expression paths	docs/metadata/conditions.rst
+condition.file	`file(filesystem_path path)`	docs/metadata/conditions.rst
+condition.file_regex	`file(regular_expression_path regex)`	docs/metadata/conditions.rst
+condition.file_size	`file_size(file_path path, file_size size)`	docs/metadata/conditions.rst
+condition.readable	`readable(filesystem_path path)`	docs/metadata/conditions.rst
+condition.active	`active(file_path path)`	docs/metadata/conditions.rst
+condition.active_regex	`active(regular_expression_path regex)`	docs/metadata/conditions.rst
+condition.many	`many(regular_expression_path regex)`	docs/metadata/conditions.rst
+condition.many_active	`many_active(regular_expression_path regex)`	docs/metadata/conditions.rst
+condition.is_master	`is_master(file_path path)`	docs/metadata/conditions.rst
+condition.is_executable	`is_executable(file_path path)`	docs/metadata/conditions.rst
+condition.checksum	`checksum(file_path path, checksum expected_checksum)`	docs/metadata/conditions.rst
+condition.version	`version(path, comparator, version)`	docs/metadata/conditions.rst
+condition.version_reversed	`version(path, version, comparator)`	docs/metadata/conditions.rst
+condition.product_version	`product_version(path, comparator, version)`	docs/metadata/conditions.rst
+condition.product_version_reversed	`product_version(path, version, comparator)`	docs/metadata/conditions.rst
+condition.filename_version	`filename_version(regex path, comparator, version)`	docs/metadata/conditions.rst
+condition.filename_version_reversed	`filename_version(regex path, version, comparator)`	docs/metadata/conditions.rst
+condition.description_contains	`description_contains(file_path path, regular_expression regex)`	docs/metadata/conditions.rst
+condition.version_syntax	Version syntax and comparison rules	docs/metadata/conditions.rst
+sorting.load_plugin_data	Load plugin data	docs/api/sorting.rst
+sorting.vertices	Create plugin graph vertices	docs/api/sorting.rst
+sorting.graphs	Separate graphs for masters, non-masters and blueprint masters	docs/api/sorting.rst
+sorting.blueprint_graph	The blueprint master graph	docs/api/sorting.rst
+sorting.group_graph	The groups graph	docs/api/sorting.rst
+sorting.edges_masters_flag	Edges between master and non-master files	docs/api/sorting.rst
+sorting.edges_masters	Edges from a plugin's masters	docs/api/sorting.rst
+sorting.edges_requirements	Edges from a plugin's requirements	docs/api/sorting.rst
+sorting.edges_load_after	Edges from a plugin's load after files	docs/api/sorting.rst
+sorting.hardcoded	Hardcoded edges	docs/api/sorting.rst
+sorting.cycle_check	Cycle check of the plugin graph	docs/api/sorting.rst
+sorting.group_edges	Group edges	docs/api/sorting.rst
+sorting.overlap_edges	Overlap edges	docs/api/sorting.rst
+sorting.tie_break	Tie-break edges	docs/api/sorting.rst
+sorting.pinning	Pinning vertex positions	docs/api/sorting.rst
+sorting.topological	Topologically sort the plugin graphs	docs/api/sorting.rst
+sorting.combine	Combine the load orders	docs/api/sorting.rst

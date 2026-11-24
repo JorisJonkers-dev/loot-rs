@@ -4,6 +4,7 @@ use super::*;
 use crate::env::Slot;
 use crate::metadata::{FileRef, Tag};
 use crate::support_tests::TempDir;
+use crate::tally::{covers, ids};
 
 fn header(masters: &[&str], version: f32, description: &str) -> PluginHeader {
     PluginHeader {
@@ -81,6 +82,7 @@ fn markdown_escaping_puts_a_backslash_before_every_ascii_punctuation_character()
 
 #[test]
 fn a_missing_or_inactive_master_of_an_active_plugin_is_an_error_and_of_an_inactive_one_nothing() {
+    covers(&[ids::sorting::stages::GENERATED_MESSAGES]);
     let (_dir, env) = world(
         &["A.esp", "Off.esm"],
         &[("A.esp", true), ("Off.esm", false)],
@@ -116,6 +118,7 @@ fn the_filter_tag_in_the_description_or_the_masterlist_silences_the_master_check
 
 #[test]
 fn a_plugin_that_is_its_own_master_and_a_low_header_version_are_reported() {
+    covers(&[ids::sorting::not_ported::SELF_MASTER]);
     let (_dir, env) = world(&["A.esp"], &[("A.esp", true)]);
     let head = header(&["a.ESP"], 1.31, "");
     assert_eq!(
@@ -323,6 +326,7 @@ fn too_many_active_plugins_are_a_warning_for_the_whole_load_order() {
 
 #[test]
 fn the_tags_of_a_description_are_those_between_the_braces() {
+    covers(&[ids::sorting::stages::BASH_TAGS_DESCRIPTION]);
     assert_eq!(
         description_tags("Text\n{{BASH:C.Climate, Delev ,Relev}} more"),
         ["C.Climate", "Delev", "Relev"]

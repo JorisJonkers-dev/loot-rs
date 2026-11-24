@@ -4,6 +4,7 @@ use super::*;
 use crate::env::{Slot, parse_plugins_txt};
 use crate::metadata::parse;
 use crate::support_tests::TempDir;
+use crate::tally::{covers, ids};
 
 /// A game directory with the given installed plugins and a plugin list.
 fn game(installed: &[&str], order: &str) -> (TempDir, FsEnv) {
@@ -73,6 +74,7 @@ fn finding_kinds_have_labels() {
 
 #[test]
 fn messages_apply_when_their_condition_holds() {
+    covers(&[ids::metadata::plugin::MSG]);
     let yaml = r#"
 globals:
   - {type: say, content: 'global'}
@@ -104,6 +106,7 @@ plugins:
 
 #[test]
 fn a_missing_requirement_is_hard_and_names_the_display_text_and_detail() {
+    covers(&[ids::metadata::plugin::REQ]);
     let yaml = "plugins:\n  - name: A.esp\n    req:\n      - {name: 'Gone.esp', display: 'The Gone Mod', detail: 'Get it.'}\n";
     let (report, _dir) = check(yaml, &["A.esp"], "A.esp\n", false);
     let found = &plugin(&report, "A.esp").findings;
@@ -150,6 +153,7 @@ fn a_requirement_with_a_false_condition_is_not_in_force() {
 
 #[test]
 fn a_constraint_decides_whether_the_required_file_counts_as_present() {
+    covers(&[ids::metadata::plugin::CONSTRAINT]);
     let yaml = "plugins:\n  - name: A.esp\n    req:\n      - {name: 'B.esp', constraint: 'active(\"C.esp\")'}\n";
     let (report, _dir) = check(
         yaml,
@@ -179,6 +183,7 @@ fn a_constraint_decides_whether_the_required_file_counts_as_present() {
 
 #[test]
 fn an_incompatible_plugin_that_is_present_is_hard() {
+    covers(&[ids::metadata::plugin::INC]);
     let yaml = "plugins:\n  - name: A.esp\n    inc:\n      - {name: 'B.esp', display: 'Mod B', detail: 'Pick one.'}\n      - {name: 'C.esp', condition: 'file(\"Nothing\")'}\n";
     let (report, _dir) = check(
         yaml,
@@ -199,6 +204,7 @@ fn an_incompatible_plugin_that_is_present_is_hard() {
 
 #[test]
 fn after_is_violated_only_when_the_other_plugin_is_installed_and_later() {
+    covers(&[ids::metadata::plugin::AFTER]);
     let yaml = "plugins:\n  - name: A.esp\n    after: ['B.esp', {name: 'C.esp', condition: 'file(\"Nothing\")'}, 'D.esp']\n";
     let (report, _dir) = check(
         yaml,
@@ -220,6 +226,7 @@ fn after_is_violated_only_when_the_other_plugin_is_installed_and_later() {
 
 #[test]
 fn tags_are_added_removed_cancelled_and_deduplicated() {
+    covers(&[ids::metadata::plugin::TAG]);
     let yaml = r#"
 plugins:
   - name: A.esp
@@ -241,6 +248,7 @@ plugins:
 
 #[test]
 fn every_matching_entry_applies_in_file_order_and_the_first_group_wins() {
+    covers(&[ids::metadata::plugin::GROUP]);
     let yaml = r"
 groups:
   - name: Early
@@ -264,6 +272,7 @@ plugins:
 
 #[test]
 fn plugins_without_entries_are_in_the_default_group_and_listed_when_installed_only() {
+    covers(&[ids::groups::behaviour::DEFAULT_GROUP]);
     let (report, _dir) = check("plugins: []\n", &["A.esp"], "A.esp\nGone.esp\n", false);
     assert_eq!(report.plugins.len(), 1);
     assert_eq!(plugin(&report, "A.esp").group, "default");
@@ -299,6 +308,7 @@ plugins:
 
 #[test]
 fn a_group_that_loads_before_one_it_must_follow_is_a_soft_finding_by_default() {
+    covers(&[ids::groups::behaviour::ORDER_VIOLATION]);
     let (report, _dir) = check(
         GROUPS,
         &["E.esp", "M.esp", "L.esp"],
@@ -323,6 +333,7 @@ fn a_group_that_loads_before_one_it_must_follow_is_a_soft_finding_by_default() {
 
 #[test]
 fn strict_groups_make_group_violations_hard() {
+    covers(&[ids::tool::cli::STRICT_GROUPS]);
     let (report, _dir) = check(
         GROUPS,
         &["E.esp", "M.esp", "L.esp"],
@@ -354,6 +365,7 @@ fn mutually_dependent_groups_are_not_reported_in_either_order() {
 
 #[test]
 fn an_undefined_group_is_noted_and_hard_only_when_strict() {
+    covers(&[ids::groups::behaviour::UNDEFINED_GROUP]);
     let yaml = "plugins:\n  - {name: 'a.esp', group: Nowhere}\n";
     let (soft, _d1) = check(yaml, &["a.esp"], "a.esp\n", false);
     assert_eq!(

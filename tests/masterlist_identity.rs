@@ -2,6 +2,8 @@
 
 mod common;
 
+use common::{covers, ids};
+
 use common::Fixture;
 use loot_rs::api::{Masterlist, MasterlistError};
 
@@ -12,6 +14,7 @@ const PRELUDE: &str = "common: &new\n  - Relev\n";
 
 #[test]
 fn the_digest_of_a_masterlist_file_is_what_git_hash_object_prints() {
+    covers(&[ids::metadata::file::IDENTITY]);
     let fixture = Fixture::new();
     let path = fixture.masterlist(MASTERLIST.replace("*new", "*old").as_str());
     let masterlist = Masterlist::from_file(&path).expect("reads");

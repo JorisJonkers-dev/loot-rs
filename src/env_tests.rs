@@ -1,6 +1,7 @@
 //! Unit tests of `env`.
 
 use super::*;
+use crate::tally::{covers, ids};
 
 #[test]
 fn crc32_matches_the_standard_check_value() {
@@ -10,6 +11,7 @@ fn crc32_matches_the_standard_check_value() {
 
 #[test]
 fn plugins_txt_active_only_style() {
+    covers(&[ids::load_order::input::PLUGINS_TXT_ACTIVE]);
     let slots = parse_plugins_txt("# header\r\nA.esm\r\n\r\nB.esp\r\n");
     assert_eq!(slots.len(), 2);
     assert!(slots.iter().all(|slot| slot.active));
@@ -17,6 +19,7 @@ fn plugins_txt_active_only_style() {
 
 #[test]
 fn plugins_txt_starred_style() {
+    covers(&[ids::load_order::input::PLUGINS_TXT_STAR]);
     let slots = parse_plugins_txt("*A.esm\n B.esp\n*C.esp\n");
     let flags: Vec<bool> = slots.iter().map(|slot| slot.active).collect();
     assert_eq!(flags, [true, false, true]);
@@ -143,6 +146,7 @@ fn installed_active_and_position_use_the_load_order_and_the_directory() {
 
 #[test]
 fn count_files_handles_plain_paths_and_regexes() {
+    covers(&[ids::conditions::language::REGEX_DETECTION]);
     let (_dir, env) = world();
     assert_eq!(env.count_files("mod.esp"), Ok(1));
     assert_eq!(env.count_files("nvse/plugins"), Ok(1), "directories count");
@@ -220,6 +224,7 @@ fn an_unreadable_directory_is_an_environment_error_for_regex_counts() {
 
 #[test]
 fn directory_listings_are_cached() {
+    covers(&[ids::conditions::language::CACHING]);
     let (dir, env) = world();
     assert_eq!(env.count_files(".*\\.esp"), Ok(2));
     dir.plugin("Data/Late.esp", &[]);
@@ -291,6 +296,7 @@ fn a_parent_path_is_the_parent_of_data_without_a_game_directory() {
 
 #[test]
 fn additional_directories_are_searched_before_data_in_the_order_given() {
+    covers(&[ids::load_order::input::DATA_DIRS]);
     let (game, staging) = layout();
     let (first, second) = (TempDir::new(), TempDir::new());
     second.file("shared.txt", b"22");
@@ -321,6 +327,7 @@ fn a_name_pattern_counts_each_name_once_across_directories() {
 
 #[test]
 fn a_ghosted_plugin_counts_as_the_plugin() {
+    covers(&[ids::load_order::input::GHOSTED]);
     let dir = TempDir::new();
     dir.plugin("Mod.esp.ghost", &[]);
     dir.file("notes.txt.ghost", b"");
@@ -334,6 +341,7 @@ fn a_ghosted_plugin_counts_as_the_plugin() {
 
 #[test]
 fn names_that_differ_only_in_case_are_a_warning() {
+    covers(&[ids::load_order::input::CASE_NAMES]);
     let dir = TempDir::new();
     if !dir.case_sensitive() {
         // Two names that differ only in case are one file here (macOS, Windows): no collision to report.
@@ -370,6 +378,7 @@ fn holds(env: &FsEnv, text: &str) -> Result<bool, ConditionError> {
 
 #[test]
 fn the_version_of_a_plugin_comes_from_its_description() {
+    covers(&[ids::conditions::language::VERSION]);
     let dir = TempDir::new();
     described(
         &dir,
@@ -512,6 +521,7 @@ fn holds_in(dir: &TempDir, text: &str) -> Result<bool, ConditionError> {
 
 #[test]
 fn filename_version_compares_the_captured_version_of_a_matching_file() {
+    covers(&[ids::conditions::language::FILENAME_VERSION]);
     let dir = condition_world();
     assert_eq!(
         holds_in(&dir, r#"filename_version("Blank (\d).esm", "5", ==)"#),
@@ -595,6 +605,7 @@ fn filename_version_needs_exactly_one_capture_group_and_a_known_operator() {
 
 #[test]
 fn description_contains_matches_the_plugin_description_case_insensitively() {
+    covers(&[ids::conditions::language::DESCRIPTION_CONTAINS]);
     let dir = condition_world();
     assert_eq!(
         holds_in(
@@ -628,6 +639,7 @@ fn description_contains_is_false_for_a_missing_file_a_non_plugin_and_no_descript
 
 #[test]
 fn is_executable_is_true_only_for_a_file_that_reads_as_a_pe_image() {
+    covers(&[ids::conditions::language::IS_EXECUTABLE]);
     let dir = condition_world();
     assert_eq!(holds_in(&dir, r#"is_executable("loader.exe")"#), Ok(true));
     assert_eq!(
