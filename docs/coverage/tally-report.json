@@ -2,14 +2,14 @@
   "schema": "tally-report.v1",
   "tool": "tally 0.2.0",
   "repo": "loot-rs",
-  "results": false,
+  "results": true,
   "totals": {
     "total": 78,
     "missing": 2,
     "implemented": 76,
     "tagged": 76,
-    "passing": 0,
-    "covered": 0,
+    "passing": 76,
+    "covered": 75,
     "gated": 0,
     "not_applicable": 6,
     "deferred": 0
@@ -23,8 +23,8 @@
         "missing": 0,
         "implemented": 17,
         "tagged": 17,
-        "passing": 0,
-        "covered": 0,
+        "passing": 17,
+        "covered": 17,
         "gated": 0,
         "not_applicable": 0,
         "deferred": 0
@@ -39,8 +39,8 @@
             "missing": 0,
             "implemented": 17,
             "tagged": 17,
-            "passing": 0,
-            "covered": 0,
+            "passing": 17,
+            "covered": 17,
             "gated": 0,
             "not_applicable": 0,
             "deferred": 0
@@ -50,163 +50,248 @@
               "id": "conditions.language.operators",
               "title": "`and`, `or`, `not`, parentheses, C-style precedence",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::precedence_is_not_then_and_then_or"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.whitespace",
               "title": "Whitespace and line breaks around operators and arguments",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::whitespace_and_line_breaks_are_allowed"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.regex_detection",
               "title": "Regex detection (`:\\*?|` in the argument)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::count_files_handles_plain_paths_and_regexes",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.file",
               "title": "`file(path)`, `file(regex)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::file_and_active",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.active",
               "title": "`active(path)`, `active(regex)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::file_and_active",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.many",
               "title": "`many(regex)`, `many_active(regex)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::many_counts_more_than_one",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.file_size",
               "title": "`file_size(path, size)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::size_checksum_master_and_readable",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.readable",
               "title": "`readable(path)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::size_checksum_master_and_readable",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.is_master",
               "title": "`is_master(path)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::size_checksum_master_and_readable",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.checksum",
               "title": "`checksum(path, crc)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/condition_tests.rs::size_checksum_master_and_readable",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.version",
               "title": "`version(path, op, version)` and the older argument order",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::the_version_of_a_plugin_comes_from_its_description",
                 "src/exe_version_tests.rs::the_fixed_file_version_is_compared_in_both_argument_orders"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.product_version",
               "title": "`product_version(path, op, version)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/exe_version_tests.rs::the_product_version_string_is_compared_with_loots_grammar"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.filename_version",
               "title": "`filename_version(regex, op, version)` and the other argument order",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::filename_version_compares_the_captured_version_of_a_matching_file"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.description_contains",
               "title": "`description_contains(path, regex)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::description_contains_matches_the_plugin_description_case_insensitively"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.is_executable",
               "title": "`is_executable(path)`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::is_executable_is_true_only_for_a_file_that_reads_as_a_pe_image"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.version_grammar",
               "title": "Version comparison grammar",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/version_tests.rs::versions_compare_number_by_number_with_missing_ids_as_zero"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "conditions.language.caching",
               "title": "Evaluation caching",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::directory_listings_are_cached"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             }
           ]
         }
@@ -220,8 +305,8 @@
         "missing": 0,
         "implemented": 8,
         "tagged": 8,
-        "passing": 0,
-        "covered": 0,
+        "passing": 8,
+        "covered": 8,
         "gated": 0,
         "not_applicable": 0,
         "deferred": 0
@@ -236,8 +321,8 @@
             "missing": 0,
             "implemented": 8,
             "tagged": 8,
-            "passing": 0,
-            "covered": 0,
+            "passing": 8,
+            "covered": 8,
             "gated": 0,
             "not_applicable": 0,
             "deferred": 0
@@ -247,77 +332,117 @@
               "id": "groups.behaviour.default_group",
               "title": "Predefined `default` group",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::plugins_without_entries_are_in_the_default_group_and_listed_when_installed_only"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.transitive_after",
               "title": "Transitive \"loads after\"",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.cyclic",
               "title": "Cyclic group relations",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::groups_that_load_after_each_other_are_an_error",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.edge_dropped",
               "title": "Edge dropped when it clashes with master, `after` or `req` edges",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/api_tests.rs::a_group_rule_that_a_requirement_contradicts_is_dropped_and_soft_unless_strict",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.undefined_group",
               "title": "Group named but undefined",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::an_undefined_group_is_noted_and_hard_only_when_strict",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.order_violation",
               "title": "Group order violation",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::a_group_that_loads_before_one_it_must_follow_is_a_soft_finding_by_default",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.sorting",
               "title": "Sorting",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::groups_decide_the_relative_positions"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "groups.behaviour.minimal_change",
               "title": "Minimal-change sort (`SortMode::MinimalChange`)",
               "origin": "ours",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort/minimal_tests.rs::one_plugin_that_loads_too_late_is_moved_alone_to_the_place_the_rule_needs"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             }
           ]
         }
@@ -331,8 +456,8 @@
         "missing": 2,
         "implemented": 5,
         "tagged": 5,
-        "passing": 0,
-        "covered": 0,
+        "passing": 5,
+        "covered": 5,
         "gated": 0,
         "not_applicable": 0,
         "deferred": 0
@@ -347,8 +472,8 @@
             "missing": 2,
             "implemented": 5,
             "tagged": 5,
-            "passing": 0,
-            "covered": 0,
+            "passing": 5,
+            "covered": 5,
             "gated": 0,
             "not_applicable": 0,
             "deferred": 0
@@ -358,19 +483,29 @@
               "id": "load_order.input.plugins_txt_active",
               "title": "`plugins.txt`, active-only style",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::plugins_txt_active_only_style"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "load_order.input.plugins_txt_star",
               "title": "`plugins.txt`, `*` style",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::plugins_txt_starred_style"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "load_order.input.loadorder_txt",
@@ -383,29 +518,44 @@
               "id": "load_order.input.ghosted",
               "title": "Ghosted plugins (`.ghost`)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::a_ghosted_plugin_counts_as_the_plugin"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "load_order.input.data_dirs",
               "title": "Game directory, additional data directories",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/env_tests.rs::additional_directories_are_searched_before_data_in_the_order_given"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "load_order.input.case_names",
               "title": "Names differing only in case",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "label": "warning",
               "tests": [
                 "src/env_tests.rs::names_that_differ_only_in_case_are_a_warning"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "load_order.input.master_flag_rules",
@@ -426,8 +576,8 @@
         "missing": 0,
         "implemented": 22,
         "tagged": 22,
-        "passing": 0,
-        "covered": 0,
+        "passing": 22,
+        "covered": 22,
         "gated": 0,
         "not_applicable": 0,
         "deferred": 0
@@ -442,8 +592,8 @@
             "missing": 0,
             "implemented": 10,
             "tagged": 10,
-            "passing": 0,
-            "covered": 0,
+            "passing": 10,
+            "covered": 10,
             "gated": 0,
             "not_applicable": 0,
             "deferred": 0
@@ -453,93 +603,143 @@
               "id": "metadata.file.plugins_list",
               "title": "`plugins` list",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::plugin_entry_fields_are_read"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.globals",
               "title": "`globals`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::aliases_in_globals_are_resolved"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.groups",
               "title": "`groups`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::groups_merge_by_name_and_default_exists"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.bash_tags",
               "title": "`bash_tags`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::bash_tags_and_unknown_keys"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.prelude",
               "title": "`prelude`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::a_prelude_at_the_start_of_the_masterlist_is_replaced"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.anchors_aliases",
               "title": "YAML anchors, aliases",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::aliases_in_globals_are_resolved",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.merge_keys",
               "title": "YAML merge keys `<<`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::merge_keys_are_expanded_and_explicit_keys_win",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.userlist",
               "title": "Userlist, metadata merging of several files",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "tests/userlist.rs::user_metadata_comes_before_the_masterlist_s_and_its_group_wins"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.unknown_keys",
               "title": "Unknown top-level keys",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::bash_tags_and_unknown_keys"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.file.identity",
               "title": "Masterlist identity (`blob_sha1`, `update_timestamp`)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "tests/masterlist_identity.rs::the_digest_of_a_masterlist_file_is_what_git_hash_object_prints"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             }
           ]
         },
@@ -552,8 +752,8 @@
             "missing": 0,
             "implemented": 12,
             "tagged": 12,
-            "passing": 0,
-            "covered": 0,
+            "passing": 12,
+            "covered": 12,
             "gated": 0,
             "not_applicable": 0,
             "deferred": 0
@@ -563,121 +763,181 @@
               "id": "metadata.plugin.name_exact",
               "title": "`name`, exact",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::name_patterns_expose_their_text_and_match_exact_names_case_insensitively"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.name_regex",
               "title": "`name`, regex",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "label": "supported, except look-around and back-references",
               "tests": [
                 "src/metadata_tests.rs::regex_names_match_whole_names_case_insensitively",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says",
                 "tests/regex_semantics.rs::plugin_name_expressions_match_as_libloot_matches_them"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.group",
               "title": "`group`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::every_matching_entry_applies_in_file_order_and_the_first_group_wins",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.after",
               "title": "`after`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::after_is_violated_only_when_the_other_plugin_is_installed_and_later",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.req",
               "title": "`req`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::a_missing_requirement_is_hard_and_names_the_display_text_and_detail",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.inc",
               "title": "`inc`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::an_incompatible_plugin_that_is_present_is_hard",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.msg",
               "title": "`msg`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::messages_apply_when_their_condition_holds",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.tag",
               "title": "`tag`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::tags_are_added_removed_cancelled_and_deduplicated",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.dirty_clean",
               "title": "`dirty`, `clean`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/api_tests.rs::cleaning_data_is_matched_by_the_checksum_of_the_installed_file",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.url",
               "title": "`url`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::url_entries_are_read_as_links_with_optional_names"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.display_detail",
               "title": "`display`, `detail` on file entries",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::file_labels_prefer_the_display_text"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "metadata.plugin.constraint",
               "title": "`constraint` on file entries",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::a_constraint_decides_whether_the_required_file_counts_as_present",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             }
           ]
         }
@@ -691,8 +951,8 @@
         "missing": 0,
         "implemented": 3,
         "tagged": 3,
-        "passing": 0,
-        "covered": 0,
+        "passing": 3,
+        "covered": 3,
         "gated": 0,
         "not_applicable": 1,
         "deferred": 0
@@ -707,8 +967,8 @@
             "missing": 0,
             "implemented": 3,
             "tagged": 3,
-            "passing": 0,
-            "covered": 0,
+            "passing": 3,
+            "covered": 3,
             "gated": 0,
             "not_applicable": 1,
             "deferred": 0
@@ -718,30 +978,45 @@
               "id": "output.messages.types",
               "title": "Message types `say`, `warn`, `error`",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::message_kinds_have_their_keywords"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "output.messages.localised",
               "title": "Localised content",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::a_text_in_exactly_the_language_wanted_is_chosen",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "output.messages.subs",
               "title": "`subs` substitution",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/metadata_tests.rs::substitutions_replace_numbered_placeholders_and_ignore_missing_ones",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "output.messages.commonmark",
@@ -762,8 +1037,8 @@
         "missing": 0,
         "implemented": 15,
         "tagged": 15,
-        "passing": 0,
-        "covered": 0,
+        "passing": 15,
+        "covered": 15,
         "gated": 0,
         "not_applicable": 5,
         "deferred": 0
@@ -778,8 +1053,8 @@
             "missing": 0,
             "implemented": 1,
             "tagged": 1,
-            "passing": 0,
-            "covered": 0,
+            "passing": 1,
+            "covered": 1,
             "gated": 0,
             "not_applicable": 4,
             "deferred": 0
@@ -805,12 +1080,17 @@
               "id": "sorting.not_ported.self_master",
               "title": "A plugin that is its own master",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "label": "Reproduced, but only visible through `validate::plugin_messages`",
               "tests": [
                 "src/validate_tests.rs::a_plugin_that_is_its_own_master_and_a_low_header_version_are_reported",
                 "tests/golden_app.rs::every_message_is_what_the_loot_application_showed"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.not_ported.case_sensitive_paths",
@@ -839,8 +1119,8 @@
             "missing": 0,
             "implemented": 14,
             "tagged": 14,
-            "passing": 0,
-            "covered": 0,
+            "passing": 14,
+            "covered": 14,
             "gated": 0,
             "not_applicable": 1,
             "deferred": 0
@@ -850,20 +1130,30 @@
               "id": "sorting.stages.byte_order_vertices",
               "title": "Vertices in lexicographical (byte) order of the names",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort/plugins_tests.rs::should_not_depend_on_plugin_graph_node_order"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.separate_graphs",
               "title": "Separate graphs for masters (master flag) and the others, joined masters first",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::masters_load_before_the_others_and_each_group_keeps_its_order",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.blueprint",
@@ -876,121 +1166,181 @@
               "id": "sorting.stages.edges_rules",
               "title": "Edges from header masters, `req` and `after` (masterlist)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::load_after_and_requirements_decide_the_relative_positions",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.user_edges",
               "title": "Edges from the userlist (`req`, `after`, `group`)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort/plugins_tests.rs::should_add_user_group_edge_if_source_plugin_is_in_group_due_to_user_metadata",
                 "tests/userlist.rs::a_user_after_entry_moves_a_plugin_and_is_listed_with_a_user_source"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.early_loader",
               "title": "Hard-coded early loader",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort/plugins_tests.rs::should_add_edges_between_consecutive_early_loaders_skipping_missing_plugins",
                 "src/sort_tests.rs::an_early_loader_loads_before_everything_else_of_its_kind"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.cycle_error",
               "title": "Cycle among these edges is an error naming the cycle",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::a_cycle_among_the_metadata_names_the_plugins_and_edges",
                 "tests/golden_app.rs::every_message_is_what_the_loot_application_showed"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.group_edges",
               "title": "Group edges: depth-first searches of the group graph, roots first by longest path, skipped when they would close a cycle, the `default` group last",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort/plugins_tests.rs::should_skip_an_edge_that_would_cause_a_cycle",
                 "src/sort_tests.rs::groups_decide_the_relative_positions",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.group_cycle",
               "title": "Cycle among groups",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::groups_that_load_after_each_other_are_an_error"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.record_overlap",
               "title": "Record overlap edges",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/api_tests.rs::the_plugin_that_changes_more_of_the_same_records_loads_first",
                 "src/sort/plugins_tests.rs::should_choose_record_overlap_over_asset_overlap",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.asset_overlap",
               "title": "Asset (archive) overlap edges",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/api_tests.rs::the_plugin_that_loads_more_of_the_same_archive_files_goes_first",
                 "src/sort/plugins_tests.rs::should_choose_record_overlap_over_asset_overlap",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.tie_break",
               "title": "Tie-break edges and pinning",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort/plugins_tests.rs::tie_break_gives_the_creation_order_when_there_are_no_other_edges"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.topological",
               "title": "Topological sort",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/sort_tests.rs::load_after_and_requirements_decide_the_relative_positions"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.generated_messages",
               "title": "Messages LOOT's application generates when it checks the install (`generated_messages`, `generated_general_messages`)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/validate_tests.rs::a_missing_or_inactive_master_of_an_active_plugin_is_an_error_and_of_an_inactive_one_nothing",
                 "tests/golden_app.rs::every_message_is_what_the_loot_application_showed",
                 "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "sorting.stages.bash_tags_description",
               "title": "The Bash Tags of the plugin's description (`bash_tags`)",
               "origin": "original",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/validate_tests.rs::the_tags_of_a_description_are_those_between_the_braces"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             }
           ]
         }
@@ -1004,8 +1354,8 @@
         "missing": 0,
         "implemented": 6,
         "tagged": 6,
-        "passing": 0,
-        "covered": 0,
+        "passing": 6,
+        "covered": 5,
         "gated": 0,
         "not_applicable": 0,
         "deferred": 0
@@ -1020,8 +1370,8 @@
             "missing": 0,
             "implemented": 6,
             "tagged": 6,
-            "passing": 0,
-            "covered": 0,
+            "passing": 6,
+            "covered": 5,
             "gated": 0,
             "not_applicable": 0,
             "deferred": 0
@@ -1031,56 +1381,86 @@
               "id": "tool.cli.check_command",
               "title": "`loot-rs check`: read-only check of a load order against the masterlist rules",
               "origin": "ours",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "tool.cli.strict_groups",
               "title": "`--strict-groups`: group order violations are hard",
               "origin": "ours",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/check_tests.rs::strict_groups_make_group_violations_hard",
                 "tests/golden.rs::every_case_prints_what_its_golden_file_says"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "tool.cli.json_output",
               "title": "JSON output of `sort` with an integer schema version",
               "origin": "ours",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/api_tests.rs::the_sort_json_starts_with_the_integer_schema_version"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "tool.cli.parallel_sort",
               "title": "Parallel reading of plugins with a shared memory budget, the same result for any thread count",
               "origin": "ours",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/parallel_tests.rs::map_returns_the_results_in_the_order_of_the_items_for_any_thread_count"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             },
             {
               "id": "tool.cli.resource_limits",
               "title": "Every size that comes from the input is bounded",
               "origin": "ours",
-              "state": "tagged",
+              "state": "passing",
               "tests": [
                 "tests/limits.rs::hostile_input_is_refused_quickly_and_with_little_memory"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": false,
+                "windows": false
+              }
             },
             {
               "id": "tool.cli.home_tilde",
               "title": "Copyable text writes the home directory as `~`",
               "origin": "ours",
-              "state": "tagged",
+              "state": "covered",
               "tests": [
                 "src/api_tests.rs::every_home_directory_of_the_text_is_written_as_a_tilde"
-              ]
+              ],
+              "platforms": {
+                "linux": true,
+                "macos": true,
+                "windows": true
+              }
             }
           ]
         }
