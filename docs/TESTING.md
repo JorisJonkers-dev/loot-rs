@@ -129,7 +129,8 @@ and macOS, with the opt-in features, no retries and every skipped test listed, s
 step "Feature catalogue (tally)" of Pipeline Complete reads the three files (`tally ingest`): an item is covered once
 its tagged tests passed on all three platforms. With those results it holds a ratchet: the covered and tagged counts
 may not drop below main's last report, `docs/coverage/tally-report.json`, so a pull request that loses a tag or a
-platform fails.
+platform fails. A drop that is meant (an item retired or set `n/a`) needs `--allow-drop <n>` on that step in the
+same pull request, removed again afterwards.
 
 On main, every push builds and tests on all three platforms; that step then regenerates `docs/COMPATIBILITY.md`,
 `docs/COVERAGE.md`, `docs/coverage/tally-report.json` and `docs/coverage/tally.svg`, and when one changed and every
