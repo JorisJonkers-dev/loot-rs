@@ -1,7 +1,7 @@
 # loot-rs
 
 **loot-rs puts the mods of Fallout: New Vegas and Tale of Two Wastelands in a working load order.** Mods are loaded
-one after another, and in the wrong order they can break each other or crash the game. loot-rs sorts them with the
+one after another, and in the wrong order they can stop working properly. loot-rs sorts them with the
 rules the [LOOT](https://loot.github.io/) community keeps for many mods.
 
 <p align="center">
@@ -22,11 +22,11 @@ every move and LOOT's messages first, and changes nothing until you press Apply.
 
 - 🔢 **Sorts your mods** the way LOOT does, on Linux, Windows and macOS.
 - 💬 **Warns you** with LOOT's messages: a missing file a mod needs, two mods that do not go together.
-- 👀 **Only reads, never writes**: you decide what happens with the order.
+- 👀 **Only looks, never changes**: it reads your files, and raul asks you before the order is changed.
 
 ## How far along it is
 
-Every LOOT feature on the list, and how many are built and tested. The picture updates itself after each change.
+Every LOOT feature on the list, and how many are built and tested. The picture is redrawn each time a change lands.
 
 <p align="center">
   <img src="docs/coverage/tally.svg" alt="Feature catalogue: implemented and covered per area" width="100%">
@@ -44,7 +44,7 @@ exactly as LOOT's own sorter does ([docs/ORACLE.md](docs/ORACLE.md)).
 ## Get it
 
 **[Download raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox/releases/latest)**: loot-rs is built in.
-It also works on its own as a library and from the command line ([docs/USAGE.md](docs/USAGE.md)).
+Written in Rust, it also works on its own, inside another program or from the command line ([docs/USAGE.md](docs/USAGE.md)).
 
 ## Learn more
 
