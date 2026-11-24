@@ -41,3 +41,9 @@ pub mod version;
 
 #[cfg(test)]
 mod support_tests;
+
+/// The ids of the feature catalogue (`catalogue/`), written by build.rs, for tests to tag what they prove.
+#[cfg(test)]
+mod tally {
+    include!(concat!(env!("OUT_DIR"), "/tally_ids.rs"));
+}

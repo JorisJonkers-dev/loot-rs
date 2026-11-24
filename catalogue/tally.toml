@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The feature catalogue of loot-rs, read by tally (https://github.com/JorisJonkers-dev/tally, docs/FORMAT.md).
+[repo]
+package = "loot-rs"
+
+[areas]
+metadata = "Metadata file"
+groups = "Groups"
+sorting = "Sorting"
+conditions = "Condition language"
+output = "Messages and output"
+load_order = "Load order input"
+tool = "Additions of this project"
+
+# Golden cases list the items they show in a covers.toml next to their files; each directory is run by one test.
+[[data]]
+files = "tests/golden/*/covers.toml"
+test = "tests/golden.rs::every_case_prints_what_its_golden_file_says"
+
+[[data]]
+files = "tests/golden_sort/*/covers.toml"
+test = "tests/golden_sort.rs::every_case_prints_what_its_golden_files_say"
+
+[[data]]
+files = "tests/golden_app/*/covers.toml"
+test = "tests/golden_app.rs::every_message_is_what_the_loot_application_showed"

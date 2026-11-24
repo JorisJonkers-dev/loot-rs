@@ -2,6 +2,7 @@
 //! those of the condition interpreter's `Version`.
 
 use super::*;
+use crate::tally::{covers, ids};
 
 fn extracted(text: &str) -> Option<String> {
     extract_version(text)
@@ -131,6 +132,7 @@ fn holds(actual: &str, operator: &str, given: &str) -> bool {
 
 #[test]
 fn versions_compare_number_by_number_with_missing_ids_as_zero() {
+    covers(&[ids::conditions::language::VERSION_GRAMMAR]);
     assert!(holds("3.2.0", ">=", "3.2.0"));
     assert!(holds("3.10", ">", "3.9"));
     assert!(holds("3.2", "==", "3.2.0"));

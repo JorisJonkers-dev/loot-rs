@@ -1,0 +1,112 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "sorting.stages"
+title = "Sorting"
+origin = "original"
+reference = "libloot"
+item_column = "libloot stage"
+status_column = "Status"
+notes_column = "Notes"
+
+[[item]]
+id = "byte_order_vertices"
+title = "Vertices in lexicographical (byte) order of the names"
+status = "implemented"
+notes = "The result does not depend on the order given except through the tie-break"
+ref = ["libloot:sorting.vertices"]
+
+[[item]]
+id = "separate_graphs"
+title = "Separate graphs for masters (master flag) and the others, joined masters first"
+status = "implemented"
+notes = "A rule that puts a plugin without the flag before one with it is an error (`MasterOrder`), as in libloot"
+ref = ["libloot:sorting.graphs", "libloot:sorting.edges_masters_flag", "libloot:sorting.combine"]
+
+[[item]]
+id = "blueprint"
+title = "Blueprint masters (Starfield)"
+status = "n/a"
+reason = "Fallout: New Vegas has none"
+ref = ["libloot:sorting.blueprint_graph"]
+
+[[item]]
+id = "edges_rules"
+title = "Edges from header masters, `req` and `after` (masterlist)"
+status = "implemented"
+notes = "Conditions and constraints are evaluated first, as `filter_by_constraints` does. A name that is not installed adds nothing"
+ref = ["libloot:sorting.load_plugin_data", "libloot:sorting.edges_masters", "libloot:sorting.edges_requirements", "libloot:sorting.edges_load_after"]
+
+[[item]]
+id = "user_edges"
+title = "Edges from the userlist (`req`, `after`, `group`)"
+status = "implemented"
+notes = "`UserRequirement`, `UserLoadAfter` and `UserGroup` edges in libloot's order; userlist groups appended to the group graph after the masterlist's; a group edge is a user one when the group path uses a userlist group edge or either plugin's group came from the userlist (libloot's tests translated). A cycle through a user rule is `SortError::RuleCycle`, naming every rule and its source"
+
+[[item]]
+id = "early_loader"
+title = "Hard-coded early loader"
+status = "implemented"
+notes = "`FalloutNV.esm`, the one plugin libloadorder lists for this game"
+ref = ["libloot:sorting.hardcoded"]
+
+[[item]]
+id = "cycle_error"
+title = "Cycle among these edges is an error naming the cycle"
+status = "implemented"
+notes = "`SortError::Conflict` names the first two plugins of the cycle"
+ref = ["libloot:sorting.cycle_check"]
+
+[[item]]
+id = "group_edges"
+title = "Group edges: depth-first searches of the group graph, roots first by longest path, skipped when they would close a cycle, the `default` group last"
+status = "implemented"
+notes = "Same code path as libloot, including which edges are skipped. A group `after` a group nobody defined has that edge ignored, a plugin in an undefined group gets no group edges (libloot refuses both with an error; the finding is in `check`)"
+ref = ["libloot:sorting.group_graph", "libloot:sorting.group_edges"]
+
+[[item]]
+id = "group_cycle"
+title = "Cycle among groups"
+status = "implemented"
+notes = "`SortError::GroupCycle` (LOOT refuses it too)"
+
+[[item]]
+id = "record_overlap"
+title = "Record overlap edges"
+status = "implemented"
+notes = "The record ids of every installed plugin are read (`src/records.rs`, FormIDs resolved against the plugin's masters as esplugin does): the plugin that overrides more records loads first when two plugins have a record in common. A plugin whose records cannot be read is noted and counts as having none"
+ref = ["libloot:sorting.overlap_edges"]
+evidence = ["src/records.rs"]
+
+[[item]]
+id = "asset_overlap"
+title = "Asset (archive) overlap edges"
+status = "implemented"
+notes = "A plugin loads the BSA files of `Data` whose names begin with its name (case ignored, as libloot does for New Vegas); their folder and file names are read from the tables (version 103, 104 and 105; never the data). Of two plugins that load a file with the same path, the one that loads more files goes first, unless records decide. An archive that cannot be read is noted and skipped. Archives are taken from every searched directory (the additional data directories first), as libloot does. `.ba2` archives are not looked at"
+ref = ["libloot:sorting.overlap_edges"]
+evidence = ["src/archives.rs"]
+
+[[item]]
+id = "tie_break"
+title = "Tie-break edges and pinning"
+status = "implemented"
+ref = ["libloot:sorting.tie_break", "libloot:sorting.pinning"]
+
+[[item]]
+id = "topological"
+title = "Topological sort"
+status = "implemented"
+notes = "petgraph's depth-first topological sort, reproduced"
+ref = ["libloot:sorting.topological"]
+
+[[item]]
+id = "generated_messages"
+title = "Messages LOOT's application generates when it checks the install (`generated_messages`, `generated_general_messages`)"
+status = "partial"
+notes = "The ones that apply to Fallout: New Vegas, with LOOT's English texts as Markdown: a missing or inactive master of an active plugin (not with the `Filter` tag), a plugin that is its own master, a header version below 1.32, a group named by the masterlist that it does not define, Bash Tags overridden by `Data/BashTags/<plugin>.txt`, a `dirty` entry that matches the file, a requirement that is missing, an incompatibility that is present, and more than 255 active plugins. Every text above is compared with what LOOT 0.29.2 itself showed on synthetic cases ([LOOT-APP-CAPTURE.md](LOOT-APP-CAPTURE.md), `tests/golden_app/`); no difference was found. Not ported, with the reasons in [Not-ported messages](#not-ported-messages) below"
+evidence = ["src/validate.rs"]
+
+[[item]]
+id = "bash_tags_description"
+title = "The Bash Tags of the plugin's description (`bash_tags`)"
+status = "implemented"
+notes = "`{{BASH:Tag,Tag}}`, as libloot reads them"

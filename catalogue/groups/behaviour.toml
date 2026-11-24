@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "groups.behaviour"
+title = "Groups"
+origin = "original"
+reference = "libloot"
+item_column = "Behaviour"
+status_column = "Status"
+notes_column = "Notes"
+
+[[item]]
+id = "default_group"
+title = "Predefined `default` group"
+status = "implemented"
+
+[[item]]
+id = "transitive_after"
+title = "Transitive \"loads after\""
+status = "implemented"
+notes = "Closure over the merged definitions"
+ref = ["libloot:group.after"]
+
+[[item]]
+id = "cyclic"
+title = "Cyclic group relations"
+status = "implemented"
+notes = "`sort` refuses them with `SortError::GroupCycle`, as LOOT does. `check` ignores both directions of a cycle"
+
+[[item]]
+id = "edge_dropped"
+title = "Edge dropped when it clashes with master, `after` or `req` edges"
+status = "implemented"
+notes = "In `sort`, as libloot does (`SortOutput::dropped_group_rules`). `check` checks pairwise and does not drop edges, so it can show a note that LOOT would not enforce"
+
+[[item]]
+id = "undefined_group"
+title = "Group named but undefined"
+status = "implemented"
+notes = "Reported as a note (hard with `--strict-groups`)"
+
+[[item]]
+id = "order_violation"
+title = "Group order violation"
+status = "implemented"
+notes = "A note by default, a violation with `--strict-groups`; see [GROUPS.md](GROUPS.md)"
+
+[[item]]
+id = "sorting"
+title = "Sorting"
+status = "implemented"
+notes = "See the Sorting section below"
+
+[[item]]
+id = "minimal_change"
+title = "Minimal-change sort (`SortMode::MinimalChange`)"
+status = "implemented"
+notes = "Not in libloot: keeps the given order and moves the fewest plugins that fix hard-constraint violations. Algorithm, guarantees and per-move reasons in API.md"
+origin = "ours"
+evidence = ["src/sort/minimal.rs"]

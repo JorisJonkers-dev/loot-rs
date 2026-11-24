@@ -4,6 +4,10 @@
 
 pub mod model;
 
+// The ids of the feature catalogue (`catalogue/`), written by build.rs: tests tag what they prove with
+// `covers(&[ids::...])`.
+include!(concat!(env!("OUT_DIR"), "/tally_ids.rs"));
+
 use loot_rs::archives::synthetic_bsa;
 use loot_rs::plugin::{FLAG_ESM, synthetic_plugin_version};
 use loot_rs::records::synthetic_records;

@@ -1,0 +1,2 @@
+# The catalogue items this case shows (catalogue/, docs/COMPATIBILITY.md).
+covers = ["conditions.language.file", "conditions.language.active", "conditions.language.many", "conditions.language.is_master", "conditions.language.checksum", "conditions.language.file_size", "conditions.language.readable", "conditions.language.regex_detection", "output.messages.subs", "output.messages.localised"]

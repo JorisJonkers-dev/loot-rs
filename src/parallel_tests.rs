@@ -1,7 +1,9 @@
 use super::*;
+use crate::tally::{covers, ids};
 
 #[test]
 fn map_returns_the_results_in_the_order_of_the_items_for_any_thread_count() {
+    covers(&[ids::tool::cli::PARALLEL_SORT]);
     let items: Vec<u64> = (0..500).collect();
     let expected: Vec<u64> = items.iter().map(|x| x * x).collect();
     for threads in [1, 2, 3, 16, 64] {

@@ -1,6 +1,7 @@
 //! Unit tests of `metadata`.
 
 use super::*;
+use crate::tally::{covers, ids};
 
 const SAMPLE: &str = r#"
 prelude:
@@ -56,6 +57,10 @@ fn sample() -> Metadata {
 
 #[test]
 fn aliases_in_globals_are_resolved() {
+    covers(&[
+        ids::metadata::file::GLOBALS,
+        ids::metadata::file::ANCHORS_ALIASES,
+    ]);
     let metadata = sample();
     assert_eq!(metadata.globals.len(), 2);
     assert_eq!(metadata.globals[0].content, "Thanks");
@@ -71,6 +76,7 @@ fn english_content_is_chosen_and_subs_are_applied() {
 
 #[test]
 fn groups_merge_by_name_and_default_exists() {
+    covers(&[ids::metadata::file::GROUPS]);
     let metadata = sample();
     assert_eq!(metadata.groups[0].name, DEFAULT_GROUP);
     let late = metadata.groups.iter().find(|group| group.name == "Late");
@@ -81,6 +87,7 @@ fn groups_merge_by_name_and_default_exists() {
 
 #[test]
 fn plugin_entry_fields_are_read() {
+    covers(&[ids::metadata::file::PLUGINS_LIST]);
     let metadata = sample();
     let entry = &metadata.plugins[0];
     assert!(entry.pattern.matches("a.ESP"));
@@ -99,6 +106,7 @@ fn plugin_entry_fields_are_read() {
 
 #[test]
 fn regex_names_match_whole_names_case_insensitively() {
+    covers(&[ids::metadata::plugin::NAME_REGEX]);
     let metadata = sample();
     let entry = metadata.plugins.last().expect("regex entry");
     assert!(entry.pattern.matches("CATS.esp"));
@@ -116,6 +124,7 @@ fn a_regex_this_engine_cannot_compile_is_skipped_with_a_warning() {
 
 #[test]
 fn merge_keys_are_expanded_and_explicit_keys_win() {
+    covers(&[ids::metadata::file::MERGE_KEYS]);
     let text = r#"
 prelude:
   - &base
@@ -163,6 +172,7 @@ fn empty_and_non_map_files() {
 
 #[test]
 fn message_kinds_have_their_keywords() {
+    covers(&[ids::output::messages::TYPES]);
     assert_eq!(MessageKind::Say.as_str(), "say");
     assert_eq!(MessageKind::Warn.as_str(), "warn");
     assert_eq!(MessageKind::Error.as_str(), "error");
@@ -170,6 +180,7 @@ fn message_kinds_have_their_keywords() {
 
 #[test]
 fn file_labels_prefer_the_display_text() {
+    covers(&[ids::metadata::plugin::DISPLAY_DETAIL]);
     let metadata = sample();
     let required = &metadata.plugins[0].req[0];
     assert_eq!(required.label(), "[D](http://x)");
@@ -192,6 +203,7 @@ fn regex_detection_and_compilation() {
 
 #[test]
 fn name_patterns_expose_their_text_and_match_exact_names_case_insensitively() {
+    covers(&[ids::metadata::plugin::NAME_EXACT]);
     let exact = NamePattern::Exact("A.esp".into());
     assert!(exact.matches("a.ESP"));
     assert!(!exact.matches("A.esp.bak"));
@@ -231,6 +243,7 @@ fn a_message_without_content_or_with_empty_content_list_is_an_error() {
 
 #[test]
 fn substitutions_replace_numbered_placeholders_and_ignore_missing_ones() {
+    covers(&[ids::output::messages::SUBS]);
     let text =
         "globals:\n  - type: say\n    content: '{1} before {0}, {2} stays'\n    subs: [one, 2]\n";
     let metadata = parse(text).expect("parses");
@@ -287,6 +300,10 @@ plugins:
 
 #[test]
 fn bash_tags_and_unknown_keys() {
+    covers(&[
+        ids::metadata::file::BASH_TAGS,
+        ids::metadata::file::UNKNOWN_KEYS,
+    ]);
     let metadata =
         parse("bash_tags: [Relev, Delev]\nurl: x\nplugins:\n  - name: A.esp\n    url: [x]\n    unknown: 1\n")
             .expect("parses");
@@ -497,6 +514,7 @@ fn a_flow_style_masterlist_is_not_changed() {
 
 #[test]
 fn a_prelude_at_the_start_of_the_masterlist_is_replaced() {
+    covers(&[ids::metadata::file::PRELUDE]);
     let masterlist = "prelude:\n  a: b\n\nplugins:\n  - name: a.esp\n";
     assert_eq!(replace_prelude(masterlist, NOTE_PRELUDE), REPLACED);
 }
@@ -590,6 +608,7 @@ fn the_only_text_of_a_message_is_chosen_whatever_the_language() {
 
 #[test]
 fn a_text_in_exactly_the_language_wanted_is_chosen() {
+    covers(&[ids::output::messages::LOCALISED]);
     assert_eq!(pick(&localised(PORTUGUESE), "pt_BR"), "test5");
 }
 
@@ -676,6 +695,7 @@ fn localised_texts_keep_their_substitutions() {
 
 #[test]
 fn url_entries_are_read_as_links_with_optional_names() {
+    covers(&[ids::metadata::plugin::URL]);
     let metadata = parse(
         "plugins:\n  - name: A.esp\n    url:\n      - 'https://example.invalid/a'\n      - link: 'https://example.invalid/b'\n        name: Page\n",
     )

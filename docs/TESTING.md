@@ -100,6 +100,36 @@ summary). The gate is 95 percent of lines; the organisation requires 80.
 What is not covered in `env.rs`: the branches that only run when the file system misbehaves (a directory that vanishes
 between listing and reading).
 
+## Feature catalogue
+
+`catalogue/` lists every LOOT feature this crate follows and every one it adds, one TOML file per group, with its
+state (`implemented`, `partial`, `missing`, `n/a`), notes and the libloot documentation rows it answers
+(`catalogue/ref/libloot.tsv`, pinned to libloot 0.29.7 by SHA-256 in `catalogue/sources.toml`). The format is
+tally's (<https://github.com/JorisJonkers-dev/tally>, `docs/FORMAT.md`). The tables of [COMPATIBILITY.md](COMPATIBILITY.md)
+are generated from it.
+
+Tests say which items they prove:
+
+```rust
+covers(&[ids::metadata::plugin::REQ]);
+```
+
+`build.rs` writes the `ids` module from the catalogue (through `catalogue/tally_ids_gen.rs`, a copy of tally's
+standard-library-only generator, so no build dependency), so a wrong or removed id does not compile. Unit tests reach
+it as `crate::tally`, integration tests through `tests/common`. Golden cases list theirs in a `covers.toml` next to
+their files. The pipeline step "Feature catalogue (tally)" runs the pinned tally release: ids valid and unique, the
+pin matches, every libloot row has an item, evidence files exist, tags name real ids from inside tests, and no id of
+the base revision disappears without `retired` or an alias. To change a feature's state, edit its catalogue file;
+to rename one, keep the old id in `aliases`.
+
+Locally, with tally installed: `tally check`, `tally report --depth 2`, `tally doc docs/COMPATIBILITY.md`.
+
+On main, the workflow "Catalogue reports" (`.github/workflows/tally-progress.yml`) regenerates `docs/COMPATIBILITY.md`,
+`docs/COVERAGE.md`, `docs/coverage/tally-report.json` and `docs/coverage/tally.svg` after every push and, when one
+changed, commits only those files as raul-progress-bot with `[skip ci]`. Pull requests never carry the generated
+reports. An item counts as covered once its tagged tests passed on Linux, Windows and macOS on main, which needs the
+JUnit results of those runs (`tally ingest`); until then the reports show implemented and tagged.
+
 ## The real masterlist (ignored by default)
 
 `tests/real_masterlist.rs` runs against the real masterlist for Fallout: New Vegas, community data under CC0-1.0

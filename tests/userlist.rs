@@ -2,6 +2,8 @@
 
 mod common;
 
+use common::{covers, ids};
+
 use common::Fixture;
 use loot_rs::api::{
     CycleLink, Masterlist, MoveReason, PluginSlot, RuleSource, SortError, SortOptions, Userlist,
@@ -25,6 +27,7 @@ fn world(names: &[&str]) -> Fixture {
 
 #[test]
 fn a_user_after_entry_moves_a_plugin_and_is_listed_with_a_user_source() {
+    covers(&[ids::sorting::stages::USER_EDGES]);
     let fixture = world(&["A.esp", "B.esp"]);
     let masterlist = Masterlist::parse("").expect("parses");
     let userlist =
@@ -125,6 +128,7 @@ fn a_cycle_through_a_user_rule_names_both_rules_and_their_sources() {
 
 #[test]
 fn user_metadata_comes_before_the_masterlist_s_and_its_group_wins() {
+    covers(&[ids::metadata::file::USERLIST]);
     let fixture = world(&["A.esp"]);
     let masterlist = Masterlist::parse(
         "groups:\n  - name: default\n  - name: m\n  - name: u\nplugins:\n  - name: A.esp\n    group: m\n    msg:\n      - type: say\n        content: masterlist\n    tag: [Delev]\n",

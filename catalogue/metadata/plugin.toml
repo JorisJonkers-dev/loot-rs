@@ -1,0 +1,92 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "metadata.plugin"
+title = "Plugin entry"
+origin = "original"
+reference = "libloot"
+item_column = "Key"
+status_column = "Status"
+notes_column = "Notes"
+
+[[item]]
+id = "name_exact"
+title = "`name`, exact"
+status = "implemented"
+notes = "Case-insensitive"
+ref = ["libloot:plugin.name"]
+
+[[item]]
+id = "name_regex"
+title = "`name`, regex"
+status = "partial"
+label = "supported, except look-around and back-references"
+notes = "Anchored as libloot anchors it (`^{pattern}$`, so a top-level `A|B` is \"starts with A or ends with B\"), case-insensitive, with ECMAScript's meaning of `\\d`, `\\w`, `\\s` and their complements (ASCII digits and word characters, ECMAScript white space), as libloot's regress engine with the `iu` flags. Checked on a fixed table of 96 cases whose answers come from libloot (`tests/regex/cases.tsv`, `tests/regex_semantics.rs`): case folding of `ß`, `ẞ`, the Kelvin sign, `ſ`, Greek and accented letters agrees. Look-around and back-references are not available in the `regex` crate: such an entry is skipped with a warning, and the weekly real-masterlist run fails on it (decision in #37: the gap is accepted; the New Vegas masterlist has no such entry)"
+ref = ["libloot:plugin.name"]
+
+[[item]]
+id = "group"
+title = "`group`"
+status = "partial"
+notes = "First entry that sets it wins (merging replaces it only when unset). Undefined group is a note"
+ref = ["libloot:plugin.group"]
+
+[[item]]
+id = "after"
+title = "`after`"
+status = "implemented"
+notes = "Violated when the named installed plugin is later in the order. `condition` honoured"
+ref = ["libloot:plugin.after", "libloot:file_entry.condition"]
+
+[[item]]
+id = "req"
+title = "`req`"
+status = "implemented"
+notes = "Missing file is a hard violation; a required plugin that loads later is a hard violation. `condition`, `constraint`, `display`, `detail` honoured"
+ref = ["libloot:plugin.req", "libloot:file_entry.name"]
+
+[[item]]
+id = "inc"
+title = "`inc`"
+status = "implemented"
+notes = "Present file is a hard violation. Same fields as `req`"
+ref = ["libloot:plugin.inc"]
+
+[[item]]
+id = "msg"
+title = "`msg`"
+status = "implemented"
+notes = "`type`, `content` (string or localised list, see Localised content), `condition`, `subs`"
+ref = ["libloot:plugin.msg", "libloot:message.condition"]
+
+[[item]]
+id = "tag"
+title = "`tag`"
+status = "implemented"
+notes = "Scalar and map forms, `-` removal, `condition`; removal beats addition"
+ref = ["libloot:plugin.tag", "libloot:tag.name", "libloot:tag.condition"]
+
+[[item]]
+id = "dirty_clean"
+title = "`dirty`, `clean`"
+status = "implemented"
+notes = "Read (`crc`, `util`, `itm`, `udr`, `nav`, `detail`) and compared with the installed file's CRC-32 in `api::sort`; a `dirty` match gives LOOT's message (`generated_messages`). `check` does not compare"
+ref = ["libloot:plugin.dirty", "libloot:plugin.clean", "libloot:cleaning.crc", "libloot:cleaning.util", "libloot:cleaning.detail", "libloot:cleaning.itm", "libloot:cleaning.udr", "libloot:cleaning.nav", "libloot:cleaning.condition"]
+
+[[item]]
+id = "url"
+title = "`url`"
+status = "implemented"
+notes = "`PluginResult::locations`: links with their names, as written; never fetched"
+ref = ["libloot:plugin.url", "libloot:location.link", "libloot:location.name"]
+
+[[item]]
+id = "display_detail"
+title = "`display`, `detail` on file entries"
+status = "implemented"
+ref = ["libloot:file_entry.display", "libloot:file_entry.detail"]
+
+[[item]]
+id = "constraint"
+title = "`constraint` on file entries"
+status = "implemented"
+ref = ["libloot:file_entry.constraint"]

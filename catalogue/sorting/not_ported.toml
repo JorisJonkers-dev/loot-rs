@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "sorting.not_ported"
+title = "Messages of the LOOT application that are not ported"
+origin = "original"
+item_column = "LOOT message"
+status_column = "Decision"
+notes_column = "Reason"
+
+[[item]]
+id = "not_sorted_session"
+title = "\"You have not sorted your load order this session.\" (General Information)"
+status = "n/a"
+label = "Not ported"
+reason = "It describes the application's session (no sort has been applied since it started). `loot-rs sort` is the sort, and `check` has no session; a caller that wants the note knows its own session. The golden test drops this one line from the application's list"
+
+[[item]]
+id = "cycle_text"
+title = "Text for a sorting cycle: `Cyclic interaction detected between \"A.esp\" and \"B.esp\": A.esp [Masterlist Load After] B.esp [Masterlist Load After] A.esp`"
+status = "n/a"
+label = "Not ported, behaviour matches"
+reason = "Both refuse the sort and name the same two plugins; `SortError::Conflict` / `GroupCycle` carry the plugin names, not LOOT's Markdown path with the rule kinds. Difference listed, not a bug: `tests/golden_app.rs` checks that both refuse and name the same plugins"
+
+[[item]]
+id = "self_master"
+title = "A plugin that is its own master"
+status = "implemented"
+label = "Reproduced, but only visible through `validate::plugin_messages`"
+notes = "`loot-rs sort` refuses such a load order (the plugin would have to load before itself, as in the application, whose sort also fails), so the message never reaches `sort` output. The text matches the application's (`tests/golden_app/self_master`)"
+
+[[item]]
+id = "case_sensitive_paths"
+title = "Case-sensitive path warnings (\"... is installed in a case-sensitive location ...\", and the same for local application data)"
+status = "n/a"
+label = "Not ported"
+reason = "The warning is about the game's folder and the mods, not about the load order: it fires when the game folder or `%LOCALAPPDATA%` folder is on a case-sensitive file system, which is the normal state on Linux. `loot-rs` resolves every plugin and file name case-insensitively itself (`FsEnv::resolve`) and already reports names that differ only in case (`case_warnings`), so its result does not depend on the file system. Under nvmod the case handling of the game folder belongs to nvmod, which owns the folder. The application could not be made to show it under Wine (Wine looks files up case-insensitively, so the check in LOOT 0.29.2 found nothing with the setting on), so there is no captured text to compare; the template is in LOOT.exe's string table. A native-Linux capture would need a LOOT build for Linux, which the release does not have Names in a data directory that differ only in case are reported as data instead (`SortOutput::warnings`, `FsEnv::case_warnings`, see Load order input), so a caller that wants LOOT's wording writes it from that."
+
+[[item]]
+id = "other_games"
+title = "Checks of other games (light, medium, update and blueprint plugins)"
+status = "n/a"
+label = "Not applicable"
+reason = "Fallout: New Vegas has none of these plugin kinds"

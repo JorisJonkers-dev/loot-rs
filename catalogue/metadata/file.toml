@@ -1,0 +1,76 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "metadata.file"
+title = "Metadata file"
+origin = "original"
+reference = "libloot"
+item_column = "Feature"
+status_column = "Status"
+notes_column = "Notes"
+
+[[item]]
+id = "plugins_list"
+title = "`plugins` list"
+status = "implemented"
+notes = "Entries in file order; all matching entries are merged"
+ref = ["libloot:file.plugins"]
+
+[[item]]
+id = "globals"
+title = "`globals`"
+status = "implemented"
+notes = "Messages shown with their conditions evaluated"
+ref = ["libloot:file.globals"]
+
+[[item]]
+id = "groups"
+title = "`groups`"
+status = "implemented"
+notes = "Merged by name (descriptions replaced, `after` unioned). `sort` uses libloot's group graph; `check` checks pairwise, see Groups"
+ref = ["libloot:file.groups", "libloot:group.name", "libloot:group.description"]
+
+[[item]]
+id = "bash_tags"
+title = "`bash_tags`"
+status = "partial"
+notes = "Read; not used for anything"
+ref = ["libloot:file.bash_tags"]
+
+[[item]]
+id = "prelude"
+title = "`prelude`"
+status = "implemented"
+notes = "A normal YAML node, so aliases into it work; `Masterlist::from_file_with_prelude` and `--prelude` replace it with a separate prelude file as libloot does (port of `replace_prelude`, libloot's tests translated)"
+ref = ["libloot:file.prelude"]
+evidence = ["src/metadata.rs#replace_prelude"]
+
+[[item]]
+id = "anchors_aliases"
+title = "YAML anchors, aliases"
+status = "implemented"
+
+[[item]]
+id = "merge_keys"
+title = "YAML merge keys `<<`"
+status = "implemented"
+notes = "Used heavily by the real masterlist"
+
+[[item]]
+id = "userlist"
+title = "Userlist, metadata merging of several files"
+status = "implemented"
+notes = "`Userlist` and `api::sort_with`, `--userlist`: merged as libloot's `plugin_metadata` with user metadata (user entries first, user group wins, lists and messages concatenated, general messages and Bash Tags after the masterlist's, groups merged by name). Compared with libloot's `load_userlist` on random worlds. Writing a userlist is the caller's"
+ref = ["libloot:plugin.merging"]
+
+[[item]]
+id = "unknown_keys"
+title = "Unknown top-level keys"
+status = "implemented"
+notes = "Ignored, as LOOT does"
+ref = ["libloot:file.other_keys"]
+
+[[item]]
+id = "identity"
+title = "Masterlist identity (`blob_sha1`, `update_timestamp`)"
+status = "implemented"
+notes = "`Masterlist::digest()` (git blob id, as LOOT computes it) and `source()` from LOOT's `.metadata.toml`; checked on a real LOOT copy, where `digest()` equals the stored `blob_sha1`"

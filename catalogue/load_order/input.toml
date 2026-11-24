@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[group]
+id = "load_order.input"
+title = "Load order input"
+origin = "original"
+item_column = "Item"
+status_column = "Status"
+notes_column = "Notes"
+
+[[item]]
+id = "plugins_txt_active"
+title = "`plugins.txt`, active-only style"
+status = "implemented"
+
+[[item]]
+id = "plugins_txt_star"
+title = "`plugins.txt`, `*` style"
+status = "implemented"
+
+[[item]]
+id = "loadorder_txt"
+title = "`loadorder.txt`"
+status = "missing"
+notes = "Not read; give a `plugins.txt` in load order"
+
+[[item]]
+id = "ghosted"
+title = "Ghosted plugins (`.ghost`)"
+status = "implemented"
+notes = "`X.esp.ghost` in a data directory counts as `X.esp`; names are not rewritten in `plugins.txt`"
+
+[[item]]
+id = "data_dirs"
+title = "Game directory, additional data directories"
+status = "implemented"
+notes = "`SortOptions::game_dir` and `additional_data_dirs`, or `--game-dir` and `--extra-data`; additional directories first, then `Data`; `..` is the game directory. See API.md"
+
+[[item]]
+id = "case_names"
+title = "Names differing only in case"
+status = "implemented"
+label = "warning"
+notes = "Reported in `warnings`; matching stays case-insensitive"
+
+[[item]]
+id = "master_flag_rules"
+title = "Master flag / master list sort rules"
+status = "missing"
+notes = "See `fnvorder check` in NV-Linux-Modding"

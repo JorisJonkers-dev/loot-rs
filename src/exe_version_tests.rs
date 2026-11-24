@@ -4,6 +4,7 @@ use super::*;
 use crate::condition::eval_str;
 use crate::env::{FsEnv, Slot};
 use crate::support_tests::TempDir;
+use crate::tally::{covers, ids};
 
 fn env_with(dir: &TempDir) -> FsEnv {
     FsEnv::new(dir.path(), Vec::<Slot>::new())
@@ -24,6 +25,7 @@ fn game() -> TempDir {
 
 #[test]
 fn the_fixed_file_version_is_compared_in_both_argument_orders() {
+    covers(&[ids::conditions::language::VERSION]);
     let dir = game();
     for (text, expected) in [
         (r#"version("nvse_loader.exe", "1.4.0.2", ==)"#, true),
@@ -83,6 +85,7 @@ fn a_masterlist_guard_on_a_script_extender_beside_the_data_directory_is_evaluate
 
 #[test]
 fn the_product_version_string_is_compared_with_loots_grammar() {
+    covers(&[ids::conditions::language::PRODUCT_VERSION]);
     let dir = TempDir::new();
     dir.file("a.dll", &PeSpec::new([0, 0, 0, 0], "2.0.1-beta.2").build());
     for (text, expected) in [
