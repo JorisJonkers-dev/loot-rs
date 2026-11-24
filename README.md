@@ -1,13 +1,52 @@
 # loot-rs
 
-Read-only evaluation of [LOOT](https://github.com/loot/loot) masterlist rules (requirements, incompatibilities,
-load-after, groups, messages, Bash Tag suggestions) over a Fallout: New Vegas / Tale of Two Wastelands load order,
-in Rust, for use on Linux.
+`loot-rs` sorts the load order of Fallout: New Vegas and Tale of Two Wastelands with the rules of the
+[LOOT](https://github.com/loot/loot) masterlist (requirements, incompatibilities, load-after, groups, messages, Bash
+Tag suggestions), in Rust, for Linux, Windows and macOS. It reads files and writes nothing: a mod manager
+decides what to do with the order it returns.
 
-**Systems.** The library builds and its tests pass on Linux and macOS (Apple silicon) on every pull request; it is
-linked into the Toolbox's `raul` on Linux, Windows and macOS, which builds it from the pinned source. The `loot-rs`
-program is published for Linux x86-64 as a package (see Packages) and for macOS as the release asset
-`loot-rs-universal-apple-darwin.tar.gz` (one binary for Apple silicon and Intel, with its `.sha256`).
+Players use it through [raul](https://github.com/JorisJonkers-dev/rauls-trusty-toolbox), where it sorts the
+Load order page. On its own it is a library and a command line program.
+
+## Used from raul
+
+raul's **Load order** page sorts the plugins of the active profile with loot-rs (through
+[nvmod-rs](https://github.com/JorisJonkers-dev/nvmod-rs), which links it). raul shows every move, each plugin's group
+and the masterlist's messages before anything changes; **Apply** writes the order, and the change can be undone.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/JorisJonkers-dev/rauls-trusty-toolbox/main/crates/raul-gui/tests/snapshots/load-order/load-order-preview.png" alt="raul's Load order page: a preview of three moves with their groups and the masterlist's messages" width="49%">
+  <img src="https://raw.githubusercontent.com/JorisJonkers-dev/rauls-trusty-toolbox/main/crates/raul-gui/tests/snapshots/load-order/load-order-sorted.png" alt="raul's Load order page when the plugins are already in the masterlist's order" width="49%">
+</p>
+
+The same from raul's command line: `raul sort --instance <dir> --fetch-masterlist`, and `--apply` to write it.
+
+## On its own
+
+As a library, `loot_rs::api::sort(load_order, masterlist, data_dir, options)` returns the sorted order, the messages
+and Bash Tags that apply, the findings, and the cleaning data that matches the installed files. See
+[docs/API.md](docs/API.md) for the contract, the sorting algorithm (a port of libloot's plugin graph, see
+[docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)) and the semver policy.
+
+As a program:
+
+```text
+loot-rs sort  --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--json]
+loot-rs check --masterlist <masterlist.yaml> --plugins <plugins.txt> --data <Data dir> [--strict-groups]
+```
+
+`sort` prints the load order sorted with LOOT's algorithm and what applies to it; `check` reports which rules a given
+order breaks. Neither writes anything. The details of both are below.
+
+## Why a separate project
+
+loot-rs is one of the Components raul is made of, next to [nv-rs](https://github.com/JorisJonkers-dev/nv-rs),
+[nvmod-rs](https://github.com/JorisJonkers-dev/nvmod-rs), [lodwright-rs](https://github.com/JorisJonkers-dev/lodwright-rs)
+and [ttwright-rs](https://github.com/JorisJonkers-dev/ttwright-rs). Each does one job, is tested on its own and
+releases on its own schedule; raul links them into one program and ships one tested set. loot-rs is checked on its
+own against the real libloot on generated load orders ([docs/ORACLE.md](docs/ORACLE.md)).
+
+## Licence and origin
 
 This is an independent port, not an official LOOT project.
 
@@ -23,14 +62,14 @@ contributors: https://github.com/loot/loot. The masterlist is community data und
 (MIT OR Apache-2.0, JorisJonkers-dev/NV-Linux-Modding), taken under MIT and kept as a separate module. See
 [NOTICE.md](NOTICE.md).
 
-## Use as a library
+## Systems and packages
 
-`loot_rs::api::sort(load_order, masterlist, data_dir, options)` returns the sorted order, the messages and Bash Tags
-that apply, the findings, and the cleaning data that matches the installed files, for a program such as a mod
-manager. It reads files and writes nothing. See [docs/API.md](docs/API.md) for the contract, the sorting algorithm (a
-port of libloot's plugin graph, see [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md)) and the semver policy.
+The library builds and its tests pass on Linux and macOS (Apple silicon) on every pull request; raul builds it from
+the pinned source on Linux, Windows and macOS. The `loot-rs` program is published for Linux x86-64 as an OCI package
+(below) and for macOS as the release asset `loot-rs-universal-apple-darwin.tar.gz` (one binary for Apple silicon and
+Intel, with its `.sha256`).
 
-## Packages
+### Packages
 
 The `loot-rs` program is published on each release as an OCI package on ghcr.io:
 
@@ -50,7 +89,7 @@ gh attestation verify oci://ghcr.io/jorisjonkers-dev/loot-rs:<version>-x86_64-un
 This needs `gh` 2.49 or newer (older versions, such as the 2.46 of Debian 13, have no `attestation` command) and
 a GitHub token: run `gh auth login` or set `GH_TOKEN`, even though the package and its attestation are public.
 
-### Pulling and verifying without a login or docker
+#### Pulling and verifying without a login or docker
 
 The package is public, so an anonymous token is enough. With `curl`, `python3` and `sha256sum` (replace `<version>`):
 
