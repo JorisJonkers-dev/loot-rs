@@ -128,8 +128,9 @@ Tests run through cargo-nextest with the `ci` profile (`.config/nextest.toml`; `
 and macOS, with the opt-in features, no retries and every skipped test listed, so each run leaves a JUnit file. The
 step "Feature catalogue (tally)" of Pipeline Complete reads the three files (`tally ingest`): an item is covered once
 its tagged tests passed on all three platforms. With those results it holds a ratchet: the covered and tagged counts
-may not drop below main's last report, `docs/coverage/tally-report.json`, so a pull request that loses a tag or a
-platform fails. A drop that is meant (an item retired or set `n/a`) needs `--allow-drop <n>` on that step in the
+may not drop below the report of the base revision (`docs/coverage/tally-report.json` on main), so a pull request
+that loses a tag or a platform fails. A pull request that changes `docs/COVERAGE.md` or `docs/coverage/` fails too:
+those files are written on main only. A drop that is meant (an item retired or set `n/a`) needs `--allow-drop <n>` on that step in the
 same pull request, removed again afterwards.
 
 On main, every push builds and tests on all three platforms; that step then regenerates `docs/COMPATIBILITY.md`,

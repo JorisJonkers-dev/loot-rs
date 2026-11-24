@@ -25,8 +25,8 @@ env:
   CARGO_TERM_COLOR: always
   # The pinned tally release (https://github.com/JorisJonkers-dev/tally) and the SHA-256 of its Linux binary, from
   # that release's SHA256SUMS. Bump it with `tally ids --generator catalogue/tally_ids_gen.rs`.
-  TALLY_VERSION: v0.1.0
-  TALLY_SHA256: 7d8f99a9704dffbd63e5c1a05012a745ca2de34f7faf8fb1318e5c42f2f7415d
+  TALLY_VERSION: v0.2.0
+  TALLY_SHA256: 33dfec99d0fce69bdba7c8c13bdc96126d1f278497f4cf224571d9a667c13824
   # The generated feature-catalogue reports: the only files the `reports` job may commit on main.
   REPORT_FILES: >-
     docs/COMPATIBILITY.md
@@ -293,8 +293,15 @@ jobs:
           else
             echo "::notice title=Feature catalogue::no JUnit results of all three platforms (the tests did not run or did not finish): no covered count and no ratchet"
           fi
+          # Pull requests never carry the generated reports, so none can lower the bar the ratchet measures against.
+          if [ "$GITHUB_EVENT_NAME" = pull_request ] && git diff --name-only "$BASE" HEAD -- docs/COVERAGE.md docs/coverage | grep -q .; then
+            echo "::error title=Feature catalogue::docs/COVERAGE.md and docs/coverage/ are generated on main; leave them out of the pull request"; exit 1
+          fi
+          # The ratchet measures against the report of the base revision (main before this change).
           ratchet=()
-          if [ ${#args[@]} -gt 0 ] && [ -f docs/coverage/tally-report.json ]; then
+          if [ ${#args[@]} -gt 0 ] && [ -n "${BASE:-}" ] && git show "${BASE}:docs/coverage/tally-report.json" >"$RUNNER_TEMP/base-report.json" 2>/dev/null; then
+            ratchet=(--ratchet "$RUNNER_TEMP/base-report.json")
+          elif [ ${#args[@]} -gt 0 ] && [ -f docs/coverage/tally-report.json ]; then
             ratchet=(--ratchet docs/coverage/tally-report.json)
           fi
           if [ -n "${BASE:-}" ] && [ "$BASE" != 0000000000000000000000000000000000000000 ] && git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
