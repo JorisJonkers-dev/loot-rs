@@ -1,6 +1,6 @@
 {
   "schema": "tally-report.v1",
-  "tool": "tally 0.2.0",
+  "tool": "tally 0.6.0",
   "repo": "loot-rs",
   "results": true,
   "totals": {
@@ -13,6 +13,20 @@
     "gated": 0,
     "not_applicable": 6,
     "deferred": 0
+  },
+  "headline": {
+    "title": "All areas",
+    "counts": {
+      "total": 78,
+      "missing": 2,
+      "implemented": 76,
+      "tagged": 76,
+      "passing": 76,
+      "covered": 75,
+      "gated": 0,
+      "not_applicable": 6,
+      "deferred": 0
+    }
   },
   "areas": [
     {
