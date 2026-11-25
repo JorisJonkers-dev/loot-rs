@@ -174,7 +174,7 @@ dependencies = [
 
 [[package]]
 name = "loot-rs"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "loot-condition-interpreter",
  "proptest",

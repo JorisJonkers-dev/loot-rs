@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.10.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.9.0...v0.10.0) (2026-11-25)
+
+
+### Features
+
+* feature catalogue with typed test tags; COMPATIBILITY.md generated from it ([#103](https://github.com/JorisJonkers-dev/loot-rs/issues/103)) ([c946509](https://github.com/JorisJonkers-dev/loot-rs/commit/c946509a23289553e86fccbc50a51f1d2de8a676))
+
+
+### Bug Fixes
+
+* **ci:** run the catalogue reports job on main pushes ([#110](https://github.com/JorisJonkers-dev/loot-rs/issues/110)) ([dce361d](https://github.com/JorisJonkers-dev/loot-rs/commit/dce361dde5a16592cc89ca3624079017216ce3e0))
+* stop ignoring the generated catalogue reports ([#104](https://github.com/JorisJonkers-dev/loot-rs/issues/104)) ([8f23813](https://github.com/JorisJonkers-dev/loot-rs/commit/8f23813c989e0168679d45109550c67ef8c959f4))
+
 ## [0.9.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.8.1...v0.9.0) (2026-11-21)
 
 
