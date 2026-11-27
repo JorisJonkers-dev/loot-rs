@@ -4,7 +4,7 @@ rust = { version = "1.100.0", components = "clippy,rustfmt,llvm-tools-preview" }
 task = "3.54.0"
 actionlint = "1.7.12"
 gitleaks = "8.30.1"
-"aqua:EmbarkStudios/cargo-deny" = "0.21.0"
+"aqua:EmbarkStudios/cargo-deny" = "0.22.0"
 "aqua:zizmorcore/zizmor" = "1.32.0"
 "aqua:taiki-e/cargo-llvm-cov" = "0.9.1"
 # Runs the tests in CI with JUnit output for the feature-catalogue reports (.config/nextest.toml).
