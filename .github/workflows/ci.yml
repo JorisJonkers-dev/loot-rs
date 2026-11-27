@@ -5,14 +5,13 @@ name: Pipeline
 
 on:
   pull_request:
-    types: [opened, edited, reopened, synchronize]
+    types: [opened, edited, reopened, synchronize, labeled]
   push:
     branches: [main]
   workflow_dispatch:
 
 # A new commit on a branch cancels the run still going for the older one. Not cancelled: a title edit (its own
-# group, so it neither cancels nor is cancelled by a push; no label events trigger this workflow, so a bot
-# labelling a new pull request starts nothing) and main (every commit there runs to the end).
+# group, so it neither cancels nor is cancelled by a push) and main (every commit there runs to the end).
 concurrency:
   group: pipeline-${{ github.ref == 'refs/heads/main' && github.sha || format('{0}-{1}', github.event.pull_request.number || github.ref, github.event.action == 'edited' && github.run_id || 'commits') }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -35,15 +34,20 @@ env:
     docs/coverage/tally.svg
 
 jobs:
-  # Documentation-only changes on a pull request skip the Rust job. The gate below still runs and still requires
-  # everything else. A push to main always builds, so its feature-catalogue reports carry the test results of all
-  # three platforms.
+  # Decides what a pull request needs, so a run costs what the change can break. Documentation-only changes skip every
+  # Rust job. Windows and macOS minutes cost 2x and 10x Linux minutes, so they run only on a push to main (which also
+  # carries the test results of all three platforms to the feature-catalogue reports), with the label `ci:all-os`, or
+  # when the change touches build setup or a file with platform conditions. The fuzz smoke run only runs when the
+  # parsers or their inputs can have changed. The gate below still runs and requires every job not skipped for these
+  # reasons.
   changes:
     name: Changed files
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       code: ${{ steps.diff.outputs.code }}
+      platforms: ${{ steps.diff.outputs.platforms }}
+      fuzz: ${{ steps.diff.outputs.fuzz }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -53,19 +57,23 @@ jobs:
         env:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD: ${{ github.sha }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = push ]; then
-            echo "code=true" >>"$GITHUB_OUTPUT"; echo "a push to main: building"; exit 0
-          fi
-          if [ -z "${BASE:-}" ] || [ "$BASE" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$BASE" 2>/dev/null; then
-            echo "code=true" >>"$GITHUB_OUTPUT"; echo "no base to compare with: building"; exit 0
-          fi
-          if git diff --name-only "$BASE...$HEAD" | grep -qvE '^(docs/|LICENSE$|.*\.md$)'; then
-            echo "code=true" >>"$GITHUB_OUTPUT"
-          else
-            echo "code=false" >>"$GITHUB_OUTPUT"; echo "only documentation changed: the Rust job is skipped"
-          fi
+          out() { printf 'code=%s\nplatforms=%s\nfuzz=%s\n' "$1" "$2" "$3" >>"$GITHUB_OUTPUT"; echo "Rust: $1, Windows and macOS: $2, fuzz smoke: $3 ($4)"; exit 0; }
+          [ "$GITHUB_EVENT_NAME" = pull_request ] || out true true true "not a pull request"
+          if [ -z "${BASE:-}" ] || ! git cat-file -e "$BASE" 2>/dev/null; then out true true true "no base to compare with"; fi
+          files="$(git diff --name-only "$BASE...$HEAD")"
+          grep -qvE '^(docs/|LICENSE$|.*\.md$)' <<<"$files" || out false false false "only documentation changed"
+          fuzz=false
+          grep -qE '^(src/|fuzz/|tests/golden/|Cargo\.(toml|lock)|rust-toolchain\.toml|scripts/fuzz-run\.sh|\.github/workflows/ci\.yml)' <<<"$files" && fuzz=true
+          jq -e 'index("ci:all-os")' <<<"$LABELS" >/dev/null && out true true "$fuzz" "label ci:all-os"
+          grep -qE '^(Cargo\.(toml|lock)|rust-toolchain\.toml|mise\.toml|Taskfile\.yml|deny\.toml|\.config/.*|\.github/workflows/ci\.yml)$' <<<"$files" && out true true "$fuzz" "build setup changed"
+          # Rust files that contain platform conditions, as they are after the change.
+          while read -r f; do
+            case "$f" in *.rs) [ -f "$f" ] && grep -qE 'cfg(_attr)?!?\(.*(windows|unix|target_os|target_family)' "$f" && out true true "$fuzz" "platform code in $f";; esac
+          done <<<"$files"
+          out true false "$fuzz" "nothing platform-specific changed"
 
   hygiene:
     name: Hygiene
@@ -144,11 +152,11 @@ jobs:
   # loot-rs is linked into the Toolbox's raul on Linux, Windows and macOS (Toolbox ADR-0006), so it is built and
   # tested natively on Windows and macOS too (Apple silicon). Linux runs the full set above; this job lints and
   # tests, and Pipeline Complete gates on it, so a unix-only call fails the pull request and the release pull
-  # request alike.
+  # request alike. Skipped on a pull request without platform-specific changes (see Changed files).
   platforms:
     name: Build and test (${{ matrix.os }})
     needs: changes
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ needs.changes.outputs.platforms == 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -198,7 +206,7 @@ jobs:
   fuzz-smoke:
     name: Fuzz smoke
     needs: changes
-    if: ${{ needs.changes.outputs.code == 'true' }}
+    if: ${{ needs.changes.outputs.fuzz == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -274,6 +282,7 @@ jobs:
           BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
           JUNIT: ${{ runner.temp }}/junit
           CODE: ${{ needs.changes.outputs.code }}
+          PLATFORMS: ${{ needs.changes.outputs.platforms }}
         run: |
           set -euo pipefail
           # The files the `reports` job commits on main must not be ignored, or its `git add` fails there.
@@ -289,6 +298,10 @@ jobs:
           if [ -f "$JUNIT/junit-linux.xml" ] && [ -f "$JUNIT/junit-windows.xml" ] && [ -f "$JUNIT/junit-macos.xml" ]; then
             "$tally" ingest --junit "$JUNIT/junit-linux.xml" --junit "$JUNIT/junit-windows.xml" --junit "$JUNIT/junit-macos.xml" --out "$RUNNER_TEMP/results.json"
             args=(--results "$RUNNER_TEMP/results.json")
+          elif [ "$CODE" = true ] && [ "$PLATFORMS" = false ]; then
+            # Windows and macOS did not run on this pull request (label `ci:all-os` runs them): the structure checks
+            # still run, the covered count and the ratchet are left to the push to main, which runs all three.
+            echo "::notice title=Feature catalogue::Windows and macOS skipped: no covered count and no ratchet on this pull request"
           elif [ "$GITHUB_EVENT_NAME" = push ] || [ "$CODE" = true ]; then
             # The test jobs ran, so their results must be here: a lost upload must not switch the ratchet off.
             echo "::error title=Feature catalogue::the JUnit results of Linux, Windows and macOS are needed when the tests run"; exit 1
@@ -354,14 +367,15 @@ jobs:
           retention-days: 3
 
       # A skipped job fails, except the two that only run on pull requests (hygiene also skips when its
-      # override label is set) and the Rust, macOS and fuzz jobs when only documentation changed.
+      # override label is set) and the jobs that Changed files switched off: Rust on documentation-only changes,
+      # Windows and macOS and the fuzz smoke run when it found nothing for them.
       - name: Jobs passed
         if: ${{ !cancelled() }}
         env:
           NEEDS: ${{ toJSON(needs) }}
         run: |
           set -euo pipefail
-          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key | IN("rust", "platforms", "fuzz-smoke")) and $n.changes.outputs.code == "false" | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
+          failed="$(jq -r '. as $n | to_entries[] | select(.value.result != "success") | select(.value.result != "skipped" or ((.key | IN("hygiene", "pr-title")) or (.key == "rust" and $n.changes.outputs.code == "false") or (.key == "platforms" and $n.changes.outputs.platforms == "false") or (.key == "fuzz-smoke" and $n.changes.outputs.fuzz == "false") | not)) | "\(.key): \(.value.result)"' <<<"$NEEDS")"
           if [ -n "$failed" ]; then echo "$failed"; exit 1; fi
 
   # On main, the feature-catalogue reports rendered by Pipeline Complete go onto main as one commit of those files only,
