@@ -350,8 +350,8 @@ fn finding_label(kind: crate::api::FindingKind) -> &'static str {
 /// The result of a sort as one line of JSON, in the shape of [`render_json`] plus the sort.
 ///
 /// Keys: `schema_version` (integer, see [`SCHEMA_VERSION`]), `contract` (`loot-sort`), `sorted` (names in order), `general_messages`, `plugins` (each with `name`, `position`, `active`, `group`,
-/// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `locations` (`url`, `name`), `findings`;
-/// each message is `type`, `text`, `lang`), `generated_general_messages`,
+/// `messages`, `generated_messages`, `bash_tags`, `tags_add`, `tags_remove`, `locations` (`url`, `name`), `findings`,
+/// `missing_masters` (`name`, `state` `missing` or `inactive`); each message is `type`, `text`, `lang`), `generated_general_messages`,
 /// `dirty`, `rules` (`before`, `after`, `source`), `dropped_group_rules` (`later`, `earlier`), `not_installed`,
 /// `warnings`, `explanations` (`plugin`, `from`, `to`, `reason`, `other`, `indirect`, `reasons`: each `reason`,
 /// `other`, `later`, `indirect` and, when they apply, `via` (`before`, `after`), `groups` and `counts`),
@@ -513,6 +513,16 @@ fn json_plugin(out: &mut String, plugin: &crate::api::PluginResult) {
         let _ = write!(out, ",\"hard\":{},\"text\":", finding.hard);
         json_string(out, &finding.text);
         out.push('}');
+    });
+    out.push_str(",\"missing_masters\":");
+    json_list(out, &plugin.missing_masters, |out, master| {
+        out.push_str("{\"name\":");
+        json_string(out, &master.name);
+        let state = match master.state {
+            crate::api::MasterState::Missing => "missing",
+            crate::api::MasterState::Inactive => "inactive",
+        };
+        let _ = write!(out, ",\"state\":\"{state}\"}}");
     });
     out.push('}');
 }

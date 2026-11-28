@@ -39,7 +39,7 @@ finding is hard, or 2 when the rules contradict each other or an input cannot be
 | --- | --- |
 | `order` | The installed plugins in sorted order, named as given |
 | `ordering_rules` | The rules the order honours: `before`, `after` and `source` (`header-master`, `after`, `req`, `group`); to explain a move, or to check the order against another tool's. Group rules are listed when the final order satisfies them |
-| `plugins` | One `PluginResult` per plugin of `order`, in that order: `position`, `active`, `group`, `messages` (kind and text; the masterlist's), `generated_messages` (the ones LOOT generates from the install, as Markdown), `bash_tags` (from the description), `tags_added`, `tags_removed`, `findings` (kind, text, `hard`) |
+| `plugins` | One `PluginResult` per plugin of `order`, in that order: `position`, `active`, `group`, `messages` (kind and text; the masterlist's), `generated_messages` (the ones LOOT generates from the install, as Markdown), `bash_tags` (from the description), `tags_added`, `tags_removed`, `findings` (kind, text, `hard`), `missing_masters` (`name`, `state` `Missing` or `Inactive`) |
 | `general_messages` | Masterlist messages that belong to no plugin |
 | `generated_general_messages` | Messages LOOT generates about the whole load order (more than 255 active plugins) |
 | `dirty` | `DirtyInfo` (plugin, CRC-32, dirty or clean, utility, ITM, UDR, NAV) where an installed file's CRC-32 is on the masterlist's `dirty` or `clean` list. Only files that have such data are read |

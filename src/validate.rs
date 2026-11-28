@@ -222,7 +222,7 @@ fn incompatibilities(
 }
 
 /// The tags (additions and removals, by name) that apply to the plugin.
-fn tag_names(ev: &mut Evaluator, plugin: &Plugin) -> Vec<(String, bool)> {
+pub(crate) fn tag_names(ev: &mut Evaluator, plugin: &Plugin) -> Vec<(String, bool)> {
     let mut tags = Vec::new();
     for tag in plugin.entries.iter().flat_map(|entry| entry.tag.iter()) {
         if ev.holds(tag.condition.as_deref()) == Some(true) {
@@ -235,6 +235,41 @@ fn tag_names(ev: &mut Evaluator, plugin: &Plugin) -> Vec<(String, bool)> {
     tags
 }
 
+/// The plugin's masters that are not installed or not active, in header order.
+///
+/// The boolean is `true` when the master is installed but inactive, and `false` when it is not installed.
+/// The result is empty when the plugin is inactive or has the `Filter` tag.
+pub(crate) fn missing_masters(
+    env: &FsEnv,
+    plugin: &Plugin,
+    loot_tags: &[(String, bool)],
+) -> Vec<(String, bool)> {
+    let Some(header) = plugin.header else {
+        return Vec::new();
+    };
+    let description_filter = description_tags(header.description.as_deref().unwrap_or_default())
+        .iter()
+        .any(|tag| tag == "Filter");
+    let filter = description_filter || loot_tags.iter().any(|(name, _)| name == "Filter");
+    let expect_active = plugin.active && !filter;
+    if !expect_active {
+        return Vec::new();
+    }
+    header
+        .masters
+        .iter()
+        .filter_map(|master| {
+            if !env.installed(master) {
+                Some((master.clone(), false))
+            } else if !env.is_active(master) {
+                Some((master.clone(), true))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
 fn masters(
     env: &FsEnv,
     plugin: &Plugin,
@@ -244,23 +279,15 @@ fn masters(
     let Some(header) = plugin.header else {
         return;
     };
-    let description_filter = description_tags(header.description.as_deref().unwrap_or_default())
-        .iter()
-        .any(|tag| tag == "Filter");
-    let filter = description_filter || loot_tags.iter().any(|(name, _)| name == "Filter");
-    let expect_active = plugin.active && !filter;
+    for (master, installed) in missing_masters(env, plugin, loot_tags) {
+        let text = if installed {
+            format!("This plugin requires \"{master}\" to be active, but it is inactive.")
+        } else {
+            format!("This plugin requires \"{master}\" to be installed, but it is missing.")
+        };
+        out.push(say(MessageKind::Error, &text));
+    }
     for master in &header.masters {
-        if expect_active && !env.installed(master) {
-            out.push(say(
-                MessageKind::Error,
-                &format!("This plugin requires \"{master}\" to be installed, but it is missing."),
-            ));
-        } else if expect_active && !env.is_active(master) {
-            out.push(say(
-                MessageKind::Error,
-                &format!("This plugin requires \"{master}\" to be active, but it is inactive."),
-            ));
-        }
         if plugin.name.to_lowercase() == master.to_lowercase() {
             out.push(say(
                 MessageKind::Error,
