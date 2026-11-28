@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.10.0...v0.11.0) (2026-11-28)
+
+
+### Features
+
+* **api:** a structured list of missing masters per plugin ([#121](https://github.com/JorisJonkers-dev/loot-rs/issues/121)) ([11a74ce](https://github.com/JorisJonkers-dev/loot-rs/commit/11a74ce057f07d5d14aefca28853ec8e242cee47))
+
 ## [0.10.0](https://github.com/JorisJonkers-dev/loot-rs/compare/v0.9.0...v0.10.0) (2026-11-25)
 
 
