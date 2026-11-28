@@ -5,8 +5,8 @@
 use serde::ser::{Serialize, SerializeSeq, SerializeStruct, Serializer};
 
 use crate::api::{
-    CleaningStatus, DirtyInfo, Finding, Location, Message, MoveExplanation, OrderingRule,
-    PluginMove, PluginResult, SortMode, SortOutput,
+    CleaningStatus, DirtyInfo, Finding, Location, MasterState, Message, MissingMaster,
+    MoveExplanation, OrderingRule, PluginMove, PluginResult, SortMode, SortOutput,
 };
 
 impl Serialize for Message {
@@ -29,9 +29,28 @@ impl Serialize for Finding {
     }
 }
 
+impl Serialize for MasterState {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let label = match self {
+            Self::Missing => "missing",
+            Self::Inactive => "inactive",
+        };
+        serializer.serialize_str(label)
+    }
+}
+
+impl Serialize for MissingMaster {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut out = serializer.serialize_struct("MissingMaster", 2)?;
+        out.serialize_field("name", &self.name)?;
+        out.serialize_field("state", &self.state)?;
+        out.end()
+    }
+}
+
 impl Serialize for PluginResult {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut out = serializer.serialize_struct("PluginResult", 10)?;
+        let mut out = serializer.serialize_struct("PluginResult", 11)?;
         out.serialize_field("name", &self.name)?;
         out.serialize_field("position", &self.position)?;
         out.serialize_field("active", &self.active)?;
@@ -43,6 +62,7 @@ impl Serialize for PluginResult {
         out.serialize_field("tags_remove", &self.tags_removed)?;
         out.serialize_field("locations", &self.locations)?;
         out.serialize_field("findings", &self.findings)?;
+        out.serialize_field("missing_masters", &self.missing_masters)?;
         out.end()
     }
 }

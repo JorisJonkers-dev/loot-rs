@@ -900,6 +900,26 @@ pub struct Finding {
     pub hard: bool,
 }
 
+/// A master of a plugin that is not available in the expected state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct MissingMaster {
+    /// The file name of the master as given in the plugin's header.
+    pub name: String,
+    /// Whether the master is missing or merely inactive.
+    pub state: MasterState,
+}
+
+/// The state of a missing master.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum MasterState {
+    /// The master is not installed.
+    Missing,
+    /// The master is installed but not active.
+    Inactive,
+}
+
 /// Everything the masterlist says about one plugin.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -928,6 +948,9 @@ pub struct PluginResult {
     pub bash_tags: Vec<String>,
     /// The masterlist's (and userlist's) `url` entries, each once, the userlist's first.
     pub locations: Vec<Location>,
+    /// The plugin's masters that are not installed or not active, in the order of its header; empty when the plugin
+    /// itself is inactive.
+    pub missing_masters: Vec<MissingMaster>,
 }
 
 /// Whether a checksum is on the masterlist's dirty or its clean list.
@@ -1804,24 +1827,23 @@ fn describe(
                 .filter(|(status, _)| *status == CleaningStatus::Dirty)
                 .map(|&(_, data)| data)
                 .collect();
-            let generated = validate::plugin_messages(
-                sorted_env,
-                &validate::Plugin {
-                    name: fact.name,
-                    active: plugin.active,
-                    header: fact.header.as_ref(),
-                    entries: &fact.entries,
-                    groups: &defined,
-                    group: named_group(&fact.entries),
-                    dirty: &dirty,
-                },
-            );
+            let validate_plugin = validate::Plugin {
+                name: fact.name,
+                active: plugin.active,
+                header: fact.header.as_ref(),
+                entries: &fact.entries,
+                groups: &defined,
+                group: named_group(&fact.entries),
+                dirty: &dirty,
+            };
+            let generated = validate::plugin_messages(sorted_env, &validate_plugin);
             let bash_tags = fact
                 .header
                 .as_ref()
                 .and_then(|header| header.description.as_deref())
                 .map_or_else(Vec::new, validate::description_tags);
-            let mut result = plugin_result(plugin, &generated, bash_tags);
+            let missing_masters = missing_masters_list(sorted_env, &validate_plugin);
+            let mut result = plugin_result(plugin, &generated, bash_tags, missing_masters);
             result.locations = locations(&fact.entries);
             result
         })
@@ -2368,10 +2390,27 @@ fn rules(env: &FsEnv, metadata: &Metadata, facts: &[Facts], warnings: &mut Vec<S
     }
 }
 
+fn missing_masters_list(env: &FsEnv, plugin: &validate::Plugin<'_>) -> Vec<MissingMaster> {
+    let mut ev = check::Evaluator::new(env);
+    let loot_tags = validate::tag_names(&mut ev, plugin);
+    validate::missing_masters(env, plugin, &loot_tags)
+        .into_iter()
+        .map(|(name, installed)| MissingMaster {
+            name,
+            state: if installed {
+                MasterState::Inactive
+            } else {
+                MasterState::Missing
+            },
+        })
+        .collect()
+}
+
 fn plugin_result(
     plugin: &check::PluginReport,
     generated: &[check::AppliedMessage],
     bash_tags: Vec<String>,
+    missing_masters: Vec<MissingMaster>,
 ) -> PluginResult {
     PluginResult {
         name: plugin.name.clone(),
@@ -2385,6 +2424,7 @@ fn plugin_result(
         generated_messages: messages(generated),
         bash_tags,
         locations: Vec::new(),
+        missing_masters,
     }
 }
 

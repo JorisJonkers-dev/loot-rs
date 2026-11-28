@@ -644,6 +644,63 @@ fn messages_that_loot_generates_come_apart_from_the_masterlist_ones() {
 }
 
 #[test]
+fn missing_masters_list_installed_but_inactive_and_missing_ones_and_none_when_inactive() {
+    let dir = TempDir::new();
+    dir.plugin("FalloutNV.esm", &[]);
+    dir.plugin("C.esp", &[]);
+    dir.plugin("B.esp", &["A.esp", "C.esp"]);
+    let load_order = vec![
+        PluginSlot::new("FalloutNV.esm", true),
+        PluginSlot::new("B.esp", true),
+        PluginSlot::new("C.esp", false),
+    ];
+    let output = sort(
+        &load_order,
+        &Masterlist::parse("").expect("masterlist"),
+        dir.path(),
+        &SortOptions::default(),
+    )
+    .expect("sorts");
+    let b = output
+        .plugins
+        .iter()
+        .find(|p| p.name == "B.esp")
+        .expect("present");
+    assert_eq!(
+        b.missing_masters,
+        [
+            MissingMaster {
+                name: "A.esp".into(),
+                state: MasterState::Missing,
+            },
+            MissingMaster {
+                name: "C.esp".into(),
+                state: MasterState::Inactive,
+            },
+        ]
+    );
+
+    let inactive_load_order = vec![
+        PluginSlot::new("FalloutNV.esm", true),
+        PluginSlot::new("B.esp", false),
+        PluginSlot::new("C.esp", false),
+    ];
+    let output = sort(
+        &inactive_load_order,
+        &Masterlist::parse("").expect("masterlist"),
+        dir.path(),
+        &SortOptions::default(),
+    )
+    .expect("sorts");
+    let b = output
+        .plugins
+        .iter()
+        .find(|p| p.name == "B.esp")
+        .expect("present");
+    assert_eq!(b.missing_masters, Vec::<MissingMaster>::new());
+}
+
+#[test]
 fn more_than_255_active_plugins_are_a_warning_about_the_load_order() {
     let dir = TempDir::new();
     let mut load_order = Vec::new();
